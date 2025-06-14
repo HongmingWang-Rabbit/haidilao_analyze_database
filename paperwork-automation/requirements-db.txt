@@ -1,0 +1,7 @@
+# Database dependencies
+psycopg2-binary>=2.9.0
+python-dotenv>=1.0.0
+
+# Core dependencies (if not already installed)
+pandas>=1.5.0
+openpyxl>=3.0.0 
