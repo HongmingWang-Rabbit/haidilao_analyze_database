@@ -27,7 +27,8 @@
     "db:check-test": "python3 -m utils.database --check-structure --test",
     "build": "tsc",
     "help": "python3 scripts/extract-all.py --help",
-    "status": "ts-node scripts/extract-sql-enhanced.ts status"
+    "status": "ts-node scripts/extract-sql-enhanced.ts status",
+    "open-automation-menu": "python3 scripts/automation-menu.py"
   },
   "keywords": [
     "excel",
