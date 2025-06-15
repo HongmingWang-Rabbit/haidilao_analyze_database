@@ -61,8 +61,11 @@ def run_validation_tests():
         import importlib.util
         test_path = os.path.join(os.path.dirname(__file__), 'test_validation_simple.py')
         spec = importlib.util.spec_from_file_location("test_validation_simple", test_path)
-        validation_test_module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(validation_test_module)
+        if spec and spec.loader:
+            validation_test_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(validation_test_module)
+        else:
+            raise ImportError("Could not load test_validation_simple.py module")
         
         # Run validation tests
         test_loader = unittest.TestLoader()

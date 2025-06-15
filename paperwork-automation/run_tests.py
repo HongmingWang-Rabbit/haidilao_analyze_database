@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'scripts'))
 def run_tests_with_coverage():
     """Run tests with coverage reporting."""
     try:
-        import coverage
+        import coverage  # type: ignore
         
         # Initialize coverage
         cov = coverage.Coverage(source=['scripts'])

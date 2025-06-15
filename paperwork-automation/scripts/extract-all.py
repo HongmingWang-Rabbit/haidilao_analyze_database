@@ -63,7 +63,7 @@ def validate_excel_file(input_file):
         
         if missing_sheets:
             validation_warnings.append(f"❌ Missing required sheets: {', '.join(missing_sheets)}")
-            validation_warnings.append(f"📋 Available sheets: {', '.join(sheet_names)}")
+            validation_warnings.append(f"📋 Available sheets: {', '.join(map(str, sheet_names))}")
             is_valid = False
         else:
             print(f"✅ Found required sheets: {', '.join(required_sheets)}")

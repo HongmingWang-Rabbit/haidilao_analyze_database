@@ -16,20 +16,13 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
 # Import the functions we want to test
-try:
-    from insert_data import (
-        extract_date_from_filename,
-        format_sql_value,
-        transform_excel_data,
-        generate_upsert_sql,
-        process_excel
-    )
-except ImportError:
-    # Try with hyphen-to-underscore conversion
-    import importlib.util
-    import os
-    script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'insert-data.py')
-    spec = importlib.util.spec_from_file_location("insert_data", script_path)
+import importlib.util
+import os
+
+# Load the insert-data.py module dynamically
+script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'insert-data.py')
+spec = importlib.util.spec_from_file_location("insert_data", script_path)
+if spec and spec.loader:
     insert_data = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(insert_data)
     
@@ -38,6 +31,8 @@ except ImportError:
     transform_excel_data = insert_data.transform_excel_data
     generate_upsert_sql = insert_data.generate_upsert_sql
     process_excel = insert_data.process_excel
+else:
+    raise ImportError("Could not load insert-data.py module")
 
 class TestInsertData(unittest.TestCase):
     

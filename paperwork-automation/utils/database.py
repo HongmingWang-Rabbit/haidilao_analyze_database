@@ -89,7 +89,7 @@ class DatabaseManager:
                 with conn.cursor() as cursor:
                     cursor.execute("SELECT 1 as test")
                     result = cursor.fetchone()
-                    return result['test'] == 1
+                    return result is not None and result['test'] == 1  # type: ignore
         except Exception as e:
             logger.error(f"Connection test failed: {e}")
             return False
@@ -141,7 +141,8 @@ class DatabaseManager:
             with self.get_connection() as conn:
                 with conn.cursor() as cursor:
                     cursor.execute(sql, params)
-                    return cursor.fetchall()
+                    results = cursor.fetchall()
+                    return list(results) if results else []  # type: ignore
         except Exception as e:
             logger.error(f"Failed to fetch data: {e}")
             return []
@@ -152,7 +153,8 @@ class DatabaseManager:
             with self.get_connection() as conn:
                 with conn.cursor() as cursor:
                     cursor.execute(sql, params)
-                    return cursor.fetchone()
+                    result = cursor.fetchone()
+                    return dict(result) if result else None
         except Exception as e:
             logger.error(f"Failed to fetch data: {e}")
             return None

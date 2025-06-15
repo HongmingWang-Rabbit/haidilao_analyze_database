@@ -17,22 +17,13 @@ from unittest.mock import patch, MagicMock, call
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
 
 # Import the functions we want to test
-try:
-    from extract_all import (
-        run_script, 
-        validate_excel_file, 
-        validate_daily_sheet, 
-        validate_time_segment_sheet,
-        validate_date_column,
-        validate_holiday_column,
-        validate_numeric_column
-    )
-except ImportError:
-    # Try with hyphen-to-underscore conversion
-    import importlib.util
-    import os
-    script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'extract-all.py')
-    spec = importlib.util.spec_from_file_location("extract_all", script_path)
+import importlib.util
+import os
+
+# Load the extract-all.py module dynamically
+script_path = os.path.join(os.path.dirname(__file__), '..', 'scripts', 'extract-all.py')
+spec = importlib.util.spec_from_file_location("extract_all", script_path)
+if spec and spec.loader:
     extract_all = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(extract_all)
     
@@ -43,6 +34,8 @@ except ImportError:
     validate_date_column = extract_all.validate_date_column
     validate_holiday_column = extract_all.validate_holiday_column
     validate_numeric_column = extract_all.validate_numeric_column
+else:
+    raise ImportError("Could not load extract-all.py module")
 
 class TestExtractAll(unittest.TestCase):
     
@@ -109,7 +102,7 @@ class TestExtractAll(unittest.TestCase):
             
             self.assertTrue(result)
             # Check that warnings are printed
-            mock_print.assert_any_call("Warnings: Warning: Some data was skipped")
+            mock_print.assert_any_call("⚠️  Warnings: Warning: Some data was skipped")
     
     @patch('subprocess.run')
     def test_run_script_failure(self, mock_subprocess):
@@ -125,7 +118,7 @@ class TestExtractAll(unittest.TestCase):
             
             self.assertFalse(result)
             # Check that error messages are printed
-            mock_print.assert_any_call("Error running insert-data.py:")
+            mock_print.assert_any_call("❌ Error running insert-data.py:")
     
     @patch('os.path.join')
     def test_script_path_construction(self, mock_path_join):
@@ -424,10 +417,7 @@ class TestMainFunctionWithValidation(unittest.TestCase):
         with patch('builtins.print') as mock_print, \
              patch('sys.exit') as mock_exit:
             
-            try:
-                from extract_all import main
-            except ImportError:
-                main = extract_all.main
+            main = extract_all.main
             main()
             
             # Check that validation was called
@@ -451,10 +441,7 @@ class TestMainFunctionWithValidation(unittest.TestCase):
         with patch('builtins.print') as mock_print, \
              patch('sys.exit') as mock_exit:
             
-            try:
-                from extract_all import main
-            except ImportError:
-                main = extract_all.main
+            main = extract_all.main
             main()
             
             # Check that validation warnings were printed
@@ -475,10 +462,7 @@ class TestMainFunctionWithValidation(unittest.TestCase):
         with patch('builtins.print') as mock_print, \
              patch('sys.exit') as mock_exit:
             
-            try:
-                from extract_all import main
-            except ImportError:
-                main = extract_all.main
+            main = extract_all.main
             main()
             
             # Check that error was printed
@@ -501,10 +485,7 @@ class TestMainFunctionWithValidation(unittest.TestCase):
         with patch('builtins.print') as mock_print, \
              patch('sys.exit') as mock_exit:
             
-            try:
-                from extract_all import main
-            except ImportError:
-                main = extract_all.main
+            main = extract_all.main
             main()
             
             # Check that validation was not called
@@ -533,10 +514,7 @@ class TestMainFunction(unittest.TestCase):
              patch('sys.exit') as mock_exit:
             
             # Import and run main (need to import here to avoid issues with patched argv)
-            try:
-                from extract_all import main
-            except ImportError:
-                main = extract_all.main
+            main = extract_all.main
             main()
             
             # Check that both scripts were called
@@ -560,10 +538,7 @@ class TestMainFunction(unittest.TestCase):
         with patch('builtins.print') as mock_print, \
              patch('sys.exit') as mock_exit:
             
-            try:
-                from extract_all import main
-            except ImportError:
-                main = extract_all.main
+            main = extract_all.main
             main()
             
             # Check that both scripts were called
@@ -586,10 +561,7 @@ class TestMainFunction(unittest.TestCase):
         with patch('builtins.print'), \
              patch('sys.exit'):
             
-            try:
-                from extract_all import main
-            except ImportError:
-                main = extract_all.main
+            main = extract_all.main
             main()
             
             # Check that debug flag was passed to both scripts
@@ -609,10 +581,7 @@ class TestMainFunction(unittest.TestCase):
         with patch('builtins.print'), \
              patch('sys.exit'):
             
-            try:
-                from extract_all import main
-            except ImportError:
-                main = extract_all.main
+            main = extract_all.main
             main()
             
             # Check that custom output files were passed
@@ -638,10 +607,7 @@ class TestIntegration(unittest.TestCase):
              patch('builtins.print'), \
              patch('sys.exit'):
             
-            try:
-                from extract_all import main
-            except ImportError:
-                main = extract_all.main
+            main = extract_all.main
             main()
             
             # Check the order of script calls
@@ -667,10 +633,7 @@ class TestIntegration(unittest.TestCase):
              patch('builtins.print'), \
              patch('sys.exit'):
             
-            try:
-                from extract_all import main
-            except ImportError:
-                main = extract_all.main
+            main = extract_all.main
             main()
             
             # Check that both calls received the same input file
