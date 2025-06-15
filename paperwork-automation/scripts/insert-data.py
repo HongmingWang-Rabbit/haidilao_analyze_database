@@ -91,7 +91,6 @@ def transform_excel_data(df):
         store_data = {
             'store_id': store_ids[store_name],
             'date': formatted_date,
-            'month': month,
             'is_holiday': row['节假日'] == '节假日',  # True if holiday, False if 工作日
             'tables_served': float(row['营业桌数']) if pd.notna(row['营业桌数']) else None,
             'tables_served_validated': float(row['营业桌数(考核)']) if pd.notna(row['营业桌数(考核)']) else None,
@@ -111,9 +110,9 @@ def generate_upsert_sql(data, table_name):
     if not data:
         return ""
     
-    # Updated column list without seats_total
+    # Updated column list without seats_total and month
     columns = [
-        'store_id', 'date', 'month', 'is_holiday', 'tables_served', 
+        'store_id', 'date', 'is_holiday', 'tables_served', 
         'tables_served_validated', 'turnover_rate', 'revenue_tax_included', 
         'takeout_tables', 'customers', 'discount_total'
     ]

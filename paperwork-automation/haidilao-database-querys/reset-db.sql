@@ -21,14 +21,13 @@ CREATE TABLE daily_report (
     id SERIAL PRIMARY KEY,
     store_id INTEGER REFERENCES store(id), -- 外键：门店
     date DATE,                             -- 日期
-    month INTEGER,                         -- 月份
     is_holiday BOOLEAN,                    -- 是否节假日
-    tables_served INTEGER,                -- 营业桌数
-    tables_served_validated INTEGER,      -- 营业桌数(考核)
+    tables_served NUMERIC(10, 2),                -- 营业桌数
+    tables_served_validated NUMERIC(10, 2),      -- 营业桌数(考核)
     turnover_rate NUMERIC(6, 3),          -- 翻台率(考核)
     revenue_tax_included NUMERIC(10, 2),  -- 营业收入(含税)
-    takeout_tables INTEGER,               -- 营业桌数(考核)(外卖)
-    customers INTEGER,                    -- 就餐人数
+    takeout_tables NUMERIC(10, 2),        -- 营业桌数(考核)(外卖)
+    customers NUMERIC(10, 2),                    -- 就餐人数
     discount_total NUMERIC(10, 2),        -- 优惠总金额(含税)
     UNIQUE(store_id, date)                -- Unique constraint for UPSERT
 );
@@ -47,7 +46,7 @@ CREATE TABLE store_time_report (
     date DATE,                                          -- 日期
     time_segment_id INTEGER REFERENCES time_segment(id), -- 外键：分时段
     is_holiday BOOLEAN,                                -- 是否节假日
-    tables_served_validated INTEGER,                   -- 营业桌数(考核)
+    tables_served_validated NUMERIC(10, 2),                   -- 营业桌数(考核)
     turnover_rate NUMERIC(6, 3),                       -- 翻台率(考核)
     UNIQUE(store_id, date, time_segment_id)            -- Unique constraint for UPSERT
 );

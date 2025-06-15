@@ -164,6 +164,41 @@ class AutomationMenu:
         if mode in commands:
             self.run_command(commands[mode], descriptions[mode])
     
+    def get_report_date(self) -> Optional[str]:
+        """Get report date from user"""
+        print("📅 SELECT REPORT DATE")
+        print("=" * 30)
+        print("Please enter the date for the report:")
+        print("Format: YYYY-MM-DD (e.g., 2025-06-10)")
+        print("Press Enter for default date (2025-06-10)")
+        print()
+        
+        date_input = input("Report date: ").strip()
+        
+        if not date_input:
+            return "2025-06-10"  # Default date
+        
+        # Basic date format validation
+        try:
+            from datetime import datetime
+            datetime.strptime(date_input, '%Y-%m-%d')
+            return date_input
+        except ValueError:
+            print(f"❌ Invalid date format: {date_input}")
+            print("Please use YYYY-MM-DD format")
+            return None
+    
+    def generate_report(self):
+        """Generate comparison report"""
+        report_date = self.get_report_date()
+        if not report_date:
+            input("\nPress Enter to continue...")
+            return
+        
+        command = f'python3 scripts/generate_database_report.py --date {report_date}'
+        description = f'Generating Comparison Report for {report_date}'
+        self.run_command(command, description)
+    
     def show_main_menu(self):
         """Show main menu and handle user input"""
         while True:
@@ -186,6 +221,12 @@ class AutomationMenu:
                 ("7", "Time Segments → Database", "db-time"),
             ]
             self.print_menu_section("🗄️  DATABASE OPERATIONS", database_options)
+            
+            # Report Generation
+            report_options = [
+                ("r", "Generate Comparison Report (对比上月表)", "report"),
+            ]
+            self.print_menu_section("📊 REPORT GENERATION", report_options)
             
             # Testing & Validation
             testing_options = [
@@ -236,6 +277,8 @@ class AutomationMenu:
                 self.clear_screen()
                 self.print_header()
                 self.show_status()
+            elif choice == 'r':
+                self.generate_report()
             elif choice == 'h':
                 self.show_help()
             elif choice == 'x':
@@ -270,6 +313,12 @@ class AutomationMenu:
         print("🗄️  DATABASE MODES:")
         print("• SQL Files: Generate .sql files for manual database import")
         print("• Direct Database: Insert data directly into PostgreSQL database")
+        print()
+        
+        print("📊 REPORT GENERATION:")
+        print("• Comparison Report: Generate Excel report (对比上月表) from database data")
+        print("• Output saved to OUTPUT_DIR (./output by default)")
+        print("• Filename format: report_YYYY_MM_DD.xlsx")
         print()
         
         print("📋 EXPECTED DATA FORMAT:")
