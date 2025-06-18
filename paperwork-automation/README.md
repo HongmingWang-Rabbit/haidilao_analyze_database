@@ -49,9 +49,74 @@ python3 -m unittest tests.test_* -v
 
 ## 📋 Entry Points
 
-### 🎯 1. Interactive Automation Menu (Recommended)
+### 🎯 1. Graphical User Interface (Recommended for New Users)
 
-The **interactive automation menu** provides the best user experience with comprehensive validation and 100% test coverage integration.
+The **modern GUI interface** provides the most user-friendly experience with visual controls and real-time output.
+
+```bash
+# Launch the beautiful GUI interface
+python3 scripts/automation-gui.py
+
+# Alternative launcher
+python3 launch-gui.py
+```
+
+**GUI Features:**
+
+- 🎨 **Modern Interface**: Beautiful tabbed interface with Haidilao branding
+- 📁 **File Browser**: Easy Excel file selection with drag-and-drop support
+- 📊 **Visual Processing**: All 7 processing modes with descriptions
+- 📈 **Report Generation**: Date picker and report history viewer
+- 🧪 **Integrated Testing**: Visual test execution with real-time output
+- 🗄️ **Database Management**: Connection status and database actions
+- ⚙️ **Settings Panel**: Environment configuration and system info
+- 📋 **Live Console**: Real-time command output with syntax highlighting
+- 📂 **Quick Actions**: One-click report generation and testing
+
+### 🎨 GUI Showcase
+
+The automation system now includes a modern tkinter-based GUI alongside the CLI menu. The GUI features:
+
+**🖥️ Interface Design:**
+
+- Clean tabbed interface with 5 main sections
+- **Live console panel on the right side** for real-time command output
+- Haidilao branding with professional red color scheme (#dc2626)
+- Progress indicators and status updates throughout
+- Cross-platform file browser integration
+
+**📋 Main Tabs:**
+
+1. **Data Processing** - File browser + 7 processing modes with descriptions
+2. **Reports** - Date picker, report generation, and history viewer
+3. **Testing** - Visual execution of all 62 comprehensive tests
+4. **Database** - Connection monitoring and management tools
+5. **Settings** - Environment configuration and system information
+
+**🔧 Live Console Features:**
+
+- **Spacious side panel layout** for better visibility
+- Real-time command output with syntax highlighting
+- Process control (start/stop/clear)
+- Status indicators synchronized with main interface
+- Word-wrapped output for long lines
+- Console status indicator (🟢 Ready, 🔄 Running, 🔴 Error, 🟡 Stopped)
+
+**🚀 Launch Options:**
+
+```bash
+# GUI Interface (recommended for visual users)
+python3 scripts/automation-gui.py
+# or
+python3 launch-gui.py
+
+# CLI Menu (recommended for automation/scripting)
+python3 scripts/automation-menu.py
+```
+
+### 🎯 2. Interactive Command Line Menu
+
+The **interactive automation menu** provides comprehensive validation and 100% test coverage integration.
 
 ```bash
 # Launch the interactive automation menu
@@ -384,3 +449,11 @@ MIT License - see LICENSE file for details.
 ---
 
 **🍲 Built for Haidilao restaurant operations with production-grade reliability and 100% test coverage**
+
+**🔧 Troubleshooting:**
+
+- Use 'Show System Status' to check configuration
+- Run 'Comprehensive Tests' to verify all functionality
+- Use 'Test Console Output' in Testing tab to verify GUI console
+- Ensure .env file contains database credentials
+- Check test coverage analysis for detailed diagnostics

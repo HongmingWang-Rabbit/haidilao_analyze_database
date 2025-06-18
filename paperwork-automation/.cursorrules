@@ -22,8 +22,10 @@ and generating comprehensive database reports with 4 worksheets:
 paperwork-automation/
 ├── scripts/                    # Entry points and CLI tools
 │   ├── automation-menu.py     # Interactive main menu (MUST UPDATE)
+│   ├── automation-gui.py      # Modern GUI interface (MUST UPDATE)
 │   ├── extract-all.py         # Data extraction orchestrator
 │   └── generate_database_report.py # Report generation
+├── launch-gui.py              # GUI launcher script
 ├── lib/                       # Core business logic
 │   ├── comparison_worksheet.py
 │   ├── yearly_comparison_worksheet.py
@@ -126,12 +128,13 @@ ALWAYS update these files in this order:
    - Update `run_comprehensive_tests.py` if needed
    - Ensure all tests pass: `python3 -m unittest tests.test_* -v`
 
-3. **Automation Menu** (scripts/automation-menu.py)
+3. **Automation Menu & GUI** (scripts/automation-menu.py & scripts/automation-gui.py)
 
-   - Add menu option for new feature
-   - Update help documentation
+   - Add menu option for new feature in CLI
+   - Add corresponding GUI tab/button if needed
+   - Update help documentation in both interfaces
    - Add to appropriate menu section
-   - Test command integration
+   - Test command integration in both CLI and GUI
 
 4. **README.md**
 
@@ -345,6 +348,62 @@ Use consistent emojis for:
 - Report generation: < 30 seconds
 - Menu response time: < 1 second
 - Database queries: < 10 seconds
+
+## 🎨 GUI DEVELOPMENT STANDARDS
+
+### Tkinter Best Practices
+
+- Use ttk widgets for modern appearance
+- Implement consistent styling with style.configure()
+- Follow Haidilao color scheme (red primary: #dc2626)
+- Use threading for long-running operations
+- Implement proper error handling with messagebox
+- Provide real-time feedback via console output
+
+### GUI Architecture
+
+- Single main window with tabbed interface
+- Separate concerns: processing, reports, testing, database, settings
+- Background thread execution for commands
+- Live output console with command feedback
+- Status bar with progress indication
+- File browser integration for Excel selection
+
+### User Experience Standards
+
+- Clear visual hierarchy with proper spacing
+- Descriptive labels and tooltips
+- Confirmation dialogs for destructive actions
+- Keyboard shortcuts where appropriate
+- Remember user preferences and last used values
+- Visual feedback for all operations
+
+### GUI Update Requirements
+
+When adding new features to GUI:
+
+1. **Update automation-gui.py**
+
+   - Add new tab if needed
+   - Integrate with existing command structure
+   - Follow established styling patterns
+   - Add proper error handling
+
+2. **Update automation-menu.py** (maintain CLI compatibility)
+
+   - Keep feature parity between GUI and CLI
+   - Ensure same commands work in both interfaces
+
+3. **Test both interfaces**
+
+   - Verify GUI functionality
+   - Ensure CLI menu still works
+   - Test cross-platform compatibility
+
+4. **Update README.md**
+   - Document new GUI features
+   - Update usage examples
+   - Maintain installation instructions
 
 ---
 
