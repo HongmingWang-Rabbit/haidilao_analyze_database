@@ -17,6 +17,7 @@ from lib.database_queries import ReportDataProvider
 from lib.comparison_worksheet import ComparisonWorksheetGenerator
 from lib.yearly_comparison_worksheet import YearlyComparisonWorksheetGenerator
 from lib.time_segment_worksheet import TimeSegmentWorksheetGenerator
+from lib.business_insight_worksheet import BusinessInsightWorksheetGenerator
 
 # Load environment variables
 load_dotenv()
@@ -43,6 +44,7 @@ class DatabaseReportGenerator:
         self.comparison_generator = ComparisonWorksheetGenerator(self.store_names, self.target_date)
         self.yearly_generator = YearlyComparisonWorksheetGenerator(self.store_names, self.target_date)
         self.time_segment_generator = TimeSegmentWorksheetGenerator(self.store_names, self.target_date)
+        self.business_insight_generator = BusinessInsightWorksheetGenerator(self.store_names, self.target_date)
     
     def generate_report(self):
         """Generate the complete report with all worksheets"""
@@ -86,6 +88,15 @@ class DatabaseReportGenerator:
         # Generate time segment worksheet (分时段-上报)
         print("⏰ Generating time segment worksheet...")
         time_segment_ws = self.time_segment_generator.generate_worksheet(wb)
+        
+        # Generate business insight worksheet (营业透视)
+        print("🔍 Generating business insight worksheet...")
+        business_insight_ws = self.business_insight_generator.generate_worksheet(
+            wb, daily_data, monthly_data, previous_month_data,
+            monthly_data,  # Use monthly_data as targets
+            current_mtd, prev_mtd,
+            daily_ranking, monthly_ranking, daily_ranking_values, monthly_ranking_values
+        )
         
         if not wb.worksheets:
             print("❌ No worksheets generated")
