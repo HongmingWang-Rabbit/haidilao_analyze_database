@@ -7,7 +7,7 @@ INSERT INTO store_monthly_target (
     turnover_rate, 
     table_avg_spending, 
     revenue, 
-    labor_percentage, 
+    labor_percentager, 
     gross_revenue, 
     monthly_CAD_USD_rate
 ) VALUES

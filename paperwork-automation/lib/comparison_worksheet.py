@@ -53,7 +53,20 @@ class ComparisonWorksheetGenerator:
             monthly_tables = sum(float(row['monthly_tables']) for row in monthly_dict.values())
             monthly_tables_validated = sum(float(row['monthly_tables_validated']) for row in monthly_dict.values())
             monthly_revenue = sum(float(row['monthly_revenue']) for row in monthly_dict.values())
-            avg_monthly_turnover = sum(float(row['avg_turnover_rate']) for row in monthly_dict.values()) / len(monthly_dict) if monthly_dict else 0
+            # Calculate average turnover rate using time segment method for consistency
+            # This should match the time segment worksheet calculation (3.67)
+            from lib.time_segment_worksheet import TimeSegmentWorksheetGenerator
+            time_segment_generator = TimeSegmentWorksheetGenerator(self.store_names, self.target_date)
+            time_segment_data = time_segment_generator.get_time_segment_data_for_date(self.target_date)
+            
+            store_turnover_totals = []
+            for store_id in self.store_names.keys():
+                if store_id in time_segment_data:
+                    store_data = time_segment_data[store_id]
+                    store_totals = time_segment_generator.calculate_store_totals(store_data)
+                    store_turnover_totals.append(store_totals['total_turnover_current'])
+            
+            avg_monthly_turnover = sum(store_turnover_totals) / len(store_turnover_totals) if store_turnover_totals else 0
             
             # Previous month totals
             prev_month_tables = sum(float(row['prev_monthly_tables']) for row in prev_month_dict.values()) if prev_month_dict else 0

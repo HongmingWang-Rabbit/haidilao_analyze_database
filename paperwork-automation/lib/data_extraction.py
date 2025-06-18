@@ -367,10 +367,10 @@ def transform_daily_report_data(df):
             'tables_served': float(row['营业桌数']) if pd.notna(row['营业桌数']) else None,
             'tables_served_validated': float(row['营业桌数(考核)']) if pd.notna(row['营业桌数(考核)']) else None,
             'turnover_rate': float(row['翻台率(考核)']) if pd.notna(row['翻台率(考核)']) else None,
-            'revenue': float(row['营业收入(不含税)']) if pd.notna(row['营业收入(不含税)']) else None,
+            'revenue_tax_not_included': float(row['营业收入(不含税)']) if pd.notna(row['营业收入(不含税)']) else None,
             'takeout_tables': float(row['营业桌数(考核)(外卖)']) if pd.notna(row['营业桌数(考核)(外卖)']) else None,
-            'customer_count': float(row['就餐人数']) if pd.notna(row['就餐人数']) else None,
-            'discount_amount': float(row['优惠总金额(不含税)']) if pd.notna(row['优惠总金额(不含税)']) else None
+            'customers': float(row['就餐人数']) if pd.notna(row['就餐人数']) else None,
+            'discount_total': float(row['优惠总金额(不含税)']) if pd.notna(row['优惠总金额(不含税)']) else None
         }
         
         transformed_data.append(daily_data)
@@ -510,7 +510,7 @@ def extract_daily_reports(input_file, output_file=None, debug=False, direct_db=F
             # Generate UPSERT SQL
             columns = [
                 'store_id', 'date', 'is_holiday', 'tables_served', 'tables_served_validated',
-                'turnover_rate', 'revenue', 'takeout_tables', 'customer_count', 'discount_amount'
+                'turnover_rate', 'revenue_tax_not_included', 'takeout_tables', 'customers', 'discount_total'
             ]
             sql = generate_upsert_sql(transformed_data, 'daily_report', columns)
             
@@ -597,7 +597,7 @@ def insert_daily_data_to_database(data, is_test=False):
         # Generate SQL
         columns = [
             'store_id', 'date', 'is_holiday', 'tables_served', 'tables_served_validated',
-            'turnover_rate', 'revenue', 'takeout_tables', 'customer_count', 'discount_amount'
+            'turnover_rate', 'revenue_tax_not_included', 'takeout_tables', 'customers', 'discount_total'
         ]
         sql = generate_upsert_sql(data, 'daily_report', columns)
         

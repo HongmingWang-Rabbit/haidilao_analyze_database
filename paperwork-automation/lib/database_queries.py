@@ -67,7 +67,9 @@ class ReportDataProvider:
             END as period_type
         FROM daily_report dr
         JOIN store s ON dr.store_id = s.id
-        LEFT JOIN store_monthly_target smt ON s.id = smt.store_id
+        LEFT JOIN store_monthly_target smt ON s.id = smt.store_id 
+            AND EXTRACT(YEAR FROM smt.month) = %s 
+            AND EXTRACT(MONTH FROM smt.month) = %s
         WHERE (
             -- Target day
             dr.date = %s
@@ -103,6 +105,7 @@ class ReportDataProvider:
                     prev_year, month, day,  # prev_year_mtd
                     year, month,  # current_month
                     prev_month_year, prev_month,  # prev_month
+                    year, month,  # JOIN condition for monthly targets
                     target_date,  # WHERE target day
                     year, month,  # WHERE current month
                     prev_month_year, prev_month,  # WHERE prev month

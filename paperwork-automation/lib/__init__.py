@@ -10,4 +10,5 @@ from .data_extraction import (
 # Report generation functions
 from .comparison_worksheet import ComparisonWorksheetGenerator
 from .yearly_comparison_worksheet import YearlyComparisonWorksheetGenerator
+from .time_segment_worksheet import TimeSegmentWorksheetGenerator
 from .database_queries import ReportDataProvider 

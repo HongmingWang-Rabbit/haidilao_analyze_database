@@ -16,6 +16,7 @@ from utils.database import DatabaseConfig, DatabaseManager
 from lib.database_queries import ReportDataProvider
 from lib.comparison_worksheet import ComparisonWorksheetGenerator
 from lib.yearly_comparison_worksheet import YearlyComparisonWorksheetGenerator
+from lib.time_segment_worksheet import TimeSegmentWorksheetGenerator
 
 # Load environment variables
 load_dotenv()
@@ -41,6 +42,7 @@ class DatabaseReportGenerator:
         self.data_provider = ReportDataProvider(self.db_manager)
         self.comparison_generator = ComparisonWorksheetGenerator(self.store_names, self.target_date)
         self.yearly_generator = YearlyComparisonWorksheetGenerator(self.store_names, self.target_date)
+        self.time_segment_generator = TimeSegmentWorksheetGenerator(self.store_names, self.target_date)
     
     def generate_report(self):
         """Generate the complete report with all worksheets"""
@@ -80,6 +82,10 @@ class DatabaseReportGenerator:
         yearly_ws = self.yearly_generator.generate_worksheet(
             wb, yearly_current, yearly_previous
         )
+        
+        # Generate time segment worksheet (分时段-上报)
+        print("⏰ Generating time segment worksheet...")
+        time_segment_ws = self.time_segment_generator.generate_worksheet(wb)
         
         if not wb.worksheets:
             print("❌ No worksheets generated")
