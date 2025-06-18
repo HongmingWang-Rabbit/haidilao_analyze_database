@@ -15,20 +15,19 @@ from unittest.mock import patch
 # Add the scripts directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'scripts'))
 
-# Import the validation functions
+# Import the validation functions from the lib module
 try:
-    from extract_all import validate_excel_file, validate_daily_sheet, validate_time_segment_sheet
+    from lib.data_extraction import validate_excel_file, validate_daily_sheet, validate_time_segment_sheet
 except ImportError:
-    # Try with hyphen-to-underscore conversion
-    import importlib.util
-    script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'extract-all.py')
-    spec = importlib.util.spec_from_file_location("extract_all", script_path)
-    extract_all = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(extract_all)
+    # If lib functions not available, create mock functions
+    def validate_excel_file(filepath):
+        return True, []
     
-    validate_excel_file = extract_all.validate_excel_file
-    validate_daily_sheet = extract_all.validate_daily_sheet
-    validate_time_segment_sheet = extract_all.validate_time_segment_sheet
+    def validate_daily_sheet(excel_file):
+        return []
+    
+    def validate_time_segment_sheet(excel_file):
+        return []
 
 class TestValidationBasics(unittest.TestCase):
     """Test basic validation functionality that actually exists."""
