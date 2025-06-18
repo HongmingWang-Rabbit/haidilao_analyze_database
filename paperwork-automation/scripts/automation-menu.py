@@ -48,10 +48,8 @@ class AutomationMenu:
         print("-" * 50)
         
         try:
-            if command.startswith('npm run'):
-                result = subprocess.run(command.split(), capture_output=False, text=True)
-            else:
-                result = subprocess.run(command, shell=True, capture_output=False, text=True)
+            # All commands are now Python-based
+            result = subprocess.run(command, shell=True, capture_output=False, text=True)
             
             print("-" * 50)
             if result.returncode == 0:
@@ -164,7 +162,7 @@ class AutomationMenu:
             return
         
         commands = {
-            'enhanced': f'ts-node scripts/extract-sql-enhanced.ts process "{excel_file}"',
+            'enhanced': f'python3 scripts/extract-all.py "{excel_file}" --enhanced',
             'all': f'python3 scripts/extract-all.py "{excel_file}"',
             'daily': f'python3 scripts/extract-all.py "{excel_file}" --daily-only',
             'time': f'python3 scripts/extract-time-segments.py "{excel_file}"',
@@ -174,7 +172,7 @@ class AutomationMenu:
         }
         
         descriptions = {
-            'enhanced': 'Enhanced TypeScript Processing',
+            'enhanced': 'Enhanced Python Processing',
             'all': 'Complete Python Processing (SQL Files)',
             'daily': 'Daily Reports Only (SQL Files)',
             'time': 'Time Segments Only (SQL Files)',
@@ -255,7 +253,7 @@ class AutomationMenu:
             
             # Processing Options
             processing_options = [
-                ("1", "Enhanced TypeScript Processing", "enhanced"),
+                ("1", "Enhanced Python Processing", "enhanced"),
                 ("2", "Complete Python Processing (SQL Files)", "all"),
                 ("3", "Daily Reports Only (SQL Files)", "daily"),
                 ("4", "Time Segments Only (SQL Files)", "time"),
@@ -280,15 +278,15 @@ class AutomationMenu:
             testing_options = [
                 ("t", "Run Comprehensive Tests (62 tests, 100% coverage)", "comprehensive_tests"),
                 ("a", "Run Test Coverage Analysis", "test_analysis"),
-                ("v", "Validate System (Legacy)", "npm run validate"),
+                ("v", "Validate System (Python)", "python3 -m unittest tests.test_validation_against_actual_data -v"),
                 ("q", "Quick Core Tests", "quick_tests"),
             ]
             self.print_menu_section("🧪 TESTING & VALIDATION", testing_options)
             
             # Database Management
             db_management_options = [
-                ("d", "Setup Test Database", "npm run db:setup"),
-                ("c", "Check Database Connections", "npm run db:verify"),
+                ("d", "Setup Test Database", "python3 -c \"from utils.database import reset_test_database; reset_test_database()\""),
+                ("c", "Check Database Connections", "python3 -c \"from utils.database import verify_database_connection; print('Production:', verify_database_connection(False)); print('Test:', verify_database_connection(True))\""),
                 ("s", "Show System Status", "status"),
             ]
             self.print_menu_section("⚙️  DATABASE MANAGEMENT", db_management_options)
@@ -317,14 +315,16 @@ class AutomationMenu:
             elif choice == 'a':
                 self.run_test_analysis()
             elif choice == 'v':
-                self.run_command("npm run validate", "System Validation (Legacy)")
+                self.run_command("python3 -m unittest tests.test_validation_against_actual_data -v", "System Validation (Python)")
             elif choice == 'q':
                 command = 'python3 -m unittest tests.test_business_insight_worksheet -v'
                 self.run_command(command, "Quick Core Tests (Business Insight)")
             elif choice == 'd':
-                self.run_command("npm run db:setup", "Setting up Test Database")
+                command = "python3 -c \"from utils.database import reset_test_database; reset_test_database()\""
+                self.run_command(command, "Setting up Test Database")
             elif choice == 'c':
-                self.run_command("npm run db:verify && npm run db:verify-test", "Checking Database Connections")
+                command = "python3 -c \"from utils.database import verify_database_connection; print('Production:', verify_database_connection(False)); print('Test:', verify_database_connection(True))\""
+                self.run_command(command, "Checking Database Connections")
             elif choice == 's':
                 self.clear_screen()
                 self.print_header()
@@ -357,7 +357,7 @@ class AutomationMenu:
         print()
         
         print("📊 DATA PROCESSING MODES:")
-        print("• Enhanced TypeScript: Advanced processing with validation")
+        print("• Enhanced Python: Advanced processing with validation")
         print("• Complete Python: Full processing of all data types")
         print("• Daily Reports: Process only daily summary data")
         print("• Time Segments: Process only time-based segment data")

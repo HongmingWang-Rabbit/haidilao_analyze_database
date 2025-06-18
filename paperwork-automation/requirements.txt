@@ -1,0 +1,20 @@
+# 🍲 Haidilao Paperwork Automation System - Python Dependencies
+# Production-grade restaurant data processing and report generation
+
+# === CORE LIBRARIES ===
+pandas>=2.0.0,<3.0.0               # Data manipulation and analysis
+openpyxl>=3.1.0,<4.0.0              # Excel file handling (.xlsx)
+xlsxwriter>=3.1.0,<4.0.0           # Excel formatting and writing
+
+# === DATABASE ===
+psycopg2-binary>=2.9.0,<3.0.0      # PostgreSQL adapter for Python
+sqlalchemy>=2.0.0,<3.0.0           # SQL toolkit and ORM
+
+# === UTILITIES ===
+python-dotenv>=1.0.0,<2.0.0        # Environment variable management
+pathlib                             # File path operations (built-in Python 3.4+)
+datetime                            # Date/time handling (built-in)
+logging                             # Logging support (built-in)
+
+# === DEVELOPMENT & TESTING ===
+unittest                            # Unit testing framework (built-in) 

@@ -1,0 +1,353 @@
+# Haidilao Paperwork Automation System - Cursor Rules
+
+# ===================================================
+
+# This file defines coding standards, project structure, and automated update requirements
+
+# for the Haidilao restaurant data processing and report generation system.
+
+## 🎯 PROJECT OVERVIEW
+
+This is a production-grade automation system for processing Haidilao restaurant Excel data
+and generating comprehensive database reports with 4 worksheets:
+
+- 对比上月表 (Monthly Comparison)
+- 同比数据 (Yearly Comparison)
+- 分时段-上报 (Time Segment Report)
+- 营业透视 (Business Insight)
+
+## 📁 PROJECT STRUCTURE
+
+```
+paperwork-automation/
+├── scripts/                    # Entry points and CLI tools
+│   ├── automation-menu.py     # Interactive main menu (MUST UPDATE)
+│   ├── extract-all.py         # Data extraction orchestrator
+│   └── generate_database_report.py # Report generation
+├── lib/                       # Core business logic
+│   ├── comparison_worksheet.py
+│   ├── yearly_comparison_worksheet.py
+│   ├── time_segment_worksheet.py
+│   ├── business_insight_worksheet.py
+│   ├── data_extraction.py
+│   └── database_queries.py
+├── tests/                     # Comprehensive test suite (MUST UPDATE)
+│   ├── test_business_insight_worksheet.py
+│   ├── test_yearly_comparison_worksheet.py
+│   ├── test_time_segment_worksheet.py
+│   ├── test_extract_all.py
+│   ├── test_validation_against_actual_data.py
+│   └── run_comprehensive_tests.py
+├── utils/                     # Shared utilities
+│   └── database.py
+├── output/                    # Generated reports
+├── README.md                  # Main documentation (MUST UPDATE)
+├── requirements.txt          # Python dependencies
+└── .cursorrules              # This file
+```
+
+## 🔧 CODING STANDARDS
+
+### Python Code Style
+
+- Use Python 3.8+ features
+- Follow PEP 8 with 100-character line limit
+- Use type hints for all function parameters and returns
+- Use docstrings for all classes and functions
+- Prefer f-strings over .format() or % formatting
+- Use pathlib.Path for file operations
+- Handle errors gracefully with specific exception types
+
+### File Organization
+
+- One class per file when possible
+- Group related functions logically
+- Import order: standard library, third-party, local imports
+- Use relative imports within the project
+
+### Database Integration
+
+- Always use parameterized queries to prevent SQL injection
+- Use connection pooling and proper resource cleanup
+- Support both test and production database environments
+- Implement transaction safety with rollback on errors
+
+### Excel Processing
+
+- Use pandas + openpyxl for Excel operations
+- Validate data before processing
+- Handle missing/null values gracefully
+- Support Chinese store names and time segments properly
+
+## 🧪 TESTING REQUIREMENTS
+
+### Test Coverage Standards
+
+- Maintain 100% test coverage for core modules
+- Each new feature MUST include comprehensive tests
+- Test categories required:
+  - Initialization tests
+  - Success path tests
+  - Error handling tests
+  - Edge case tests
+  - Integration tests
+  - Data validation tests
+
+### Test File Naming
+
+- Test files: `test_{module_name}.py`
+- Test classes: `Test{ClassName}`
+- Test methods: `test_{functionality}_{scenario}`
+
+### Current Working Test Modules (62 tests total)
+
+- `test_business_insight_worksheet.py` (9 tests)
+- `test_yearly_comparison_worksheet.py` (21 tests)
+- `test_time_segment_worksheet.py` (9 tests)
+- `test_extract_all.py` (18 tests)
+- `test_validation_against_actual_data.py` (5 tests)
+
+## 📋 MANDATORY UPDATE REQUIREMENTS
+
+### When Adding New Features
+
+ALWAYS update these files in this order:
+
+1. **Core Implementation** (lib/ modules)
+
+   - Implement the feature with proper error handling
+   - Add type hints and docstrings
+   - Follow existing patterns
+
+2. **Tests** (tests/ directory)
+
+   - Add comprehensive test coverage
+   - Test all success and failure scenarios
+   - Update `run_comprehensive_tests.py` if needed
+   - Ensure all tests pass: `python3 -m unittest tests.test_* -v`
+
+3. **Automation Menu** (scripts/automation-menu.py)
+
+   - Add menu option for new feature
+   - Update help documentation
+   - Add to appropriate menu section
+   - Test command integration
+
+4. **README.md**
+
+   - Update feature list
+   - Add usage examples
+   - Update test count and coverage info
+   - Document any new dependencies
+
+5. **Requirements.txt** (if applicable)
+   - Add new Python dependencies
+   - Update version constraints if needed
+
+### When Modifying Existing Features
+
+1. **Update tests first** to reflect new expected behavior
+2. **Modify implementation** to pass tests
+3. **Update menu** if command interface changes
+4. **Update README** if user-facing behavior changes
+5. **Update requirements.txt** if new dependencies added
+
+## 🎯 FEATURE IMPLEMENTATION PATTERNS
+
+### New Worksheet Generator
+
+```python
+class NewWorksheetGenerator:
+    """Generator for new worksheet type."""
+
+    def __init__(self, data_provider: ReportDataProvider):
+        self.data_provider = data_provider
+        self.logger = logging.getLogger(__name__)
+
+    def generate_worksheet(self, workbook, target_date: str) -> None:
+        """Generate worksheet with proper formatting."""
+        # Implementation with error handling
+        pass
+```
+
+### New Test Module Template
+
+```python
+class TestNewWorksheetGenerator(unittest.TestCase):
+    """Comprehensive tests for NewWorksheetGenerator."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        pass
+
+    def test_generator_initialization(self):
+        """Test generator initialization."""
+        pass
+
+    def test_worksheet_creation(self):
+        """Test worksheet creation."""
+        pass
+
+    # Add 5-10 more test methods covering all scenarios
+```
+
+### Menu Integration Pattern
+
+```python
+# In automation-menu.py, add to appropriate section:
+new_options = [
+    ("n", "New Feature Description", "new_feature"),
+]
+self.print_menu_section("📊 SECTION NAME", new_options)
+
+# Add handler:
+elif choice == 'n':
+    self.run_new_feature()
+
+def run_new_feature(self):
+    """Handle new feature execution."""
+    command = 'python3 scripts/new_feature.py'
+    self.run_command(command, "New Feature Description")
+```
+
+## 📊 REPORT GENERATION STANDARDS
+
+### Excel Formatting
+
+- Use professional styling with borders and colors
+- Set appropriate column widths (15-20 for text, 12-15 for numbers)
+- Merge cells for headers appropriately
+- Use conditional formatting for data highlighting
+- Support Chinese characters properly
+
+### Data Validation
+
+- Validate all input data before processing
+- Handle Store 6 closure scenarios gracefully
+- Ensure numeric calculations are accurate
+- Implement percentage formatting for rates
+
+### Error Handling
+
+- Log all errors with context
+- Provide user-friendly error messages
+- Fail gracefully without corrupting output
+- Support partial data scenarios
+
+## 🗄️ DATABASE BEST PRACTICES
+
+### Connection Management
+
+- Use environment variables for credentials
+- Support both test and production databases
+- Implement connection retry logic
+- Close connections properly
+
+### Query Optimization
+
+- Use single optimized queries when possible
+- Implement proper indexing assumptions
+- Cache frequently accessed data
+- Use transactions for data consistency
+
+## 📱 CLI/Menu Design Principles
+
+### User Experience
+
+- Clear, emoji-enhanced menus
+- Confirmation prompts for destructive actions
+- Progress indicators for long operations
+- Helpful error messages with suggestions
+
+### Command Structure
+
+- Consistent command naming
+- Support for help flags (--help)
+- Reasonable defaults
+- Clear success/failure feedback
+
+## 🔍 CODE REVIEW CHECKLIST
+
+Before any commit, ensure:
+
+- [ ] All tests pass (100% success rate required)
+- [ ] New features have comprehensive test coverage
+- [ ] Automation menu updated if needed
+- [ ] README.md reflects current capabilities
+- [ ] Error handling implemented
+- [ ] Type hints added
+- [ ] Docstrings present
+- [ ] No hardcoded values (use config/env vars)
+- [ ] Chinese text handling works correctly
+- [ ] Database connections cleaned up properly
+
+## 🚀 DEPLOYMENT STANDARDS
+
+### Environment Setup
+
+- Python 3.8+ required
+- All dependencies in requirements.txt
+- Environment variables documented in README
+- Database schema files present
+
+### Testing Before Release
+
+1. Run comprehensive test suite: `python3 -m unittest tests.test_* -v`
+2. Test automation menu: `python3 scripts/automation-menu.py`
+3. Verify report generation with test data
+4. Check database connections
+5. Validate all help documentation
+
+## 🎨 EMOJI USAGE STANDARDS
+
+Use consistent emojis for:
+
+- 🍲 Project branding
+- ✅ Success states
+- ❌ Error states
+- ⚠️ Warnings
+- 🔄 Processing
+- 📊 Data/Reports
+- 🧪 Testing
+- 🗄️ Database
+- 📁 Files
+- 🎯 Goals/Targets
+- 🚀 Deployment/Launch
+
+## 📞 SUPPORT AND DOCUMENTATION
+
+### Internal Documentation
+
+- Update docstrings for all public methods
+- Add inline comments for complex logic
+- Document data formats and expected inputs
+- Maintain database schema documentation
+
+### User Documentation
+
+- Keep README.md current with features
+- Document all CLI options
+- Provide troubleshooting guide
+- Include example usage
+
+## 🔧 MAINTENANCE REQUIREMENTS
+
+### Regular Updates
+
+- Test with new data monthly
+- Update dependencies quarterly
+- Review and optimize database queries
+- Monitor test execution time
+
+### Performance Standards
+
+- Test suite execution: < 5 seconds
+- Report generation: < 30 seconds
+- Menu response time: < 1 second
+- Database queries: < 10 seconds
+
+---
+
+**🍲 Remember: This is a production system for Haidilao restaurant operations.**
+**Every change must maintain reliability and data accuracy.**
+**When in doubt, add more tests and update documentation.**

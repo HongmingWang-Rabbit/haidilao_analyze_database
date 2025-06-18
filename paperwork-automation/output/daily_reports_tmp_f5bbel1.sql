@@ -1,0 +1,4 @@
+INSERT INTO daily_report (store_id, date, is_holiday, tables_served, tables_served_validated, turnover_rate, revenue_tax_not_included, takeout_tables, customers, discount_total) VALUES
+  (1, '2025-06-10', False, 50.0, 48.0, 2.5, 15000.0, 5.0, 120.0, 500.0)
+ON CONFLICT (store_id, date) DO UPDATE SET
+  is_holiday = EXCLUDED.is_holiday, tables_served = EXCLUDED.tables_served, tables_served_validated = EXCLUDED.tables_served_validated, turnover_rate = EXCLUDED.turnover_rate, revenue_tax_not_included = EXCLUDED.revenue_tax_not_included, takeout_tables = EXCLUDED.takeout_tables, customers = EXCLUDED.customers, discount_total = EXCLUDED.discount_total;
