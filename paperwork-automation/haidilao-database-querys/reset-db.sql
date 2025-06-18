@@ -25,7 +25,7 @@ CREATE TABLE daily_report (
     tables_served NUMERIC(10, 2),                -- 营业桌数
     tables_served_validated NUMERIC(10, 2),      -- 营业桌数(考核)
     turnover_rate NUMERIC(6, 3),          -- 翻台率(考核)
-    revenue_tax_included NUMERIC(10, 2),  -- 营业收入(含税)
+    revenue_tax_not_included NUMERIC(10, 2),  -- 营业收入(含税)
     takeout_tables NUMERIC(10, 2),        -- 营业桌数(考核)(外卖)
     customers NUMERIC(10, 2),                    -- 就餐人数
     discount_total NUMERIC(10, 2),        -- 优惠总金额(含税)

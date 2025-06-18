@@ -95,7 +95,7 @@ def transform_excel_data(df):
             'tables_served': float(row['营业桌数']) if pd.notna(row['营业桌数']) else None,
             'tables_served_validated': float(row['营业桌数(考核)']) if pd.notna(row['营业桌数(考核)']) else None,
             'turnover_rate': float(row['翻台率(考核)']) if pd.notna(row['翻台率(考核)']) else None,
-            'revenue_tax_included': float(row['营业收入(不含税)']) if pd.notna(row['营业收入(不含税)']) else None,
+            'revenue_tax_not_included': float(row['营业收入(不含税)']) if pd.notna(row['营业收入(不含税)']) else None,
             'takeout_tables': float(row['营业桌数(考核)(外卖)']) if pd.notna(row['营业桌数(考核)(外卖)']) else None,
             'customers': int(row['就餐人数']) if pd.notna(row['就餐人数']) else None,
             'discount_total': float(row['优惠总金额(不含税)']) if pd.notna(row['优惠总金额(不含税)']) else None
@@ -113,7 +113,7 @@ def generate_upsert_sql(data, table_name):
     # Updated column list without seats_total and month
     columns = [
         'store_id', 'date', 'is_holiday', 'tables_served', 
-        'tables_served_validated', 'turnover_rate', 'revenue_tax_included', 
+        'tables_served_validated', 'turnover_rate', 'revenue_tax_not_included', 
         'takeout_tables', 'customers', 'discount_total'
     ]
     

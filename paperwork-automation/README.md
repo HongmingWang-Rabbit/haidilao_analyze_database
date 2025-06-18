@@ -42,6 +42,11 @@ pip install pandas openpyxl
 The new enhanced TypeScript interface provides the best user experience with comprehensive validation and clear feedback.
 
 ```bash
+# all in one user interface
+npm run open-automation-menu
+```
+
+```bash
 # Process Excel file with full validation
 npm run extract-enhanced process data.xlsx
 

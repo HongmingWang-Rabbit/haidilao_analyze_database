@@ -111,7 +111,7 @@ class TestInsertData(unittest.TestCase):
         second_store = result[1]
         self.assertEqual(second_store['store_id'], 2)
         self.assertEqual(second_store['is_holiday'], True)  # 节假日
-        self.assertEqual(second_store['revenue_tax_included'], 18000.0)
+        self.assertEqual(second_store['revenue_tax_not_included'], 18000.0)
     
     def test_transform_excel_data_invalid_date(self):
         """Test handling of invalid date formats."""
@@ -147,7 +147,7 @@ class TestInsertData(unittest.TestCase):
                 'tables_served': 50.0,
                 'tables_served_validated': 48.0,
                 'turnover_rate': 2.5,
-                'revenue_tax_included': 15000.0,
+                'revenue_tax_not_included': 15000.0,
                 'takeout_tables': 5.0,
                 'customers': 120,
                 'discount_total': 500.0
@@ -182,7 +182,7 @@ class TestInsertData(unittest.TestCase):
                 'tables_served': None,
                 'tables_served_validated': 48.0,
                 'turnover_rate': None,
-                'revenue_tax_included': 15000.0,
+                'revenue_tax_not_included': 15000.0,
                 'takeout_tables': 5.0,
                 'customers': 120,
                 'discount_total': None
