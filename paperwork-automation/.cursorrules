@@ -410,3 +410,4 @@ When adding new features to GUI:
 **🍲 Remember: This is a production system for Haidilao restaurant operations.**
 **Every change must maintain reliability and data accuracy.**
 **When in doubt, add more tests and update documentation.**
+ 

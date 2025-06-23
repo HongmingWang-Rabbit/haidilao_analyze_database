@@ -30,10 +30,12 @@ ENV/
 .env.production.local
 
 # === PROJECT SPECIFIC ===
-output/                    # Generated reports
-data/*.xlsx               # Input Excel files (contains sensitive data)
-data/*.xls                # Legacy Excel files
-*.log                     # Log files
+output/**/*                    # Generated reports
+*.log
+data/**/*
+output/**/*
+data/**
+output/**
 
 # === DEVELOPMENT ===
 .DS_Store                 # macOS system files
