@@ -184,6 +184,52 @@ class AutomationMenu:
         if mode in commands:
             self.run_command(commands[mode], descriptions[mode])
     
+    def convert_other_source(self):
+        """Convert other source format to Haidilao format"""
+        print("🔄 CONVERT OTHER SOURCE TO HAIDILAO FORMAT")
+        print("=" * 50)
+        print("This tool converts transactional POS data to Haidilao format.")
+        print()
+        
+        # Get input file
+        excel_file = self.get_excel_file()
+        if not excel_file:
+            input("\nPress Enter to continue...")
+            return
+        
+        # Get store details
+        print("\n📋 STORE CONFIGURATION")
+        print("-" * 30)
+        store_name = input("Store name (default: 加拿大六店): ").strip()
+        if not store_name:
+            store_name = "加拿大六店"
+        
+        store_code = input("Store code (default: 119812): ").strip()
+        if not store_code:
+            store_code = "119812"
+        
+        # Generate output filename
+        import os
+        input_basename = os.path.splitext(os.path.basename(excel_file))[0]
+        output_file = f"output/converted_{input_basename}_haidilao_format.xlsx"
+        
+        print(f"\n📄 Output file: {output_file}")
+        
+        # Confirm conversion
+        confirm = input("\nProceed with conversion? (y/N): ").strip().lower()
+        if confirm not in ['y', 'yes']:
+            print("Conversion cancelled.")
+            input("Press Enter to continue...")
+            return
+        
+        # Run conversion
+        command = f'python3 scripts/convert_other_source.py "{excel_file}" --output "{output_file}" --store-name "{store_name}" --store-code "{store_code}"'
+        if self.run_command(command, "Converting Other Source to Haidilao Format"):
+            print(f"\n💡 Next steps:")
+            print(f"1. Use the converted file: {output_file}")
+            print(f"2. Process with: python3 scripts/extract-all.py \"{output_file}\"")
+            print(f"3. Note: Store '{store_name}' may need to be added to database if not recognized")
+    
     def get_report_date(self) -> Optional[str]:
         """Get report date from user"""
         print("📅 SELECT REPORT DATE")
@@ -268,6 +314,12 @@ class AutomationMenu:
             ]
             self.print_menu_section("🗄️  DATABASE OPERATIONS", database_options)
             
+            # Data Conversion
+            conversion_options = [
+                ("c", "Convert Other Source to Haidilao Format", "convert"),
+            ]
+            self.print_menu_section("🔄 DATA CONVERSION", conversion_options)
+            
             # Report Generation
             report_options = [
                 ("r", "Generate Database Report (4 worksheets)", "report"),
@@ -286,7 +338,7 @@ class AutomationMenu:
             # Database Management
             db_management_options = [
                 ("d", "Setup Test Database", "python3 -c \"from utils.database import reset_test_database; reset_test_database()\""),
-                ("c", "Check Database Connections", "python3 -c \"from utils.database import verify_database_connection; print('Production:', verify_database_connection(False)); print('Test:', verify_database_connection(True))\""),
+                ("k", "Check Database Connections", "python3 -c \"from utils.database import verify_database_connection; print('Production:', verify_database_connection(False)); print('Test:', verify_database_connection(True))\""),
                 ("s", "Show System Status", "status"),
             ]
             self.print_menu_section("⚙️  DATABASE MANAGEMENT", db_management_options)
@@ -319,10 +371,12 @@ class AutomationMenu:
             elif choice == 'q':
                 command = 'python3 -m unittest tests.test_business_insight_worksheet -v'
                 self.run_command(command, "Quick Core Tests (Business Insight)")
+            elif choice == 'c':
+                self.convert_other_source()
             elif choice == 'd':
                 command = "python3 -c \"from utils.database import reset_test_database; reset_test_database()\""
                 self.run_command(command, "Setting up Test Database")
-            elif choice == 'c':
+            elif choice == 'k':
                 command = "python3 -c \"from utils.database import verify_database_connection; print('Production:', verify_database_connection(False)); print('Test:', verify_database_connection(True))\""
                 self.run_command(command, "Checking Database Connections")
             elif choice == 's':
@@ -354,6 +408,13 @@ class AutomationMenu:
         print("This automation system processes Haidilao restaurant data from Excel files")
         print("and can output SQL files or insert directly into the database.")
         print("Now includes comprehensive 100% test coverage for all core functionality.")
+        print()
+        
+        print("🔄 DATA CONVERSION:")
+        print("• Convert Other Source: Transform transactional POS data to Haidilao format")
+        print("• Supports daily transaction files with time-based aggregation")
+        print("• Automatically generates proper 营业基础表 and 分时段基础表 sheets")
+        print("• Configurable store names and codes")
         print()
         
         print("📊 DATA PROCESSING MODES:")
