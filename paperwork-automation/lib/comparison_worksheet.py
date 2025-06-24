@@ -53,6 +53,7 @@ class ComparisonWorksheetGenerator:
             monthly_tables = sum(float(row['monthly_tables']) for row in monthly_dict.values())
             monthly_tables_validated = sum(float(row['monthly_tables_validated']) for row in monthly_dict.values())
             monthly_revenue = sum(float(row['monthly_revenue']) for row in monthly_dict.values())
+
             # Calculate average turnover rate using time segment method for consistency
             # This should match the time segment worksheet calculation (3.67)
             from lib.time_segment_worksheet import TimeSegmentWorksheetGenerator
@@ -240,8 +241,12 @@ class ComparisonWorksheetGenerator:
                 return ""
         elif content == f"{target_dt.month}月平均翻台率排名":
             if store_name == "加拿大片区":
-                result = round(avg_monthly_turnover, 2)
-                return result
+                # Calculate the average of all monthly ranking values
+                if monthly_ranking_values and len(monthly_ranking_values) > 0:
+                    result = sum(monthly_ranking_values) / len(monthly_ranking_values)
+                    return round(result, 2)
+                else:
+                    return round(avg_monthly_turnover, 2)
             else:
                 col_index = col - 3
                 if col_index < len(monthly_ranking_values):
@@ -374,9 +379,30 @@ class ComparisonWorksheetGenerator:
         self.apply_common_formatting(ws, current_row)
 
         # manual modify some displays 
-        # #当月累计平均翻台率
+        # #当月累计平均翻台率 - Calculate the correct average from monthly ranking values
         ws.merge_cells('J25:J28')
         mtd_avg_turnover = ws['J25']
+        
+        # Calculate the correct average of monthly ranking values
+        if monthly_ranking_values and len(monthly_ranking_values) > 0:
+            correct_avg = sum(monthly_ranking_values) / len(monthly_ranking_values)
+            mtd_avg_turnover.value = round(correct_avg, 2)
+        else:
+            # Fallback to the average calculated from time segment data
+            from lib.time_segment_worksheet import TimeSegmentWorksheetGenerator
+            time_segment_generator = TimeSegmentWorksheetGenerator(self.store_names, self.target_date)
+            time_segment_data = time_segment_generator.get_time_segment_data_for_date(self.target_date)
+            
+            store_turnover_totals = []
+            for store_id in self.store_names.keys():
+                if store_id in time_segment_data:
+                    store_data = time_segment_data[store_id]
+                    store_totals = time_segment_generator.calculate_store_totals(store_data)
+                    store_turnover_totals.append(store_totals['total_turnover_current'])
+            
+            fallback_avg = sum(store_turnover_totals) / len(store_turnover_totals) if store_turnover_totals else 0
+            mtd_avg_turnover.value = round(fallback_avg, 2)
+        
         mtd_avg_turnover.font = Font(bold=True,size=20,color="FF0000")
         mtd_avg_turnover.alignment = Alignment(horizontal='center', vertical='center')
         mtd_avg_turnover.fill = PatternFill(start_color="000000", end_color="000000", fill_type="solid")

@@ -43,7 +43,7 @@ class DatabaseReportGenerator:
         self.data_provider = ReportDataProvider(self.db_manager)
         self.comparison_generator = ComparisonWorksheetGenerator(self.store_names, self.target_date)
         self.yearly_generator = YearlyComparisonWorksheetGenerator(self.store_names, self.target_date)
-        self.time_segment_generator = TimeSegmentWorksheetGenerator(self.store_names, self.target_date)
+        self.time_segment_generator = TimeSegmentWorksheetGenerator(self.store_names, self.target_date, self.data_provider)
         self.business_insight_generator = BusinessInsightWorksheetGenerator(self.store_names, self.target_date)
     
     def generate_report(self):

@@ -11,9 +11,10 @@ from openpyxl.utils import get_column_letter
 class TimeSegmentWorksheetGenerator:
     """Generate time segment report worksheet (分时段-上报) from provided data"""
     
-    def __init__(self, store_names, target_date):
+    def __init__(self, store_names, target_date, data_provider=None):
         self.store_names = store_names
         self.target_date = target_date
+        self.data_provider = data_provider
         # Time segments in the specific order
         self.time_segments = [
             '08:00-13:59',
@@ -24,8 +25,19 @@ class TimeSegmentWorksheetGenerator:
         
     def get_time_segment_data_for_date(self, target_date):
         """Get time segment data for the specific target date from database"""
-        # This would normally query the database, but for now we'll use test data
-        # In a real implementation, this would use ReportDataProvider to get time segment data
+        # Try to get real data from database if data provider is available
+        if self.data_provider:
+            try:
+                real_data = self.data_provider.get_time_segment_data(target_date)
+                if real_data:
+                    print(f"✅ Using real time segment data from database")
+                    return real_data
+                else:
+                    print(f"⚠️ No real time segment data found, falling back to test data")
+            except Exception as e:
+                print(f"⚠️ Error getting real time segment data: {e}, falling back to test data")
+        
+        # Fallback to test data if no data provider or real data unavailable
         
         # Test data for 2025-06-10
         test_data = {
@@ -101,16 +113,18 @@ class TimeSegmentWorksheetGenerator:
         weekdays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日']
         weekday = weekdays[target_dt.weekday()]
         
-        # Title
-        title = f"门店分时段营数据2025年6月vs2024年6月截至10日-星期二（考核）"
+        # Title - Use actual target date
+        prev_year = year - 1
+        title = f"门店分时段营业数据{year}年{month}月vs{prev_year}年{month}月截至{day}日-{weekday}（考核）"
         ws.merge_cells('A1:L1')
         ws['A1'] = title
         ws['A1'].font = Font(bold=True, size=12)
         ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
         ws['A1'].fill = PatternFill(start_color="FFD700", end_color="FFD700", fill_type="solid")
         
-        # Headers row 1
-        headers_row1 = ["门店名称", "分时段", "翻台率（考核）", "", "", "", "", f"10/06/2025", f"10/06/2025", "桌数（考核）", "", "同比差异"]
+        # Headers row 1 - Use actual target date
+        date_header = f"{day:02d}/{month:02d}/{year}"
+        headers_row1 = ["门店名称", "分时段", "翻台率（考核）", "", "", "", "", date_header, date_header, "桌数（考核）", "", "同比差异"]
         for col, header in enumerate(headers_row1, 1):
             cell = ws.cell(row=2, column=col, value=header)
             cell.font = Font(bold=True)
@@ -179,23 +193,32 @@ class TimeSegmentWorksheetGenerator:
                 # Time segment
                 ws.cell(row=current_row, column=2, value=time_segment)
                 
-                # Turnover data
-                ws.cell(row=current_row, column=3, value=round(segment_data['turnover_current'], 2))
-                ws.cell(row=current_row, column=4, value=round(segment_data['turnover_prev'], 2))
-                ws.cell(row=current_row, column=5, value=round(segment_data['target'], 2))
-                ws.cell(row=current_row, column=6, value=round(target_diff, 2))
-                ws.cell(row=current_row, column=7, value=round(prev_diff, 2))
+                # Turnover data - Use correct data sources
+                mtd_turnover = segment_data.get('mtd_avg_turnover', segment_data['turnover_current'])
+                prev_full_month_turnover = segment_data.get('prev_full_month_avg_turnover', segment_data['turnover_prev'])
+                target_turnover = segment_data['target']
                 
-                # Daily data
+                target_diff_mtd = mtd_turnover - target_turnover
+                prev_diff_mtd = mtd_turnover - prev_full_month_turnover
+                
+                ws.cell(row=current_row, column=3, value=round(mtd_turnover, 2))
+                ws.cell(row=current_row, column=4, value=round(prev_full_month_turnover, 2))
+                ws.cell(row=current_row, column=5, value=round(target_turnover, 2))
+                ws.cell(row=current_row, column=6, value=round(target_diff_mtd, 2))
+                ws.cell(row=current_row, column=7, value=round(prev_diff_mtd, 2))
+                
+                # Daily data for columns H and I
                 ws.cell(row=current_row, column=8, value=round(segment_data['turnover_current'], 2))
                 ws.cell(row=current_row, column=9, value=round(segment_data['tables'], 1))
                 
-                # Tables and customers
-                ws.cell(row=current_row, column=10, value=round(segment_data['customers'], 1))
-                ws.cell(row=current_row, column=11, value=round(segment_data['customers'], 0))  # Same as customers for now
+                # MTD totals for columns J and K
+                mtd_tables = segment_data.get('mtd_total_tables', segment_data['customers'])
+                mtd_tables_prev = segment_data.get('customers_prev_year', 0)  # This should be MTD prev year
+                ws.cell(row=current_row, column=10, value=round(mtd_tables, 1))
+                ws.cell(row=current_row, column=11, value=round(mtd_tables_prev, 0))
                 
-                # Column L: 同比差异 (Year-over-year difference for table count)
-                yoy_table_diff = segment_data['customers'] - segment_data.get('customers_prev_year', 0)
+                # Column L: 同比差异 (Year-over-year difference for MTD table count)
+                yoy_table_diff = mtd_tables - mtd_tables_prev
                 ws.cell(row=current_row, column=12, value=round(yoy_table_diff, 1))
                 
                 # Apply background colors
@@ -214,20 +237,34 @@ class TimeSegmentWorksheetGenerator:
                 
                 current_row += 1
             
-            # Add store total row
-            store_totals = self.calculate_store_totals(store_data)
+            # Add store total row - Sum the actual displayed values for accuracy
+            store_total_row_start = current_row - len(self.time_segments)
+            
+            # Calculate sums from the actual displayed values in the worksheet
+            col3_sum = sum(ws.cell(row=store_total_row_start + i, column=3).value or 0 for i in range(len(self.time_segments)))
+            col4_sum = sum(ws.cell(row=store_total_row_start + i, column=4).value or 0 for i in range(len(self.time_segments)))
+            col5_sum = sum(ws.cell(row=store_total_row_start + i, column=5).value or 0 for i in range(len(self.time_segments)))
+            col8_sum = sum(ws.cell(row=store_total_row_start + i, column=8).value or 0 for i in range(len(self.time_segments)))
+            col9_sum = sum(ws.cell(row=store_total_row_start + i, column=9).value or 0 for i in range(len(self.time_segments)))
+            col10_sum = sum(ws.cell(row=store_total_row_start + i, column=10).value or 0 for i in range(len(self.time_segments)))
+            col11_sum = sum(ws.cell(row=store_total_row_start + i, column=11).value or 0 for i in range(len(self.time_segments)))
+            
+            # Calculate differences based on the summed values
+            col6_diff = col3_sum - col5_sum  # current - target
+            col7_diff = col3_sum - col4_sum  # current - prev
+            col12_diff = col10_sum - col11_sum  # YoY difference
             
             ws.cell(row=current_row, column=2, value=f"{store_name}汇总")
-            ws.cell(row=current_row, column=3, value=round(store_totals['total_turnover_current'], 2))
-            ws.cell(row=current_row, column=4, value=round(store_totals['total_turnover_prev'], 2))
-            ws.cell(row=current_row, column=5, value=round(store_totals['total_target'], 2))
-            ws.cell(row=current_row, column=6, value=round(store_totals['total_target_diff'], 2))
-            ws.cell(row=current_row, column=7, value=round(store_totals['total_prev_diff'], 2))
-            ws.cell(row=current_row, column=8, value=round(store_totals['total_turnover_current'], 2))
-            ws.cell(row=current_row, column=9, value=round(store_totals['total_tables'], 1))
-            ws.cell(row=current_row, column=10, value=round(store_totals['total_customers'], 1))
-            ws.cell(row=current_row, column=11, value=round(store_totals['total_customers'], 0))
-            ws.cell(row=current_row, column=12, value=round(store_totals.get('total_yoy_diff', 0), 1))
+            ws.cell(row=current_row, column=3, value=round(col3_sum, 2))
+            ws.cell(row=current_row, column=4, value=round(col4_sum, 2))
+            ws.cell(row=current_row, column=5, value=round(col5_sum, 2))
+            ws.cell(row=current_row, column=6, value=round(col6_diff, 2))
+            ws.cell(row=current_row, column=7, value=round(col7_diff, 2))
+            ws.cell(row=current_row, column=8, value=round(col8_sum, 2))
+            ws.cell(row=current_row, column=9, value=round(col9_sum, 1))
+            ws.cell(row=current_row, column=10, value=round(col10_sum, 1))
+            ws.cell(row=current_row, column=11, value=round(col11_sum, 0))
+            ws.cell(row=current_row, column=12, value=round(col12_diff, 1))
             
             # Apply bold formatting and different color for totals
             for col in range(1, 13):
@@ -237,20 +274,49 @@ class TimeSegmentWorksheetGenerator:
             
             current_row += 1
         
-        # Add overall total row
-        overall_totals = self.calculate_overall_totals(time_segment_data)
+        # Add overall total row - Calculate from store total rows for accuracy
+        store_total_rows = []
+        temp_row = current_row - 1
+        
+        # Find all store total rows (they have "汇总" in column 2)
+        while temp_row > 3:  # Start from row after headers
+            cell_value = ws.cell(row=temp_row, column=2).value
+            if cell_value and "汇总" in str(cell_value):
+                store_total_rows.append(temp_row)
+            temp_row -= 1
+        
+        # Calculate overall totals as AVERAGE of store totals for turnover rates
+        if store_total_rows:
+            col3_avg = sum(ws.cell(row=r, column=3).value or 0 for r in store_total_rows) / len(store_total_rows)
+            col4_avg = sum(ws.cell(row=r, column=4).value or 0 for r in store_total_rows) / len(store_total_rows)
+            col5_avg = sum(ws.cell(row=r, column=5).value or 0 for r in store_total_rows) / len(store_total_rows)
+            col8_avg = sum(ws.cell(row=r, column=8).value or 0 for r in store_total_rows) / len(store_total_rows)
+            
+            # Sum for table counts (not average)
+            col9_sum = sum(ws.cell(row=r, column=9).value or 0 for r in store_total_rows)
+            col10_sum = sum(ws.cell(row=r, column=10).value or 0 for r in store_total_rows)
+            col11_sum = sum(ws.cell(row=r, column=11).value or 0 for r in store_total_rows)
+            
+            # Calculate differences
+            col6_diff = col3_avg - col5_avg
+            col7_diff = col3_avg - col4_avg
+            col12_diff = col10_sum - col11_sum
+        else:
+            col3_avg = col4_avg = col5_avg = col8_avg = 0
+            col9_sum = col10_sum = col11_sum = 0
+            col6_diff = col7_diff = col12_diff = 0
         
         ws.cell(row=current_row, column=1, value="区域整体")
-        ws.cell(row=current_row, column=3, value=round(overall_totals['overall_turnover_current'], 2))
-        ws.cell(row=current_row, column=4, value=round(overall_totals['overall_turnover_prev'], 2))
-        ws.cell(row=current_row, column=5, value=round(overall_totals['overall_target'], 2))
-        ws.cell(row=current_row, column=6, value=round(overall_totals['overall_target_diff'], 2))
-        ws.cell(row=current_row, column=7, value=round(overall_totals['overall_prev_diff'], 2))
-        ws.cell(row=current_row, column=8, value=round(overall_totals['overall_turnover_current'], 2))
-        ws.cell(row=current_row, column=9, value=round(overall_totals['overall_tables'], 1))
-        ws.cell(row=current_row, column=10, value=round(overall_totals['overall_customers'], 1))
-        ws.cell(row=current_row, column=11, value=round(overall_totals['overall_customers'], 0))
-        ws.cell(row=current_row, column=12, value=round(overall_totals.get('overall_yoy_diff', 0), 1))
+        ws.cell(row=current_row, column=3, value=round(col3_avg, 2))
+        ws.cell(row=current_row, column=4, value=round(col4_avg, 2))
+        ws.cell(row=current_row, column=5, value=round(col5_avg, 2))
+        ws.cell(row=current_row, column=6, value=round(col6_diff, 2))
+        ws.cell(row=current_row, column=7, value=round(col7_diff, 2))
+        ws.cell(row=current_row, column=8, value=round(col8_avg, 2))
+        ws.cell(row=current_row, column=9, value=round(col9_sum, 1))
+        ws.cell(row=current_row, column=10, value=round(col10_sum, 1))
+        ws.cell(row=current_row, column=11, value=round(col11_sum, 0))
+        ws.cell(row=current_row, column=12, value=round(col12_diff, 1))
         
         # Apply bold formatting and special color for overall totals
         for col in range(1, 13):
@@ -265,24 +331,33 @@ class TimeSegmentWorksheetGenerator:
     
     def calculate_store_totals(self, store_data):
         """Calculate totals for a single store"""
-        total_turnover_current = sum(data['turnover_current'] for data in store_data.values())
-        total_turnover_prev = sum(data['turnover_prev'] for data in store_data.values())
-        total_target = sum(data['target'] for data in store_data.values())
-        total_tables = sum(data['tables'] for data in store_data.values())
-        total_customers = sum(data['customers'] for data in store_data.values())
+        if not store_data:
+            return {
+                'total_turnover_current': 0, 'total_turnover_prev': 0, 'total_target': 0,
+                'total_tables': 0, 'total_customers': 0, 'total_target_diff': 0,
+                'total_prev_diff': 0, 'total_yoy_diff': 0
+            }
         
-        total_target_diff = total_turnover_current - total_target
-        total_prev_diff = total_turnover_current - total_turnover_prev
-        # Year-over-year difference for table count (current year customers - previous year customers)
-        total_customers_prev_year = sum(data.get('customers_prev_year', 0) for data in store_data.values())
-        total_yoy_diff = total_customers - total_customers_prev_year
+        # For turnover rates, calculate SUM (for store totals)
+        sum_turnover_current = sum(data.get('mtd_avg_turnover', 0) for data in store_data.values())
+        sum_turnover_prev = sum(data.get('prev_full_month_avg_turnover', 0) for data in store_data.values())
+        sum_target = sum(data['target'] for data in store_data.values())
+        
+        # For tables, sum the MTD totals
+        total_tables = sum(data['tables'] for data in store_data.values())
+        total_mtd_tables = sum(data.get('mtd_total_tables', 0) for data in store_data.values())
+        total_customers_prev_year = sum(data.get('prev_mtd_total_tables', 0) for data in store_data.values())
+        
+        total_target_diff = sum_turnover_current - sum_target
+        total_prev_diff = sum_turnover_current - sum_turnover_prev
+        total_yoy_diff = total_mtd_tables - total_customers_prev_year
         
         return {
-            'total_turnover_current': total_turnover_current,
-            'total_turnover_prev': total_turnover_prev,
-            'total_target': total_target,
+            'total_turnover_current': sum_turnover_current,
+            'total_turnover_prev': sum_turnover_prev,
+            'total_target': sum_target,
             'total_tables': total_tables,
-            'total_customers': total_customers,
+            'total_customers': total_mtd_tables,
             'total_target_diff': total_target_diff,
             'total_prev_diff': total_prev_diff,
             'total_yoy_diff': total_yoy_diff
@@ -290,25 +365,28 @@ class TimeSegmentWorksheetGenerator:
     
     def calculate_overall_totals(self, time_segment_data):
         """Calculate overall totals across all stores"""
-        overall_turnover_current = 0
-        overall_turnover_prev = 0
-        overall_target = 0
+        store_totals_list = []
         overall_tables = 0
         overall_customers = 0
+        overall_yoy_diff = 0
         
         for store_id, store_data in time_segment_data.items():
             store_totals = self.calculate_store_totals(store_data)
-            overall_turnover_current += store_totals['total_turnover_current']
-            overall_turnover_prev += store_totals['total_turnover_prev']
-            overall_target += store_totals['total_target']
+            store_totals_list.append(store_totals)
             overall_tables += store_totals['total_tables']
             overall_customers += store_totals['total_customers']
+            overall_yoy_diff += store_totals['total_yoy_diff']
+        
+        # For overall turnover rates, calculate AVERAGE of store totals (not sum)
+        if store_totals_list:
+            overall_turnover_current = sum(st['total_turnover_current'] for st in store_totals_list) / len(store_totals_list)
+            overall_turnover_prev = sum(st['total_turnover_prev'] for st in store_totals_list) / len(store_totals_list)
+            overall_target = sum(st['total_target'] for st in store_totals_list) / len(store_totals_list)
+        else:
+            overall_turnover_current = overall_turnover_prev = overall_target = 0
         
         overall_target_diff = overall_turnover_current - overall_target
         overall_prev_diff = overall_turnover_current - overall_turnover_prev
-        # Sum of all store year-over-year differences
-        overall_yoy_diff = sum(self.calculate_store_totals(store_data)['total_yoy_diff'] 
-                              for store_data in time_segment_data.values())
         
         return {
             'overall_turnover_current': overall_turnover_current,

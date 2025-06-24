@@ -267,4 +267,169 @@ class ReportDataProvider:
         
         print(f"✅ Processed data for {len(processed_data[0])} stores")
         
-        return processed_data 
+        return processed_data
+    
+    def get_time_segment_data(self, target_date: str):
+        """Get time segment data from store_time_report table"""
+        from datetime import datetime
+        
+        # Parse target date to get current and previous year/month
+        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
+        current_year = target_dt.year
+        current_month = target_dt.month
+        target_day = target_dt.day
+        
+        prev_year = current_year - 1
+        
+        # Use separate queries to avoid Cartesian products
+        sql_base = """
+        SELECT 
+            s.id as store_id,
+            s.name as store_name,
+            ts.label as time_segment,
+            ts.id as time_segment_id,
+            -- Current year target date data
+            str_current.tables_served_validated as current_tables,
+            str_current.turnover_rate as current_turnover,
+            -- Previous year same date data
+            str_prev.tables_served_validated as prev_year_tables,
+            str_prev.turnover_rate as prev_year_turnover,
+            -- Time segment target data
+            smtt.turnover_rate as target_turnover
+        FROM store s
+        CROSS JOIN time_segment ts
+        LEFT JOIN store_time_report str_current ON s.id = str_current.store_id 
+            AND ts.id = str_current.time_segment_id
+            AND str_current.date = %s
+        LEFT JOIN store_time_report str_prev ON s.id = str_prev.store_id 
+            AND ts.id = str_prev.time_segment_id
+            AND str_prev.date = %s
+        LEFT JOIN store_monthly_time_target smtt ON s.id = smtt.store_id 
+            AND ts.id = smtt.time_segment_id
+            AND EXTRACT(YEAR FROM smtt.month) = %s 
+            AND EXTRACT(MONTH FROM smtt.month) = %s
+        WHERE s.id BETWEEN 1 AND 7
+        ORDER BY s.id, ts.id
+        """
+        
+        # Calculate previous year target date
+        prev_year_target_date = f"{prev_year}-{current_month:02d}-{target_day:02d}"
+        
+        try:
+            # Get base data
+            base_results = self.db_manager.fetch_all(sql_base, (
+                target_date,  # Current year target date
+                prev_year_target_date,  # Previous year same date
+                current_year, current_month  # Target data
+            ))
+            
+            # Get MTD aggregates separately to avoid Cartesian products
+            mtd_sql = """
+            SELECT 
+                store_id, 
+                time_segment_id,
+                AVG(turnover_rate) as mtd_avg_turnover,
+                SUM(tables_served_validated) as mtd_total_tables
+            FROM store_time_report 
+            WHERE EXTRACT(YEAR FROM date) = %s 
+                AND EXTRACT(MONTH FROM date) = %s
+                AND EXTRACT(DAY FROM date) <= %s
+            GROUP BY store_id, time_segment_id
+            """
+            
+            mtd_results = self.db_manager.fetch_all(mtd_sql, (current_year, current_month, target_day))
+            
+            # Get previous year full month aggregates
+            prev_full_month_sql = """
+            SELECT 
+                store_id, 
+                time_segment_id,
+                AVG(turnover_rate) as prev_full_month_avg_turnover
+            FROM store_time_report 
+            WHERE EXTRACT(YEAR FROM date) = %s 
+                AND EXTRACT(MONTH FROM date) = %s
+            GROUP BY store_id, time_segment_id
+            """
+            
+            prev_full_results = self.db_manager.fetch_all(prev_full_month_sql, (prev_year, current_month))
+            
+            # Get previous year MTD aggregates
+            prev_mtd_sql = """
+            SELECT 
+                store_id, 
+                time_segment_id,
+                SUM(tables_served_validated) as prev_mtd_total_tables
+            FROM store_time_report 
+            WHERE EXTRACT(YEAR FROM date) = %s 
+                AND EXTRACT(MONTH FROM date) = %s
+                AND EXTRACT(DAY FROM date) <= %s
+            GROUP BY store_id, time_segment_id
+            """
+            
+            prev_mtd_results = self.db_manager.fetch_all(prev_mtd_sql, (prev_year, current_month, target_day))
+            
+            # Create lookup dictionaries for aggregated data
+            mtd_lookup = {(row['store_id'], row['time_segment_id']): row for row in mtd_results}
+            prev_full_lookup = {(row['store_id'], row['time_segment_id']): row for row in prev_full_results}
+            prev_mtd_lookup = {(row['store_id'], row['time_segment_id']): row for row in prev_mtd_results}
+            
+            # Combine base results with aggregated data
+            results = []
+            for base_row in base_results:
+                store_id = base_row['store_id']
+                time_segment_id = base_row['time_segment_id']
+                
+                # Get aggregated data
+                mtd_data = mtd_lookup.get((store_id, time_segment_id), {})
+                prev_full_data = prev_full_lookup.get((store_id, time_segment_id), {})
+                prev_mtd_data = prev_mtd_lookup.get((store_id, time_segment_id), {})
+                
+                # Combine all data
+                combined_row = dict(base_row)
+                combined_row.update({
+                    'mtd_avg_turnover': mtd_data.get('mtd_avg_turnover'),
+                    'mtd_total_tables': mtd_data.get('mtd_total_tables'),
+                    'prev_full_month_avg_turnover': prev_full_data.get('prev_full_month_avg_turnover'),
+                    'prev_mtd_total_tables': prev_mtd_data.get('prev_mtd_total_tables')
+                })
+                
+                results.append(combined_row)
+            
+            # Process results into the format expected by time segment worksheet
+            time_segment_data = {}
+            
+            for row in results:
+                store_id = row['store_id']
+                time_segment = row['time_segment']
+                
+                if store_id not in time_segment_data:
+                    time_segment_data[store_id] = {}
+                
+                # Extract data from the new query structure
+                time_segment_data[store_id][time_segment] = {
+                    # Daily data for target date
+                    'turnover_current': float(row['current_turnover'] or 0),
+                    'tables': float(row['current_tables'] or 0),
+                    'customers': float(row['current_tables'] or 0),  # Using current day tables as customers
+                    
+                    # Previous year data
+                    'turnover_prev': float(row['prev_year_turnover'] or 0),
+                    'prev_full_month_avg_turnover': float(row['prev_full_month_avg_turnover'] or 0),
+                    
+                    # Target data
+                    'target': float(row['target_turnover'] or 0),
+                    
+                    # MTD data for current year
+                    'mtd_avg_turnover': float(row['mtd_avg_turnover'] or 0),
+                    'mtd_total_tables': float(row['mtd_total_tables'] or 0),
+                    
+                    # MTD data for previous year
+                    'prev_mtd_total_tables': float(row['prev_mtd_total_tables'] or 0),
+                    'customers_prev_year': float(row['prev_mtd_total_tables'] or 0)
+                }
+            
+            return time_segment_data
+            
+        except Exception as e:
+            print(f"❌ Error getting time segment data: {e}")
+            return {} 

@@ -63,3 +63,14 @@ CREATE TABLE store_monthly_target (
   gross_revenue NUMERIC(14, 2),              -- 毛收入目标
   monthly_CAD_USD_rate NUMERIC(8, 4)         -- 本月 CAD/USD 汇率
 );
+
+CREATE TABLE store_monthly_time_target (
+  id SERIAL PRIMARY KEY,                     -- 主键，自增
+  store_id INT REFERENCES store(id),         -- 外键：门店 ID
+  month DATE NOT NULL,                       -- 目标月份（建议使用每月第一天作为标识）
+  time_segment_id INT REFERENCES time_segment(id), -- 外键：分时段 ID
+  
+  turnover_rate NUMERIC(6, 3),               -- 该时段目标翻台率
+  
+  UNIQUE(store_id, month, time_segment_id)   -- 防止重复插入同一店铺同一月同一时段
+);
