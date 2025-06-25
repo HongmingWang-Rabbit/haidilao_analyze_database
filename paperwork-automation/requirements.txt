@@ -16,5 +16,9 @@ pathlib                             # File path operations (built-in Python 3.4+
 datetime                            # Date/time handling (built-in)
 logging                             # Logging support (built-in)
 
+# === WEB SCRAPING ===
+selenium>=4.15.0,<5.0.0            # Web browser automation
+webdriver-manager>=4.0.0,<5.0.0    # Automatic WebDriver management
+
 # === DEVELOPMENT & TESTING ===
 unittest                            # Unit testing framework (built-in) 

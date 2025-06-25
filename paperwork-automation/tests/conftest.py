@@ -61,7 +61,7 @@ def temp_excel_file(sample_daily_data):
     with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
         # Create Excel file with multiple sheets
         with pd.ExcelWriter(temp_file.name, engine='openpyxl') as writer:
-            pd.DataFrame(sample_daily_data).to_excel(writer, sheet_name='营业基础表', index=False)
+            pd.DataFrame(sample_daily_data).to_excel(writer, sheet_name='海外门店营业数据分时段_不含税_', index=False)
             # Add a dummy time segment sheet
             time_data = {
                 '门店名称': ['加拿大一店'],
@@ -71,7 +71,7 @@ def temp_excel_file(sample_daily_data):
                 '营业桌数(考核)': [25.0],
                 '翻台率(考核)': [1.5]
             }
-            pd.DataFrame(time_data).to_excel(writer, sheet_name='分时段基础表', index=False)
+            pd.DataFrame(time_data).to_excel(writer, sheet_name='海外门店营业数据分时段_不含税_', index=False)
         
         yield temp_file.name
         

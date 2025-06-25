@@ -141,7 +141,7 @@ All 4 time periods are tested:
 ### File Structure Validation
 
 - ✅ Excel file existence and readability
-- ✅ Required sheet presence (营业基础表, 分时段基础表)
+- ✅ Required sheet presence (海外门店营业数据日报*不含税*, 海外门店营业数据分时段*不含税*)
 - ✅ Column structure verification
 - ✅ File extension checking
 

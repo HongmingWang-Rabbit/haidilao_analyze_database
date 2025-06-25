@@ -80,7 +80,7 @@ class TestValidationEdgeCases(unittest.TestCase):
         # Create Excel file with required sheets plus extra ones
         with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
             with pd.ExcelWriter(temp_file.name, engine='openpyxl') as writer:
-                pd.DataFrame(self.edge_case_daily_data).to_excel(writer, sheet_name='营业基础表', index=False)
+                pd.DataFrame(self.edge_case_daily_data).to_excel(writer, sheet_name='海外门店营业数据分时段_不含税_', index=False)
                 pd.DataFrame({
                     '门店名称': ['加拿大一店', '加拿大二店'],
                     '日期': [20250610, 20250610],
@@ -88,7 +88,7 @@ class TestValidationEdgeCases(unittest.TestCase):
                     '节假日': ['工作日', '工作日'],
                     '营业桌数(考核)': [25.0, 20.0],
                     '翻台率(考核)': [1.5, 2.0]
-                }).to_excel(writer, sheet_name='分时段基础表', index=False)
+                }).to_excel(writer, sheet_name='海外门店营业数据分时段_不含税_', index=False)
                 # Extra sheets
                 pd.DataFrame({'extra': [1, 2, 3]}).to_excel(writer, sheet_name='ExtraSheet1', index=False)
                 pd.DataFrame({'more': ['a', 'b', 'c']}).to_excel(writer, sheet_name='ExtraSheet2', index=False)
@@ -197,7 +197,7 @@ class TestValidationEdgeCases(unittest.TestCase):
         
         with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
             with pd.ExcelWriter(temp_file.name, engine='openpyxl') as writer:
-                pd.DataFrame(data_with_extra_chars).to_excel(writer, sheet_name='营业基础表', index=False)
+                pd.DataFrame(data_with_extra_chars).to_excel(writer, sheet_name='海外门店营业数据分时段_不含税_', index=False)
         
         try:
             excel_file = pd.ExcelFile(temp_file.name)
@@ -228,7 +228,7 @@ class TestValidationEdgeCases(unittest.TestCase):
         
         with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
             with pd.ExcelWriter(temp_file.name, engine='openpyxl') as writer:
-                pd.DataFrame(duplicate_data).to_excel(writer, sheet_name='营业基础表', index=False)
+                pd.DataFrame(duplicate_data).to_excel(writer, sheet_name='海外门店营业数据分时段_不含税_', index=False)
         
         try:
             excel_file = pd.ExcelFile(temp_file.name)
@@ -259,7 +259,7 @@ class TestValidationEdgeCases(unittest.TestCase):
         
         with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
             with pd.ExcelWriter(temp_file.name, engine='openpyxl') as writer:
-                pd.DataFrame(incomplete_stores_data).to_excel(writer, sheet_name='营业基础表', index=False)
+                pd.DataFrame(incomplete_stores_data).to_excel(writer, sheet_name='海外门店营业数据分时段_不含税_', index=False)
         
         try:
             excel_file = pd.ExcelFile(temp_file.name)
@@ -286,7 +286,7 @@ class TestValidationEdgeCases(unittest.TestCase):
         
         with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
             with pd.ExcelWriter(temp_file.name, engine='openpyxl') as writer:
-                pd.DataFrame(incomplete_segments_data).to_excel(writer, sheet_name='分时段基础表', index=False)
+                pd.DataFrame(incomplete_segments_data).to_excel(writer, sheet_name='海外门店营业数据分时段_不含税_', index=False)
         
         try:
             excel_file = pd.ExcelFile(temp_file.name)
@@ -326,8 +326,8 @@ class TestValidationEdgeCases(unittest.TestCase):
         
         with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
             with pd.ExcelWriter(temp_file.name, engine='openpyxl') as writer:
-                pd.DataFrame(daily_data).to_excel(writer, sheet_name='营业基础表', index=False)
-                pd.DataFrame(time_segment_data).to_excel(writer, sheet_name='分时段基础表', index=False)
+                pd.DataFrame(daily_data).to_excel(writer, sheet_name='海外门店营业数据分时段_不含税_', index=False)
+                pd.DataFrame(time_segment_data).to_excel(writer, sheet_name='海外门店营业数据分时段_不含税_', index=False)
         
         try:
             with patch('builtins.print'):
@@ -361,7 +361,7 @@ class TestPerformanceAndLargeData(unittest.TestCase):
         
         with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as temp_file:
             with pd.ExcelWriter(temp_file.name, engine='openpyxl') as writer:
-                pd.DataFrame(large_daily_data).to_excel(writer, sheet_name='营业基础表', index=False)
+                pd.DataFrame(large_daily_data).to_excel(writer, sheet_name='海外门店营业数据分时段_不含税_', index=False)
                 # Create minimal time segment data to satisfy requirements
                 pd.DataFrame({
                     '门店名称': ['加拿大一店'],
@@ -370,7 +370,7 @@ class TestPerformanceAndLargeData(unittest.TestCase):
                     '节假日': ['工作日'],
                     '营业桌数(考核)': [25.0],
                     '翻台率(考核)': [1.5]
-                }).to_excel(writer, sheet_name='分时段基础表', index=False)
+                }).to_excel(writer, sheet_name='海外门店营业数据分时段_不含税_', index=False)
         
         try:
             import time

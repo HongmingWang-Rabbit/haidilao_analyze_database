@@ -8,6 +8,15 @@ This system processes Haidilao restaurant Excel data and generates **4 professio
 
 ## ✨ Features
 
+### 🌐 **Web Scraping & Complete Automation**
+
+- **🤖 QBI System Integration**: Automated web scraping from QBI dashboard with Selenium
+- **🔐 Secure Authentication**: Login handling with environment variables and credential prompts
+- **📅 Smart Date Ranges**: Automatic calculation of target_date ± 1 day for optimal data coverage
+- **📊 Complete Workflow**: End-to-end automation from scraping → processing → database → reports
+- **🖥️ Browser Control**: Headless mode for automation or GUI mode for debugging
+- **📂 Organized Output**: Automatic file organization with timestamps and workflow summaries
+
 ### 📊 **Complete Report Generation System**
 
 - **🎯 4 Professional Worksheets**: 对比上月表 (Monthly Comparison), 同比数据 (Yearly Comparison), 分时段-上报 (Time Segment), 营业透视 (Business Insight)
@@ -36,6 +45,8 @@ This system processes Haidilao restaurant Excel data and generates **4 professio
 - Python 3.8+ with pandas, openpyxl, PostgreSQL support
 - PostgreSQL database access
 - pip package manager
+- **Google Chrome browser** (for web scraping functionality)
+- **ChromeDriver** (automatically managed by webdriver-manager)
 
 ### Installation
 
@@ -132,7 +143,51 @@ python3 scripts/automation-menu.py
 - ⚙️ Database Management
 - 🔧 System Tools
 
-### 2. Python Direct Interface
+### 🌐 3. Web Scraping & Complete Automation
+
+**NEW: QBI System Integration with complete workflow automation**
+
+```bash
+# QBI Web Scraping - Download Excel data from QBI system
+python3 scripts/qbi_scraper_cli.py --target-date 2025-06-21
+
+# Complete Automation Workflow - Full end-to-end process
+python3 scripts/complete_automation.py --target-date 2025-06-21
+
+# With specific QBI URL parameters
+python3 scripts/qbi_scraper_cli.py --target-date 2025-06-21 \
+  --product-id "1fcba94f-c81d-4595-80cc-dac5462e0d24" \
+  --menu-id "89809ff6-a4fe-4fd7-853d-49315e51b2ec"
+
+# Run with GUI browser (for debugging)
+python3 scripts/complete_automation.py --target-date 2025-06-21 --no-headless
+```
+
+**Web Scraping Features:**
+
+- 🔐 **Secure Login**: QBI system authentication with credential management
+- 📅 **Smart Date Handling**: Automatic target_date ± 1 day range calculation
+- 🔍 **Element Detection**: Robust form field and button detection
+- 📤 **Export Automation**: Automatic Excel file download and organization
+- 🖥️ **Browser Modes**: Headless (production) or GUI (debugging) operation
+- 🌐 **URL Parameters**: Support for specific QBI dashboard configurations
+
+**Complete Automation Workflow:**
+
+1. **🌐 Step 1**: Scrape data from QBI system with authentication
+2. **🔄 Step 2**: Process scraped data and insert into database
+3. **📊 Step 3**: Generate comprehensive Excel reports (4 worksheets)
+4. **🧹 Step 4**: Cleanup and organize all output files with timestamps
+
+**Environment Variables:**
+
+```bash
+# Set QBI credentials (optional - will prompt if not set)
+export QBI_USERNAME="your_qbi_username"
+export QBI_PASSWORD="your_qbi_password"
+```
+
+### 4. Python Direct Interface
 
 Direct access to the Python scripts with enhanced validation.
 

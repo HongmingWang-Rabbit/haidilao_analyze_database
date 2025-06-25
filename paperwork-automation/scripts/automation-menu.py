@@ -265,6 +265,207 @@ class AutomationMenu:
         description = f'Generating Database Report for {report_date}'
         self.run_command(command, description)
     
+    def get_qbi_credentials(self):
+        """Get QBI credentials from environment or user input"""
+        print("🔐 QBI SYSTEM CREDENTIALS")
+        print("=" * 40)
+        
+        # Check environment variables first
+        env_username = os.getenv('QBI_USERNAME')
+        env_password = os.getenv('QBI_PASSWORD')
+        
+        if env_username and env_password:
+            print("✅ Found QBI credentials in environment variables")
+            print(f"   Username: {env_username}")
+            print(f"   Password: {'*' * len(env_password)}")
+            print()
+            
+            use_env = input("Use these credentials? (Y/n): ").strip().lower()
+            if use_env not in ['n', 'no']:
+                return env_username, env_password
+        
+        print("Enter your QBI system login credentials:")
+        print("(You can also set QBI_USERNAME and QBI_PASSWORD environment variables)")
+        print()
+        
+        username = input("QBI Username: ").strip()
+        if not username:
+            print("❌ Username is required")
+            return None, None
+        
+        import getpass
+        password = getpass.getpass("QBI Password: ")
+        if not password:
+            print("❌ Password is required")
+            return None, None
+        
+        return username, password
+    
+    def get_qbi_url_parameters(self):
+        """Get optional QBI URL parameters"""
+        print("\n📋 QBI URL PARAMETERS (Optional)")
+        print("=" * 40)
+        print("From the QBI URL, you can extract these parameters:")
+        print("Example URL: https://qbi.superhi-tech.com/product/view.htm?module=dashboard&productId=1fcba94f-c81d-4595-80cc-dac5462e0d24&menuId=89809ff6-a4fe-4fd7-853d-49315e51b2ec")
+        print()
+        
+        product_id = input("Product ID (optional, press Enter to skip): ").strip()
+        menu_id = input("Menu ID (optional, press Enter to skip): ").strip()
+        
+        return product_id if product_id else None, menu_id if menu_id else None
+    
+    def run_qbi_scraping(self):
+        """Run QBI web scraping"""
+        print("🌐 QBI WEB SCRAPING")
+        print("=" * 50)
+        print("This will scrape data from the QBI system and download an Excel file.")
+        print()
+        print("⚠️  AUTHENTICATION REQUIREMENTS:")
+        print("   • Valid QBI system credentials are REQUIRED")
+        print("   • Invalid credentials will cause the scraper to hang")
+        print("   • Test credentials (test/test) will NOT work")
+        print("   • Use Ctrl+C to interrupt if the scraper gets stuck")
+        print()
+        
+        # Get target date
+        target_date = self.get_report_date()
+        if not target_date:
+            print("QBI scraping cancelled.")
+            input("Press Enter to continue...")
+            return
+        
+        # Get credentials
+        username, password = self.get_qbi_credentials()
+        if not username or not password:
+            input("Press Enter to continue...")
+            return
+        
+        # Credential confirmation
+        print(f"\n🔐 Using credentials for: {username}")
+        confirm_creds = input("Confirm these are valid QBI system credentials? (y/N): ").strip().lower()
+        if confirm_creds != 'y':
+            print("❌ Please ensure you have valid QBI credentials before proceeding")
+            input("Press Enter to continue...")
+            return
+        
+        # Get optional URL parameters
+        product_id, menu_id = self.get_qbi_url_parameters()
+        
+        # Ask about headless mode
+        print("\n🖥️  BROWSER MODE")
+        print("=" * 20)
+        headless_choice = input("Run browser in headless mode? (Y/n): ").strip().lower()
+        headless_flag = "--no-headless" if headless_choice in ['n', 'no'] else ""
+        
+        # Build command
+        command_parts = [
+            'python3 scripts/qbi_scraper_cli.py',
+            f'--target-date {target_date}',
+            f'--username "{username}"',
+            f'--password "{password}"'
+        ]
+        
+        if product_id:
+            command_parts.append(f'--product-id "{product_id}"')
+        if menu_id:
+            command_parts.append(f'--menu-id "{menu_id}"')
+        if headless_flag:
+            command_parts.append(headless_flag)
+        
+        command = ' '.join(command_parts)
+        description = f'QBI Web Scraping for {target_date}'
+        
+        self.run_command(command, description)
+    
+    def run_full_automation(self):
+        """Run complete automation workflow"""
+        print("🚀 COMPLETE AUTOMATION WORKFLOW")
+        print("=" * 60)
+        print("This will run the complete automation process:")
+        print("1. 🌐 Scrape data from QBI system")
+        print("2. 🔄 Process and insert data into database")
+        print("3. 📊 Generate comprehensive Excel report")
+        print("4. 🧹 Cleanup and organize output files")
+        print()
+        
+        confirm = input("Run complete automation workflow? (y/N): ").strip().lower()
+        if confirm not in ['y', 'yes']:
+            print("Full automation cancelled.")
+            input("Press Enter to continue...")
+            return
+        
+        # Get target date
+        target_date = self.get_report_date()
+        if not target_date:
+            print("Full automation cancelled.")
+            input("Press Enter to continue...")
+            return
+        
+        # Get credentials
+        username, password = self.get_qbi_credentials()
+        if not username or not password:
+            input("Press Enter to continue...")
+            return
+        
+        # Get optional URL parameters
+        product_id, menu_id = self.get_qbi_url_parameters()
+        
+        # Get processing mode
+        print("\n🔄 DATA PROCESSING MODE")
+        print("=" * 30)
+        print("1) enhanced  - Advanced processing with validation (recommended)")
+        print("2) all       - Complete processing of all data types")
+        print("3) daily     - Process only daily summary data")
+        print("4) time      - Process only time-based segment data")
+        print()
+        
+        mode_choice = input("Select processing mode (1-4, default: 1): ").strip()
+        mode_map = {'1': 'enhanced', '2': 'all', '3': 'daily', '4': 'time'}
+        processing_mode = mode_map.get(mode_choice, 'enhanced')
+        
+        # Ask about headless mode
+        print("\n🖥️  BROWSER MODE")
+        print("=" * 20)
+        headless_choice = input("Run browser in headless mode? (Y/n): ").strip().lower()
+        headless_flag = "--no-headless" if headless_choice in ['n', 'no'] else ""
+        
+        # Build command
+        command_parts = [
+            'python3 scripts/complete_automation.py',
+            f'--target-date {target_date}',
+            f'--username "{username}"',
+            f'--password "{password}"',
+            f'--mode {processing_mode}'
+        ]
+        
+        if product_id:
+            command_parts.append(f'--product-id "{product_id}"')
+        if menu_id:
+            command_parts.append(f'--menu-id "{menu_id}"')
+        if headless_flag:
+            command_parts.append(headless_flag)
+        
+        command = ' '.join(command_parts)
+        description = f'Complete Automation Workflow for {target_date}'
+        
+        print(f"\n🎯 Selected Configuration:")
+        print(f"   📅 Target Date: {target_date}")
+        print(f"   👤 Username: {username}")
+        print(f"   🔄 Processing Mode: {processing_mode}")
+        print(f"   🖥️  Browser Mode: {'GUI' if headless_flag else 'Headless'}")
+        if product_id:
+            print(f"   🎯 Product ID: {product_id}")
+        if menu_id:
+            print(f"   📋 Menu ID: {menu_id}")
+        print()
+        
+        final_confirm = input("Proceed with automation workflow? (y/N): ").strip().lower()
+        if final_confirm in ['y', 'yes']:
+            self.run_command(command, description)
+        else:
+            print("Full automation cancelled.")
+            input("Press Enter to continue...")
+    
     def run_comprehensive_tests(self):
         """Run our comprehensive test suite"""
         print("🧪 COMPREHENSIVE TEST SUITE")
@@ -326,6 +527,13 @@ class AutomationMenu:
             ]
             self.print_menu_section("📊 REPORT GENERATION", report_options)
             
+            # Web Scraping & Automation
+            web_scraping_options = [
+                ("w", "QBI Web Scraping (Download Excel)", "qbi_scraping"),
+                ("f", "Complete Automation Workflow (Scrape→Process→Report)", "full_automation"),
+            ]
+            self.print_menu_section("🌐 WEB SCRAPING & AUTOMATION", web_scraping_options)
+            
             # Testing & Validation - UPDATED
             testing_options = [
                 ("t", "Run Comprehensive Tests (62 tests, 100% coverage)", "comprehensive_tests"),
@@ -385,6 +593,10 @@ class AutomationMenu:
                 self.show_status()
             elif choice == 'r':
                 self.generate_report()
+            elif choice == 'w':
+                self.run_qbi_scraping()
+            elif choice == 'f':
+                self.run_full_automation()
             elif choice == 'h':
                 self.show_help()
             elif choice == 'x':
@@ -437,6 +649,21 @@ class AutomationMenu:
         print("  - 营业透视 (Business Insight)")
         print("• Output saved to output/ directory")
         print("• Filename format: database_report_YYYY_MM_DD.xlsx")
+        print()
+        
+        print("🌐 WEB SCRAPING & AUTOMATION:")
+        print("• QBI Web Scraping: Download Excel data from QBI system")
+        print("  - Automated login with credentials")
+        print("  - Date range input (target_date ± 1 day)")
+        print("  - Excel file export and download")
+        print("  - Support for custom QBI URL parameters")
+        print("• Complete Automation Workflow: End-to-end processing")
+        print("  - Step 1: Scrape data from QBI system")
+        print("  - Step 2: Process and insert into database")
+        print("  - Step 3: Generate comprehensive report")
+        print("  - Step 4: Cleanup and organize files")
+        print("• Browser modes: Headless (default) or GUI for debugging")
+        print("• Environment variables: QBI_USERNAME, QBI_PASSWORD")
         print()
         
         print("🧪 COMPREHENSIVE TESTING:")
