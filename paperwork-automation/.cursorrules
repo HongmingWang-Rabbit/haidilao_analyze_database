@@ -24,6 +24,10 @@ paperwork-automation/
 │   ├── automation-menu.py     # Interactive main menu (MUST UPDATE)
 │   ├── automation-gui.py      # Modern GUI interface (MUST UPDATE)
 │   ├── extract-all.py         # Data extraction orchestrator
+│   ├── extract-dishes.py      # Dish extraction with size handling
+│   ├── extract-materials.py   # Material extraction from exports
+│   ├── extract-dish-materials.py # Dish-material relationship extraction
+│   ├── extract_dish_price_history.py # Price history extraction
 │   └── generate_database_report.py # Report generation
 ├── launch-gui.py              # GUI launcher script
 ├── lib/                       # Core business logic
@@ -42,6 +46,10 @@ paperwork-automation/
 │   └── run_comprehensive_tests.py
 ├── utils/                     # Shared utilities
 │   └── database.py
+├── haidilao-database-querys/  # Database schema and migrations
+│   ├── reset-db.sql           # Complete database reset with new schema
+│   ├── alter_dish_structure.sql # Safe migration script
+│   └── [other SQL files]
 ├── output/                    # Generated reports
 ├── README.md                  # Main documentation (MUST UPDATE)
 ├── requirements.txt          # Python dependencies
@@ -73,6 +81,14 @@ paperwork-automation/
 - Use connection pooling and proper resource cleanup
 - Support both test and production database environments
 - Implement transaction safety with rollback on errors
+- **Database Schema Evolution**:
+  - Dishes now include `size` column for proper uniqueness `(full_code, size)`
+  - Simplified dish_material table structure (removed unit/conversion_factor)
+  - Use `alter_dish_structure.sql` for safe migrations without data loss
+  - Always create migration scripts for schema changes
+- **Price History**: Implement activation logic (mark previous prices as inactive)
+- Use `DatabaseManager` with `DatabaseConfig(is_test=True)` for test operations
+- **Data Extraction Patterns**: Create separate scripts for dishes, materials, relationships, and price history
 
 ### Excel Processing
 
@@ -80,6 +96,14 @@ paperwork-automation/
 - Validate data before processing
 - Handle missing/null values gracefully
 - Support Chinese store names and time segments properly
+- **CRITICAL**: When reading dish codes from Excel, remove `.0` suffix from float conversions
+- Use Unicode escape sequences for Chinese column names in code for reliability
+- Always test data filtering step-by-step when debugging extraction issues
+- **Multi-Source Data Handling**:
+  - Sales reports: Extract dishes with sizes and price history
+  - Inventory files: Extract materials and dish-material relationships
+  - Handle different Excel structures and worksheet names
+  - Implement proper data validation before database insertion
 
 ## 🧪 TESTING REQUIREMENTS
 
@@ -108,6 +132,48 @@ paperwork-automation/
 - `test_time_segment_worksheet.py` (9 tests)
 - `test_extract_all.py` (18 tests)
 - `test_validation_against_actual_data.py` (5 tests)
+
+### Implemented Features
+
+- **Database Structure Overhaul**
+
+  - Added `size` column to dish table for proper dish uniqueness
+  - Simplified dish_material table (removed `unit` and `conversion_factor`)
+  - Created `alter_dish_structure.sql` for safe database migrations
+  - Updated `reset-db.sql` with new schema
+
+- **Dish Extraction System** (`scripts/extract-dishes.py`)
+
+  - Extracts dishes with size information from sales reports
+  - Uses `(full_code, size)` for uniqueness instead of just `full_code`
+  - Handles Unicode column names and float conversion issues
+  - Successfully extracts 463+ unique dishes with proper sizing
+
+- **Material Extraction System** (`scripts/extract-materials.py`)
+
+  - Extracts materials from export.XLSX files
+  - Integrated with automation menu
+
+- **Dish-Material Relationship System** (`scripts/extract-dish-materials.py`)
+
+  - Maps dishes to materials with standard quantities
+  - Reads from inventory calculation worksheets
+  - Handles complex Excel structures with proper error handling
+
+- **Dish Price History Extraction** (`scripts/extract_dish_price_history.py`)
+  - Extracts price history from monthly dish sales reports
+  - Handles dish code float conversion (.0 suffix removal)
+  - Supports store name to ID mapping
+  - Implements price history activation logic
+  - Successfully processes 2,340+ price records
+  - Integrated in automation menu as option 9
+
+- **Enhanced Automation Menu Structure** (`scripts/automation-menu.py`)
+  - Organized into logical sections with emoji indicators
+  - 📊 Data Extraction: dishes (d), materials (m), relationships (q), price history (9)
+  - 🗄️ Database Operations: reset (r), view data (v), run tests (t)
+  - 📋 Report Generation: database reports (g), custom workflows
+  - Clear navigation with section headers and consistent command patterns
 
 ## 📋 MANDATORY UPDATE REQUIREMENTS
 
@@ -213,6 +279,28 @@ def run_new_feature(self):
     self.run_command(command, "New Feature Description")
 ```
 
+### Current Menu Structure
+
+```
+🍲 HAIDILAO PAPERWORK AUTOMATION SYSTEM
+├── 📊 DATA EXTRACTION
+│   ├── d - Extract Dishes (with sizes)
+│   ├── m - Extract Materials  
+│   ├── q - Extract Dish-Material Relationships
+│   └── 9 - Extract Dish Price History
+├── 🗄️ DATABASE OPERATIONS
+│   ├── r - Reset Database
+│   ├── v - View Database Data
+│   └── t - Run Tests
+├── 📋 REPORT GENERATION
+│   ├── g - Generate Database Report
+│   └── a - Complete Automation Workflow
+└── 🔧 SYSTEM OPERATIONS
+    ├── h - Help
+    ├── Store 6 Conversion (Legacy - Disabled)
+    └── x - Exit
+```
+
 ## 📊 REPORT GENERATION STANDARDS
 
 ### Excel Formatting
@@ -226,7 +314,6 @@ def run_new_feature(self):
 ### Data Validation
 
 - Validate all input data before processing
-- Handle Store 6 closure scenarios gracefully
 - Ensure numeric calculations are accurate
 - Implement percentage formatting for rates
 
@@ -257,10 +344,12 @@ def run_new_feature(self):
 
 ### User Experience
 
-- Clear, emoji-enhanced menus
+- Clear, emoji-enhanced menus organized by functional areas
 - Confirmation prompts for destructive actions
 - Progress indicators for long operations
 - Helpful error messages with suggestions
+- Logical grouping: Data Extraction → Database Operations → Report Generation
+- Consistent command patterns within each section
 
 ### Command Structure
 
@@ -283,6 +372,9 @@ Before any commit, ensure:
 - [ ] No hardcoded values (use config/env vars)
 - [ ] Chinese text handling works correctly
 - [ ] Database connections cleaned up properly
+- [ ] **Excel float conversion**: Dish codes stripped of `.0` suffix
+- [ ] **Debugging approach**: Create step-by-step diagnostic scripts for complex issues
+- [ ] **Unicode handling**: Chinese column names use escape sequences for reliability
 
 ## 🚀 DEPLOYMENT STANDARDS
 
@@ -405,9 +497,32 @@ When adding new features to GUI:
    - Update usage examples
    - Maintain installation instructions
 
+## 🛠️ TROUBLESHOOTING PATTERNS
+
+### Excel Data Extraction Issues
+
+When extraction scripts produce no results:
+
+1. **Check file structure**: Verify sheet names and column existence
+2. **Test data filtering**: Create diagnostic scripts to check each filtering step
+3. **Verify data types**: Look for float conversion issues (especially `.0` suffixes)
+4. **Database lookup**: Test lookup functions separately with sample data
+5. **Unicode handling**: Use escape sequences for Chinese column names
+
+### Common Issues and Solutions
+
+- **Dish codes not found**: Remove `.0` suffix from pandas float conversions
+- **No database insertions**: Check transaction handling and error logging
+- **Large file hanging**: Use `nrows` parameter for testing with sample data
+- **Chinese characters**: Use Unicode escape sequences in column names
+- **Schema migration issues**: Use `alter_dish_structure.sql` for safe updates
+- **Dish uniqueness conflicts**: Ensure `(full_code, size)` combination is used
+- **Material relationship failures**: Verify both dish and material exist before creating relationships
+- **Data extraction debugging**: Create step-by-step diagnostic scripts to isolate issues
+- **Store 6 conversion**: Legacy conversion logic kept for reference but removed from daily workflow
+
 ---
 
 **🍲 Remember: This is a production system for Haidilao restaurant operations.**
 **Every change must maintain reliability and data accuracy.**
 **When in doubt, add more tests and update documentation.**
- 

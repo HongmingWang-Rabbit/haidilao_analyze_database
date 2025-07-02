@@ -12,6 +12,8 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 from dotenv import load_dotenv
+import warnings
+from typing import Dict, List, Optional
 
 # Load environment variables
 load_dotenv()
@@ -25,6 +27,9 @@ try:
 except ImportError:
     print("⚠️  Database module not found. SQL file generation only.")
     get_database_manager = None
+
+# Suppress openpyxl warnings
+warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 
 
 def clean_material_number(material_number):
@@ -55,7 +60,7 @@ def escape_sql_string(value):
     return f"'{escaped}'"
 
 
-def extract_materials_to_sql(input_file, output_file=None, debug=False, direct_db=False, is_test=False):
+def extract_materials_to_sql(input_file, output_file=None, debug=False, direct_db=False, is_test=False, quiet=False):
     """
     Extract material data from Excel file and generate SQL or insert to database
 
@@ -65,29 +70,50 @@ def extract_materials_to_sql(input_file, output_file=None, debug=False, direct_d
         debug: Generate CSV for debugging
         direct_db: Insert directly to database instead of generating SQL
         is_test: Use test database
+        quiet: Suppress verbose output
 
     Returns:
         bool: Success status
     """
 
     try:
-        print(f"📖 Reading material data from: {input_file}")
+        if not quiet:
+            print(f"Reading material data from: {input_file}")
 
-        # Read the Excel file
-        df = pd.read_excel(input_file, sheet_name=0)
+        # Read the file - try different formats for compatibility
+        try:
+            # First try as Excel file
+            df = pd.read_excel(input_file, sheet_name=0, engine='xlrd')
+        except Exception:
+            try:
+                df = pd.read_excel(input_file, sheet_name=0, engine='openpyxl')
+            except Exception:
+                try:
+                    # If Excel fails, try as tab-delimited file with UTF-16 encoding
+                    df = pd.read_csv(input_file, sep='\t', encoding='utf-16')
+                except Exception:
+                    try:
+                        # Try with UTF-8 encoding
+                        df = pd.read_csv(input_file, sep='\t',
+                                         encoding='utf-8')
+                    except Exception:
+                        # Last resort - try default Excel read
+                        df = pd.read_excel(input_file, sheet_name=0)
 
-        print(f"📊 Found {len(df)} rows of material data")
+        if not quiet:
+            print(f"Found {len(df)} rows of material data")
 
-        # Extract and clean the required columns
+        # Process materials
         materials_data = []
         seen_materials = set()  # Track duplicates
 
         for index, row in df.iterrows():
-            # Extract and clean material number
-            material_number = clean_material_number(row['物料'])
+            # Get material number (required field)
+            material_number = clean_material_number(row.get('物料', ''))
 
             if not material_number:
-                print(f"⚠️  Skipping row {index + 1}: Missing material number")
+                if not quiet:
+                    print(f"Skipping row {index + 1}: Missing material number")
                 continue
 
             # Skip duplicates (keep first occurrence)
@@ -95,35 +121,43 @@ def extract_materials_to_sql(input_file, output_file=None, debug=False, direct_d
                 continue
             seen_materials.add(material_number)
 
-            # Extract other fields
-            name = row['物料描述'] if pd.notna(row['物料描述']) else ''
-            description = row['物料描述'] if pd.notna(row['物料描述']) else ''
-            unit = row['单位描述'] if pd.notna(row['单位描述']) else ''
-            package_spec = row['Bun'] if pd.notna(row['Bun']) else ''
+            # Extract other fields with proper defaults
+            name = str(row.get('物料描述', '')).strip()
+            description = str(row.get('物料描述', '')).strip()
+            unit = str(row.get('计', '个')).strip()
+            package_spec = ''  # Not available in this format
 
             # Validate required fields
-            if not name.strip():
-                print(
-                    f"⚠️  Skipping material {material_number}: Missing name/description")
+            if not name:
+                if not quiet:
+                    print(f"Skipping material {material_number}: Missing name")
                 continue
 
-            if not unit.strip():
-                print(f"⚠️  Skipping material {material_number}: Missing unit")
-                continue
+            # Clean up fields
+            if not description:
+                description = name  # Use name as description if empty
+
+            if not unit:
+                unit = '个'  # Default unit
+
+            if package_spec in ['', '-', 'nan', 'None']:
+                package_spec = ''
 
             materials_data.append({
                 'material_number': material_number,
-                'name': name.strip(),
-                'description': description.strip(),
-                'unit': unit.strip(),
-                'package_spec': package_spec.strip(),
+                'name': name,
+                'description': description,
+                'unit': unit,
+                'package_spec': package_spec,
                 'is_active': True
             })
 
-        print(f"✅ Processed {len(materials_data)} unique materials")
+        if not quiet:
+            print(f"Processed {len(materials_data)} unique materials")
 
         if not materials_data:
-            print("❌ No valid material data found")
+            if not quiet:
+                print("No valid material data found")
             return False
 
         # Generate debug CSV if requested
@@ -135,7 +169,7 @@ def extract_materials_to_sql(input_file, output_file=None, debug=False, direct_d
 
         # Handle direct database insertion
         if direct_db:
-            return insert_materials_to_database(materials_data, is_test)
+            return insert_materials_to_database(materials_data, is_test, quiet)
 
         # Generate SQL file
         if not output_file:
@@ -197,13 +231,14 @@ DO UPDATE SET
         return False
 
 
-def insert_materials_to_database(materials_data, is_test=False):
+def insert_materials_to_database(materials_data, is_test=False, quiet=False):
     """
     Insert material data directly to database
 
     Args:
         materials_data: List of material dictionaries
         is_test: Use test database
+        quiet: Suppress verbose output
 
     Returns:
         bool: Success status
@@ -211,17 +246,20 @@ def insert_materials_to_database(materials_data, is_test=False):
 
     try:
         if get_database_manager is None:
-            print("❌ Database connection module not available")
+            if not quiet:
+                print("Database connection module not available")
             return False
 
-        print(
-            f"🗄️  Connecting to {'test' if is_test else 'production'} database...")
+        if not quiet:
+            print(
+                f"Connecting to {'test' if is_test else 'production'} database...")
 
         from utils.database import DatabaseConfig
         config = DatabaseConfig(is_test=is_test)
         db_manager = get_database_manager(is_test=is_test)
 
-        print(f"📝 Inserting {len(materials_data)} materials to database...")
+        if not quiet:
+            print(f"Inserting {len(materials_data)} materials to database...")
 
         inserted_count = 0
         updated_count = 0
@@ -264,17 +302,19 @@ def insert_materials_to_database(materials_data, is_test=False):
                 # Commit the transaction
                 conn.commit()
 
-        print(f"✅ Database insertion completed:")
-        print(f"   📝 Inserted: {inserted_count} new materials")
-        print(f"   🔄 Updated: {updated_count} existing materials")
-        print(f"   📊 Total processed: {len(materials_data)} materials")
+        if not quiet:
+            print(f"Database insertion completed:")
+            print(f"   Inserted: {inserted_count} new materials")
+            print(f"   Updated: {updated_count} existing materials")
+            print(f"   Total processed: {len(materials_data)} materials")
 
         return True
 
     except Exception as e:
-        print(f"❌ Database insertion failed: {e}")
-        import traceback
-        traceback.print_exc()
+        if not quiet:
+            print(f"Database insertion failed: {e}")
+            import traceback
+            traceback.print_exc()
         return False
 
 
@@ -289,6 +329,8 @@ def main():
                         help='Insert directly to database instead of generating SQL files')
     parser.add_argument('--test-db', action='store_true',
                         help='Use test database (only with --direct-db)')
+    parser.add_argument('--quiet', '-q', action='store_true',
+                        help='Suppress verbose output')
 
     args = parser.parse_args()
 
@@ -301,17 +343,19 @@ def main():
     direct_db_insert = args.direct_db or os.getenv(
         'DIRECT_DB_INSERT', 'false').lower() == 'true'
     is_test = args.test_db
+    quiet = args.quiet
 
-    if direct_db_insert:
-        print("🔗 Direct database insertion mode enabled")
-        if is_test:
-            print("🧪 Using test database")
-        else:
-            print("🏭 Using production database")
+    if not quiet:
+        if direct_db_insert:
+            print("Direct database insertion mode enabled")
+            if is_test:
+                print("Using test database")
+            else:
+                print("Using production database")
 
-    print(f"🍲 HAIDILAO MATERIAL EXTRACTION")
-    print(f"📊 Processing: {args.input_file}")
-    print("=" * 60)
+        print(f"HAIDILAO MATERIAL EXTRACTION")
+        print(f"Processing file...")
+        print("=" * 60)
 
     # Extract materials
     success = extract_materials_to_sql(
@@ -319,20 +363,28 @@ def main():
         output_file=args.output,
         debug=args.debug,
         direct_db=direct_db_insert,
-        is_test=is_test
+        is_test=is_test,
+        quiet=quiet
     )
 
-    print("=" * 60)
+    if not quiet:
+        print("=" * 60)
 
     if success:
-        print("🎉 Material extraction completed successfully!")
-        if direct_db_insert:
-            print("💾 Materials have been inserted/updated in the database")
+        if quiet:
+            print("Finished")
         else:
-            print("📄 SQL file has been generated")
+            print("Material extraction completed successfully!")
+            if direct_db_insert:
+                print("Materials have been inserted/updated in the database")
+            else:
+                print("SQL file has been generated")
         sys.exit(0)
     else:
-        print("❌ Material extraction failed. Check the error messages above.")
+        if quiet:
+            print("ERROR: Extraction failed")
+        else:
+            print("Material extraction failed. Check the error messages above.")
         sys.exit(1)
 
 

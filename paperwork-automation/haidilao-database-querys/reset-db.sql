@@ -1,17 +1,35 @@
 -- WARNING: This will delete all your reporting data. Use with caution.
 
 -- Drop tables if they exist (in reverse dependency order)
+-- First drop all tables that depend on other tables
+
+-- Drop monthly performance tables (new)
+DROP TABLE IF EXISTS material_monthly_usage;
+DROP TABLE IF EXISTS dish_monthly_sale;
+
+-- Drop inventory and price history tables
+DROP TABLE IF EXISTS inventory_count;
 DROP TABLE IF EXISTS material_price_history;
 DROP TABLE IF EXISTS dish_price_history;
+
+-- Drop dish-material relationship table
 DROP TABLE IF EXISTS dish_material;
+
+-- Drop dish and material tables
 DROP TABLE IF EXISTS dish;
+DROP TABLE IF EXISTS material;
+
+-- Drop dish type tables
 DROP TABLE IF EXISTS dish_child_type;
 DROP TABLE IF EXISTS dish_type;
-DROP TABLE IF EXISTS material;
+
+-- Drop store operational tables
 DROP TABLE IF EXISTS store_monthly_time_target;
 DROP TABLE IF EXISTS store_monthly_target;
 DROP TABLE IF EXISTS store_time_report;
 DROP TABLE IF EXISTS daily_report;
+
+-- Drop basic tables
 DROP TABLE IF EXISTS time_segment;
 DROP TABLE IF EXISTS store;
 DROP TABLE IF EXISTS district;
@@ -91,7 +109,9 @@ CREATE TABLE store_monthly_target (
   revenue NUMERIC(14, 2),                    -- 营业收入目标（含税）
   labor_percentage NUMERIC(5, 2),            -- 人工成本占比（百分比形式：如 28.5）
   gross_revenue NUMERIC(14, 2),              -- 毛收入目标
-  monthly_CAD_USD_rate NUMERIC(8, 4)         -- 本月 CAD/USD 汇率
+  monthly_CAD_USD_rate NUMERIC(8, 4),        -- 本月 CAD/USD 汇率
+  
+  UNIQUE(store_id, month)                    -- 防止重复插入同一店铺同一月目标
 );
 
 CREATE TABLE store_monthly_time_target (
@@ -138,15 +158,17 @@ CREATE TABLE dish (
     id SERIAL PRIMARY KEY,
     name VARCHAR NOT NULL,               -- 菜品名称
     system_name VARCHAR,                 -- 菜品名称（系统）
-    full_code VARCHAR NOT NULL UNIQUE,  -- 菜品编码 (e.g., "1060061")
+    full_code VARCHAR NOT NULL,          -- 菜品编码 (e.g., "1060061")
     short_code VARCHAR,                  -- 菜品短编码
+    size VARCHAR,                        -- 规格/尺寸 (e.g., "单锅", "拼锅", "四宫格", "小份", "大份")
     dish_child_type_id INTEGER REFERENCES dish_child_type(id), -- 外键：菜品子类
     specification VARCHAR,               -- 规格 (e.g., "单锅", "拼锅", "四宫格")
     unit VARCHAR DEFAULT '份',           -- 菜品单位
     serving_size_kg NUMERIC(8, 4),      -- 出品分量(kg)
     is_active BOOLEAN DEFAULT TRUE,     -- 是否活跃
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(full_code, size)             -- 同一编码不同规格可以存在
 );
 
 -- 物料主表
@@ -168,8 +190,7 @@ CREATE TABLE dish_material (
     dish_id INTEGER REFERENCES dish(id), -- 外键：菜品
     material_id INTEGER REFERENCES material(id), -- 外键：物料
     standard_quantity NUMERIC(12, 6) NOT NULL, -- 标准用量
-    unit VARCHAR NOT NULL,              -- 用量单位
-    conversion_factor NUMERIC(12, 6) DEFAULT 1.0, -- 转换系数（用于单位转换）
+    loss_rate NUMERIC(5, 2) DEFAULT 1.0, -- 损耗率 (默认1.0 = 无损耗)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(dish_id, material_id)       -- 同一菜品同一物料只能有一个配方
@@ -209,19 +230,45 @@ CREATE TABLE material_price_history (
 CREATE TABLE inventory_count (
     id SERIAL PRIMARY KEY,
     store_id INTEGER REFERENCES store(id), -- 外键：门店
-    dish_id INTEGER REFERENCES dish(id),   -- 外键：菜品
+    material_id INTEGER REFERENCES material(id),   -- 外键：物料
     count_date DATE NOT NULL,             -- 盘点日期
-    period_label VARCHAR,                 -- 期间标签 (e.g., "2505")
-    actual_quantity NUMERIC(12, 4),      -- 实收数量
-    theoretical_quantity NUMERIC(12, 4), -- 红火台理论量
-    variance NUMERIC(12, 4),             -- 差异 (实际-理论)
-    variance_amount NUMERIC(12, 2),      -- 差异金额
-    remarks VARCHAR,                      -- 备注
-    combo_usage NUMERIC(12, 4),          -- 套餐、拼盘用量
-    status VARCHAR DEFAULT 'PENDING',    -- 状态 (PENDING, REVIEWED, APPROVED)
+    counted_quantity NUMERIC(12, 4),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR,
-    UNIQUE(store_id, dish_id, count_date, period_label)
+    UNIQUE(store_id, material_id, count_date)
+);
+
+-- ========================================
+-- MONTHLY PERFORMANCE TRACKING TABLES
+-- ========================================
+
+-- 菜品月度销售数据表 (Monthly Dish Sales Performance)
+CREATE TABLE dish_monthly_sale (
+    id SERIAL PRIMARY KEY,
+    dish_id INTEGER REFERENCES dish(id), -- 外键：菜品
+    store_id INTEGER REFERENCES store(id), -- 外键：门店
+    month INTEGER NOT NULL CHECK (month >= 1 AND month <= 12), -- 月份 (1-12)
+    year INTEGER NOT NULL CHECK (year >= 2020), -- 年份
+    sale_amount NUMERIC(12, 4) DEFAULT 0, -- 销售数量
+    return_amount NUMERIC(12, 4) DEFAULT 0, -- 退菜数量
+    free_meal_amount NUMERIC(12, 4) DEFAULT 0, -- 免费餐数量
+    gift_amount NUMERIC(12, 4) DEFAULT 0, -- 赠送数量
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(dish_id, store_id, month, year) -- 同一菜品同一门店同一月只能有一条记录
+);
+
+-- 物料月度使用量表 (Monthly Material Usage)
+CREATE TABLE material_monthly_usage (
+    id SERIAL PRIMARY KEY,
+    material_id INTEGER REFERENCES material(id), -- 外键：物料
+    store_id INTEGER REFERENCES store(id), -- 外键：门店
+    month INTEGER NOT NULL CHECK (month >= 1 AND month <= 12), -- 月份 (1-12)
+    year INTEGER NOT NULL CHECK (year >= 2020), -- 年份
+    material_used NUMERIC(12, 4) NOT NULL, -- 实际使用量 (期末库存 - 期初库存)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(material_id, store_id, month, year) -- 同一物料同一门店同一月只能有一条记录
 );
 
 -- ========================================
@@ -264,6 +311,15 @@ CREATE INDEX idx_inventory_count_store_date ON inventory_count(store_id, count_d
 CREATE INDEX idx_inventory_count_dish ON inventory_count(dish_id);
 CREATE INDEX idx_inventory_count_status ON inventory_count(status);
 
+-- Monthly performance indexes
+CREATE INDEX idx_dish_monthly_sale_dish_store_date ON dish_monthly_sale(dish_id, store_id, year, month);
+CREATE INDEX idx_dish_monthly_sale_store_date ON dish_monthly_sale(store_id, year, month);
+CREATE INDEX idx_dish_monthly_sale_date ON dish_monthly_sale(year, month);
+
+CREATE INDEX idx_material_monthly_usage_material_store_date ON material_monthly_usage(material_id, store_id, year, month);
+CREATE INDEX idx_material_monthly_usage_store_date ON material_monthly_usage(store_id, year, month);
+CREATE INDEX idx_material_monthly_usage_date ON material_monthly_usage(year, month);
+
 -- ========================================
 -- TRIGGERS FOR UPDATED_AT
 -- ========================================
@@ -298,3 +354,153 @@ CREATE TRIGGER update_material_updated_at BEFORE UPDATE ON material
 
 CREATE TRIGGER update_dish_material_updated_at BEFORE UPDATE ON dish_material
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_dish_monthly_sale_updated_at BEFORE UPDATE ON dish_monthly_sale
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_material_monthly_usage_updated_at BEFORE UPDATE ON material_monthly_usage
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- ========================================
+-- INITIAL DATA INSERTION
+-- ========================================
+
+-- Insert district data first (required for store references)
+INSERT INTO district (id, name, description, currency, is_active) VALUES
+(1, 'Canada', 'Canadian operations', 'CAD', TRUE),
+(2, 'USA', 'United States operations', 'USD', TRUE),
+(3, 'China', 'China operations', 'CNY', TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    description = EXCLUDED.description,
+    currency = EXCLUDED.currency,
+    is_active = EXCLUDED.is_active,
+    updated_at = CURRENT_TIMESTAMP;
+
+-- Insert store data with proper district references
+INSERT INTO store (id, name, district_id, country, manager, opened_at, seats_total, is_active) VALUES
+(1, '加拿大一店', 1, '加拿大', '蒋冰遇', '2018-12-18', 53, TRUE),
+(2, '加拿大二店', 1, '加拿大', '蒋冰遇', '2020-07-27', 36, TRUE),
+(3, '加拿大三店', 1, '加拿大', '蒋冰遇', '2020-08-17', 48, TRUE),
+(4, '加拿大四店', 1, '加拿大', '蒋冰遇', '2020-10-30', 70, TRUE),
+(5, '加拿大五店', 1, '加拿大', '蒋冰遇', '2022-10-03', 55, TRUE),
+(6, '加拿大六店', 1, '加拿大', '蒋冰遇', '2024-01-09', 56, TRUE),
+(7, '加拿大七店', 1, '加拿大', '蒋冰遇', '2024-05-01', 57, TRUE)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    district_id = EXCLUDED.district_id,
+    country = EXCLUDED.country,
+    manager = EXCLUDED.manager,
+    opened_at = EXCLUDED.opened_at,
+    seats_total = EXCLUDED.seats_total,
+    is_active = EXCLUDED.is_active,
+    updated_at = CURRENT_TIMESTAMP;
+
+-- Insert time segment data
+INSERT INTO time_segment (id, label, start_time, end_time, description) VALUES
+(1, '08:00-13:59', '08:00:00', '13:59:59', 'Morning to early afternoon'),
+(2, '14:00-16:59', '14:00:00', '16:59:59', 'Afternoon'),
+(3, '17:00-21:59', '17:00:00', '21:59:59', 'Evening'),
+(4, '22:00-(次)07:59', '22:00:00', '07:59:59', 'Late night to early morning (next day)')
+ON CONFLICT (id) DO UPDATE SET
+    label = EXCLUDED.label,
+    start_time = EXCLUDED.start_time,
+    end_time = EXCLUDED.end_time,
+    description = EXCLUDED.description;
+
+-- ========================================
+-- MONTHLY TARGETS DATA (JUNE 2025)
+-- ========================================
+
+-- Monthly targets for June 2025
+-- Based on data provided for all Haidilao Canada stores
+INSERT INTO store_monthly_target (
+    store_id, 
+    month, 
+    turnover_rate, 
+    table_avg_spending, 
+    revenue, 
+    labor_percentage, 
+    gross_revenue, 
+    monthly_CAD_USD_rate
+) VALUES
+-- 加拿大一店 (Store ID: 1)
+(1, '2025-06-01', 4.20, 151.98, 1014900.00, 41.0, 50000, 0.695265),
+-- 加拿大二店 (Store ID: 2) 
+(2, '2025-06-01', 3.50, 140.21, 530000, 42.0, 10000, 0.695265),
+-- 加拿大三店 (Store ID: 3)
+(3, '2025-06-01', 5.20, 124.00, 928500.00, 38.5, 80000, 0.695265),
+-- 加拿大四店 (Store ID: 4)
+(4, '2025-06-01', 4.00, 130.95, 1100000, 38.5, 121002, 0.695265),
+-- 加拿大五店 (Store ID: 5)
+(5, '2025-06-01', 5.10, 135.95, 1144000, 38.5, 122350.8, 0.695265),
+-- 加拿大六店 (Store ID: 6)
+(6, '2025-06-01', 3.60, 117.39, 710000, 39.0, 30000, 0.695265),
+-- 加拿大七店 (Store ID: 7)
+(7, '2025-06-01', 3.85, 148.86, 980000.00, 41.0, 50000, 0.695265)
+ON CONFLICT (store_id, month) DO UPDATE SET
+    turnover_rate = EXCLUDED.turnover_rate,
+    table_avg_spending = EXCLUDED.table_avg_spending,
+    revenue = EXCLUDED.revenue,
+    labor_percentage = EXCLUDED.labor_percentage,
+    gross_revenue = EXCLUDED.gross_revenue,
+    monthly_CAD_USD_rate = EXCLUDED.monthly_CAD_USD_rate;
+
+-- Time segment targets for June 2025
+-- Based on operational patterns for each time segment
+INSERT INTO store_monthly_time_target (
+    store_id, 
+    month, 
+    time_segment_id,
+    turnover_rate
+) VALUES
+-- 加拿大一店 (Store ID: 1) - Total target: 4.20
+(1, '2025-06-01', 1, 0.85),  -- 08:00-13:59
+(1, '2025-06-01', 2, 0.60),  -- 14:00-16:59
+(1, '2025-06-01', 3, 1.97),  -- 17:00-21:59
+(1, '2025-06-01', 4, 0.78),  -- 22:00-(次)07:59
+-- 加拿大二店 (Store ID: 2) - Total target: 3.50
+(2, '2025-06-01', 1, 0.50),  -- 08:00-13:59
+(2, '2025-06-01', 2, 0.50),  -- 14:00-16:59
+(2, '2025-06-01', 3, 1.80),  -- 17:00-21:59
+(2, '2025-06-01', 4, 0.70),  -- 22:00-(次)07:59
+-- 加拿大三店 (Store ID: 3) - Total target: 5.20
+(3, '2025-06-01', 1, 1.20),  -- 08:00-13:59
+(3, '2025-06-01', 2, 1.00),  -- 14:00-16:59
+(3, '2025-06-01', 3, 2.20),  -- 17:00-21:59
+(3, '2025-06-01', 4, 0.80),  -- 22:00-(次)07:59
+-- 加拿大四店 (Store ID: 4) - Total target: 4.00
+(4, '2025-06-01', 1, 0.51),  -- 08:00-13:59
+(4, '2025-06-01', 2, 0.53),  -- 14:00-16:59
+(4, '2025-06-01', 3, 1.85),  -- 17:00-21:59
+(4, '2025-06-01', 4, 1.01),  -- 22:00-(次)07:59
+-- 加拿大五店 (Store ID: 5) - Total target: 5.10
+(5, '2025-06-01', 1, 0.85),  -- 08:00-13:59
+(5, '2025-06-01', 2, 0.75),  -- 14:00-16:59
+(5, '2025-06-01', 3, 2.40),  -- 17:00-21:59
+(5, '2025-06-01', 4, 1.10),  -- 22:00-(次)07:59
+-- 加拿大六店 (Store ID: 6) - Total target: 3.60
+(6, '2025-06-01', 1, 0.60),  -- 08:00-13:59
+(6, '2025-06-01', 2, 0.50),  -- 14:00-16:59
+(6, '2025-06-01', 3, 1.80),  -- 17:00-21:59
+(6, '2025-06-01', 4, 0.70),  -- 22:00-(次)07:59
+-- 加拿大七店 (Store ID: 7) - Total target: 3.85
+(7, '2025-06-01', 1, 0.65),  -- 08:00-13:59
+(7, '2025-06-01', 2, 0.65),  -- 14:00-16:59
+(7, '2025-06-01', 3, 1.85),  -- 17:00-21:59
+(7, '2025-06-01', 4, 0.70)   -- 22:00-(次)07:59
+ON CONFLICT (store_id, month, time_segment_id) DO UPDATE SET
+    turnover_rate = EXCLUDED.turnover_rate;
+
+-- ========================================
+-- RESET COMPLETE
+-- ========================================
+-- Summary of inserted data:
+-- Districts: 3 (Canada, USA, China)
+-- Stores: 7 (All Canadian Haidilao stores)
+-- Time Segments: 4 (Daily time periods)
+-- Monthly Targets: 7 stores for June 2025
+-- Time Segment Targets: 28 records (7 stores × 4 time segments)
+-- Total revenue target: 6,407,400 CAD
+-- Average turnover rate: 4.21
+-- CAD/USD exchange rate: 0.695265
