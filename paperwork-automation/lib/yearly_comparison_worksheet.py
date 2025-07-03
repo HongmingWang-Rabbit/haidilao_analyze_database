@@ -142,10 +142,10 @@ class YearlyComparisonWorksheetGenerator:
             safe_float_total(row['avg_turnover_rate']) for row in yearly_current) / max(1, len(yearly_current))
         total_previous_turnover = sum(safe_float_total(
             row['avg_turnover_rate']) for row in yearly_previous) / max(1, len(yearly_previous)) if yearly_previous else 0.0
-        total_current_per_table = sum(
-            safe_float_total(row['avg_per_table']) for row in yearly_current) / max(1, len(yearly_current))
-        total_previous_per_table = sum(safe_float_total(
-            row['avg_per_table']) for row in yearly_previous) / max(1, len(yearly_previous)) if yearly_previous else 0.0
+        total_current_per_table = total_current_revenue / \
+            total_current_tables if total_current_tables > 0 else 0.0
+        total_previous_per_table = total_previous_revenue / \
+            total_previous_tables if total_previous_tables > 0 else 0.0
 
         # Calculate total changes
         total_tables_change = total_current_tables - total_previous_tables

@@ -152,7 +152,8 @@ class TimeSegmentWorksheetGenerator:
         ws.merge_cells('L2:L3')  # 同比差异
 
         # Get time segment data from database
-        time_segment_data = self.data_provider.get_time_segment_data(
+        # Use the proper method that handles None data_provider
+        time_segment_data = self.get_time_segment_data_for_date(
             self.target_date)
 
         if not time_segment_data:
@@ -205,17 +206,17 @@ class TimeSegmentWorksheetGenerator:
                 # Turnover data - Use correct data sources
                 mtd_turnover = segment_data.get(
                     'mtd_avg_turnover', segment_data['turnover_current'])
-                prev_full_month_turnover = segment_data.get(
-                    'prev_full_month_avg_turnover', segment_data['turnover_prev'])
+                # Same date from previous year
+                prev_year_same_date_turnover = segment_data['turnover_prev']
                 target_turnover = segment_data['target']
 
                 target_diff_mtd = mtd_turnover - target_turnover
-                prev_diff_mtd = mtd_turnover - prev_full_month_turnover
+                prev_diff_mtd = mtd_turnover - prev_year_same_date_turnover
 
                 ws.cell(row=current_row, column=3,
                         value=round(mtd_turnover, 5))
                 ws.cell(row=current_row, column=4, value=round(
-                    prev_full_month_turnover, 5))
+                    prev_year_same_date_turnover, 5))
                 ws.cell(row=current_row, column=5,
                         value=round(target_turnover, 5))
                 ws.cell(row=current_row, column=6,

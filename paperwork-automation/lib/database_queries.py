@@ -158,8 +158,23 @@ class ReportDataProvider:
                 total_customers = sum(float(r['customers'] or 0) for r in rows)
                 total_discount = sum(
                     float(r['discount_total'] or 0) for r in rows)
-                avg_turnover = sum(float(r['turnover_rate'] or 0)
-                                   for r in rows) / len(rows) if rows else 0
+                # Store seating capacity mapping (from business knowledge)
+                # This is consistent with existing code patterns in the codebase
+                store_seating_capacity = {
+                    1: 53, 2: 36, 3: 48, 4: 70, 5: 55, 6: 56, 7: 57}
+
+                # Calculate proper monthly cumulative turnover rate
+                # Method 1: Weighted average by seating capacity (more accurate)
+                if first_row['store_id'] in store_seating_capacity:
+                    seating_capacity = store_seating_capacity[first_row['store_id']]
+                    # Use total tables served divided by total available seats-days
+                    avg_turnover = total_tables_validated / \
+                        (seating_capacity * len(rows)) if len(rows) > 0 else 0
+                else:
+                    # Fallback: Use high-precision arithmetic mean (preserve decimal precision)
+                    # This avoids precision loss from rounding individual daily rates
+                    avg_turnover = sum(float(r['turnover_rate'] or 0)
+                                       for r in rows) / len(rows) if rows else 0
 
                 aggregated[store_id] = {
                     'store_id': store_id,
@@ -194,11 +209,11 @@ class ReportDataProvider:
                     'prev_mtd_revenue': total_revenue,
                     # Average per table for full month (not MTD)
                     'prev_month_avg_per_table': total_revenue / total_tables_served if total_tables_served > 0 else 0,
-                    # Yearly comparison fields
-                    'total_tables': total_tables_validated,
+                    # Yearly comparison fields - FIX: Use non-validated table count
+                    'total_tables': total_tables_served,
                     'total_revenue': total_revenue,
                     'avg_turnover_rate': avg_turnover,
-                    'avg_per_table': total_revenue / total_tables_served if total_tables_validated > 0 else 0
+                    'avg_per_table': total_revenue / total_tables_served if total_tables_served > 0 else 0
                 }
 
             return list(aggregated.values())
@@ -379,8 +394,7 @@ class ReportDataProvider:
                 prev_mtd_sql, (prev_year, current_month, target_day))
 
             # Create lookup dictionaries for aggregated data
-            mtd_lookup = {(row['store_id'], row['time_segment_id'])
-                           : row for row in mtd_results}
+            mtd_lookup = {(row['store_id'], row['time_segment_id'])                          : row for row in mtd_results}
             prev_full_lookup = {
                 (row['store_id'], row['time_segment_id']): row for row in prev_full_results}
             prev_mtd_lookup = {
