@@ -342,7 +342,7 @@ class MonthlyAutomationProcessor:
                     logger.info(f"Processing store {store_id} inventory...")
 
                     # Find Excel files in store folder
-                    excel_files = list(store_folder.glob("*.xls"))
+                    excel_files = list(store_folder.glob("*.xls*")) + list(store_folder.glob("*.XLS*"))
                     if not excel_files:
                         logger.warning(
                             f"No Excel files found in store {store_id} folder")
@@ -704,7 +704,7 @@ class MonthlyAutomationProcessor:
             import sys
 
             # Look for MB5B files
-            mb5b_files = list(mb5b_folder.glob("*.xls"))
+            mb5b_files = list(mb5b_folder.glob("*.xls*")) + list(mb5b_folder.glob("*.XLS*"))
             if not mb5b_files:
                 logger.error("No MB5B file found for material monthly usage")
                 return False
@@ -762,7 +762,7 @@ class MonthlyAutomationProcessor:
 
         # Step 1: Extract from monthly dish sales
         dish_sale_folder = self.input_folder / "monthly_dish_sale"
-        dish_files = list(dish_sale_folder.glob("*.xlsx"))
+        dish_files = list(dish_sale_folder.glob("*.xlsx")) + list(dish_sale_folder.glob("*.XLSX"))
         if dish_files:
             success &= self.extract_dish_types_and_dishes(dish_files[0])
         else:
@@ -791,7 +791,7 @@ class MonthlyAutomationProcessor:
 
         # Step 4: Extract dish-material relationships
         calc_folder = self.input_folder / "calculated_dish_material_usage"
-        calc_files = list(calc_folder.glob("*.xls"))
+        calc_files = list(calc_folder.glob("*.xls*")) + list(calc_folder.glob("*.XLS*"))
         if calc_files:
             success &= self.extract_dish_materials(calc_files[0])
         else:

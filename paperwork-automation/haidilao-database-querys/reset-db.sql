@@ -346,8 +346,6 @@ CREATE INDEX idx_material_price_effective ON material_price_history(effective_da
 
 -- Inventory count indexes
 CREATE INDEX idx_inventory_count_store_date ON inventory_count(store_id, count_date);
-CREATE INDEX idx_inventory_count_dish ON inventory_count(dish_id);
-CREATE INDEX idx_inventory_count_status ON inventory_count(status);
 
 -- Monthly performance indexes
 CREATE INDEX idx_dish_monthly_sale_dish_store_date ON dish_monthly_sale(dish_id, store_id, year, month);
