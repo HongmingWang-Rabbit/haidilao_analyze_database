@@ -19,6 +19,10 @@ DROP TABLE IF EXISTS dish_material;
 DROP TABLE IF EXISTS dish;
 DROP TABLE IF EXISTS material;
 
+-- Drop material type tables
+DROP TABLE IF EXISTS material_child_type;
+DROP TABLE IF EXISTS material_type;
+
 -- Drop dish type tables
 DROP TABLE IF EXISTS dish_child_type;
 DROP TABLE IF EXISTS dish_type;
@@ -153,6 +157,30 @@ CREATE TABLE dish_child_type (
     UNIQUE(dish_type_id, name)           -- 同一大类下子类名称不能重复
 );
 
+-- 物料大类 (e.g., "成本-荤菜类", "成本-素菜类", "成本-酒水类")
+CREATE TABLE material_type (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR NOT NULL UNIQUE,          -- 大类名称 (from 187-一级分类)
+    description VARCHAR,                   -- 描述
+    sort_order INTEGER DEFAULT 0,         -- 排序顺序
+    is_active BOOLEAN DEFAULT TRUE,       -- 是否活跃
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 物料子类 (e.g., "物料消耗" -> "清洁类", "纸巾类", "餐具类")
+CREATE TABLE material_child_type (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR NOT NULL,                -- 子类名称 (from 187-二级分类)
+    material_type_id INTEGER REFERENCES material_type(id), -- 外键：物料大类
+    description VARCHAR,                  -- 描述
+    sort_order INTEGER DEFAULT 0,        -- 排序顺序
+    is_active BOOLEAN DEFAULT TRUE,      -- 是否活跃
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(material_type_id, name)       -- 同一大类下子类名称不能重复
+);
+
 -- 菜品主表
 CREATE TABLE dish (
     id SERIAL PRIMARY KEY,
@@ -179,6 +207,8 @@ CREATE TABLE material (
     description VARCHAR,                -- 详细描述
     unit VARCHAR NOT NULL,              -- 单位 (e.g., "kg", "g", "oz", "瓶", "包")
     package_spec VARCHAR,               -- 包装规格 (e.g., "300G*40包/件")
+    material_child_type_id INTEGER REFERENCES material_child_type(id), -- 外键：物料子类 (可为空)
+    material_type_id INTEGER REFERENCES material_type(id), -- 外键：物料大类
     is_active BOOLEAN DEFAULT TRUE,    -- 是否活跃
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -289,8 +319,16 @@ CREATE INDEX idx_dish_full_code ON dish(full_code);
 CREATE INDEX idx_dish_child_type ON dish(dish_child_type_id);
 CREATE INDEX idx_dish_active ON dish(is_active);
 
+-- Material type indexes
+CREATE INDEX idx_material_type_name ON material_type(name);
+CREATE INDEX idx_material_type_active ON material_type(is_active);
+CREATE INDEX idx_material_child_type_material_type ON material_child_type(material_type_id);
+CREATE INDEX idx_material_child_type_active ON material_child_type(is_active);
+
 -- Material indexes
 CREATE INDEX idx_material_number ON material(material_number);
+CREATE INDEX idx_material_type ON material(material_type_id);
+CREATE INDEX idx_material_child_type ON material(material_child_type_id);
 CREATE INDEX idx_material_active ON material(is_active);
 
 -- Dish-Material relationship indexes
@@ -347,6 +385,12 @@ CREATE TRIGGER update_dish_child_type_updated_at BEFORE UPDATE ON dish_child_typ
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_dish_updated_at BEFORE UPDATE ON dish
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_material_type_updated_at BEFORE UPDATE ON material_type
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_material_child_type_updated_at BEFORE UPDATE ON material_child_type
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_material_updated_at BEFORE UPDATE ON material

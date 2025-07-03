@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Generate monthly-only database report.
+Generate monthly material report.
 Works with monthly performance data (dish_monthly_sale, material_monthly_usage) 
-instead of expecting daily_report data.
+focusing on material usage analysis and variance reporting.
 """
 
 from utils.database import DatabaseConfig, DatabaseManager
 from lib.monthly_dishes_worksheet import MonthlyDishesWorksheetGenerator
+from lib.material_usage_summary_worksheet import MaterialUsageSummaryGenerator
+from lib.detailed_material_spending_worksheet import DetailedMaterialSpendingGenerator
 from openpyxl import Workbook
 from dotenv import load_dotenv
 from datetime import datetime
@@ -23,8 +25,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 load_dotenv()
 
 
-class MonthlyReportGenerator:
-    """Monthly report generator for monthly-only data"""
+class MonthlyMaterialReportGenerator:
+    """Monthly material report generator focusing on material usage analysis"""
 
     def __init__(self, target_date: str, is_test: bool = False):
         self.target_date = target_date
@@ -117,6 +119,20 @@ class MonthlyReportGenerator:
         variance_ws = monthly_dishes_generator.generate_material_variance_worksheet(
             wb, self)
 
+        # Generate material usage summary worksheet
+        if material_stats['count'] > 0:
+            print("INFO: Generating Material Usage Summary worksheet...")
+            material_usage_generator = MaterialUsageSummaryGenerator(self)
+            material_usage_generator.generate_worksheet(wb, self.target_date)
+
+            # Generate detailed material spending worksheets for each store
+            print(
+                "INFO: Generating Detailed Material Spending worksheets for each store...")
+            detailed_spending_generator = DetailedMaterialSpendingGenerator(
+                self)
+            detailed_spending_generator.generate_worksheets(
+                wb, self.target_date)
+
         # Add a simple summary worksheet
         summary_ws = self.create_summary_worksheet(wb, data_summary)
 
@@ -199,7 +215,7 @@ class MonthlyReportGenerator:
     def save_report(self, wb):
         """Save the Excel workbook to file"""
         try:
-            filename = f"monthly_report_{self.target_date.replace('-', '_')}.xlsx"
+            filename = f"monthly_material_report_{self.target_date.replace('-', '_')}.xlsx"
             output_path = self.output_dir / filename
             wb.save(output_path)
             return output_path
@@ -222,7 +238,8 @@ def main():
     args = parser.parse_args()
 
     try:
-        generator = MonthlyReportGenerator(args.date, is_test=args.test)
+        generator = MonthlyMaterialReportGenerator(
+            args.date, is_test=args.test)
         output_path = generator.generate_report()
 
         if output_path:

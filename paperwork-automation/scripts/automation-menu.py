@@ -513,6 +513,7 @@ class AutomationMenu:
         print("🏪 Inventory checking results → inventory counts by store")
         print("🔗 Calculated dish-material usage → dish-material relationships")
         print("📋 Generate material variance analysis report")
+        print("🍻 Generate beverage variance analysis report")
         print()
 
         # Get target date - either from files or user input
@@ -593,14 +594,26 @@ class AutomationMenu:
         print("\n🚀 Starting complete monthly automation...")
 
         # First, run database migration to ensure loss_rate column exists
-        print("🔧 Running database migration for loss_rate column...")
+        print("🔧 Running database migrations...")
+
+        # Run loss rate migration
         migration_command = f'{self.python_cmd} -m scripts.migrate_add_loss_rate'
         migration_success = self.run_command(
             migration_command, "Database Migration for Loss Rate")
 
         if not migration_success:
-            print("❌ Database migration failed. Continuing with automation anyway...")
+            print("❌ Loss rate migration failed. Continuing with automation anyway...")
             print("💡 Note: Loss rate calculations may use default values")
+
+        # Run material type migration
+        material_type_migration_command = f'{self.python_cmd} -m scripts.migrate_add_material_types_simple --confirm'
+        material_type_success = self.run_command(
+            material_type_migration_command, "Material Type Tables Migration")
+
+        if not material_type_success:
+            print(
+                "❌ Material type migration failed. Continuing with automation anyway...")
+            print("💡 Note: Material type classifications may not be available")
 
         # Run the new monthly automation script
         command = f'{self.python_cmd} -m scripts.complete_monthly_automation_new --date {target_date} --inventory-count-date {inventory_count_date}'
@@ -613,6 +626,7 @@ class AutomationMenu:
             print("=" * 70)
             print("✅ All monthly data has been processed and imported")
             print("✅ Material variance analysis report has been generated")
+            print("✅ Beverage variance analysis report has been generated")
             print("📁 Check the output/ folder for generated reports")
             print("📊 Database has been updated with all monthly data")
         else:
@@ -644,8 +658,10 @@ class AutomationMenu:
                 ("5", "Monthly Material Usage (File → Database)", "monthly_material"),
                 ("6", "Calculated Dish Materials (File → Database)", "dish_materials"),
                 ("7", "Materials Master Data (File → Database)", "materials"),
-                ("8", "Dishes Master Data (File → Database)", "dishes"),
-                ("9", "Dish Price History (File → Database)", "price_history"),
+                ("8", "Material Detail with Types (File → Database)",
+                 "material_detail_types"),
+                ("9", "Dishes Master Data (File → Database)", "dishes"),
+                ("0", "Dish Price History (File → Database)", "price_history"),
                 ("b", "← Back to Main Menu", "back")
             ]
 
@@ -676,8 +692,10 @@ class AutomationMenu:
             elif choice == '7':
                 self.extract_materials()
             elif choice == '8':
-                self.extract_dishes()
+                self.extract_material_detail_with_types()
             elif choice == '9':
+                self.extract_dishes()
+            elif choice == '0':
                 self.extract_with_file_selection(
                     "price_history", "Dish Price History")
             else:
@@ -720,6 +738,11 @@ class AutomationMenu:
                 ("5", "Business Insight Report", "business_insight"),
                 ("6", "Monthly Dishes Report", "monthly_dishes"),
                 ("7", "Daily Store Tracking Report", "daily_tracking"),
+                ("8", "Monthly Material Report with Usage Summary",
+                 "monthly_material_usage"),
+                ("9", "Monthly Material Report with Detailed Spending",
+                    "monthly_detailed_spending"),
+                ("b", "Monthly Beverage Report", "monthly_beverage_report"),
                 ("b", "← Back to Main Menu", "back")
             ]
 
@@ -743,6 +766,12 @@ class AutomationMenu:
                 self.generate_monthly_dishes_report()
             elif choice == '7':
                 self.generate_daily_tracking_report()
+            elif choice == '8':
+                self.generate_monthly_material_usage_report()
+            elif choice == '9':
+                self.generate_monthly_detailed_spending_report()
+            elif choice == 'b':
+                self.generate_monthly_beverage_report()
             else:
                 print("❌ Invalid choice. Please try again.")
                 input("Press Enter to continue...")
@@ -860,10 +889,11 @@ class AutomationMenu:
                 ("1", "Reset Database (Full)", "reset_full"),
                 ("2", "Reset Test Database", "reset_test"),
                 ("3", "Migrate: Add Loss Rate Column", "migrate_loss_rate"),
-                ("4", "Insert Constant Data", "insert_const"),
-                ("5", "Insert Monthly Targets", "insert_targets"),
-                ("6", "Verify Database Structure", "verify_structure"),
-                ("7", "Show Database Status", "show_status"),
+                ("4", "Migrate: Add Material Type Tables", "migrate_material_types"),
+                ("5", "Insert Constant Data", "insert_const"),
+                ("6", "Insert Monthly Targets", "insert_targets"),
+                ("7", "Verify Database Structure", "verify_structure"),
+                ("8", "Show Database Status", "show_status"),
                 ("b", "← Back to Main Menu", "back")
             ]
 
@@ -880,12 +910,14 @@ class AutomationMenu:
             elif choice == '3':
                 self.run_loss_rate_migration()
             elif choice == '4':
-                self.insert_constant_data()
+                self.run_material_type_migration()
             elif choice == '5':
-                self.insert_monthly_targets()
+                self.insert_constant_data()
             elif choice == '6':
-                self.verify_database_structure()
+                self.insert_monthly_targets()
             elif choice == '7':
+                self.verify_database_structure()
+            elif choice == '8':
                 self.show_database_status()
             else:
                 print("❌ Invalid choice. Please try again.")
@@ -1307,6 +1339,154 @@ except Exception as e:
                 temp_file.unlink()
             input("Press Enter to continue...")
 
+    def generate_monthly_material_usage_report(self):
+        """Generate monthly report with material usage summary"""
+        print("📊 Generating monthly report with material usage summary...")
+        print("This will create a monthly report with material usage summary by store and material type.")
+
+        # Get target date from user
+        print("\n📅 Enter target date for the report:")
+        print("Format options:")
+        print("  - YYYY-MM (e.g., 2025-06)")
+        print("  - YYYY-MM-DD (e.g., 2025-06-15)")
+        print("  - Press Enter for current month")
+
+        date_input = input("\nEnter date: ").strip()
+
+        # Parse and validate the date
+        target_date = self.parse_date_input(date_input)
+        if not target_date:
+            print("❌ Invalid date format")
+            input("Press Enter to continue...")
+            return
+
+        print(f"📅 Using target date: {target_date}")
+        confirm = input(
+            "Generate monthly report with this date? (y/N): ").lower()
+        if confirm != 'y':
+            return
+
+        # Create command to run monthly material report generation
+        command = f'{self.python_cmd} -m scripts.generate_monthly_material_report --date {target_date}'
+        success = self.run_command(
+            command, "Generate Monthly Material Report with Usage Summary")
+
+        if success:
+            print("📊 Monthly report with material usage summary generated successfully!")
+            print("📋 The report includes:")
+            print("   1. 月度统计概览 (Monthly Statistics Overview)")
+            print("   2. 物料差异分析 (Material Variance Analysis)")
+            print("   3. 物料使用汇总 (Material Usage Summary)")
+        else:
+            print("❌ Failed to generate monthly report")
+
+        input("Press Enter to continue...")
+
+    def generate_monthly_detailed_spending_report(self):
+        """Generate monthly report with detailed material spending worksheets for each store"""
+        print("📊 GENERATE MONTHLY REPORT WITH DETAILED MATERIAL SPENDING")
+        print("=" * 65)
+        print("This will generate a comprehensive monthly report including:")
+        print("✅ 月度统计概览 (Monthly Statistics Overview)")
+        print("✅ 物料差异分析 (Material Variance Analysis)")
+        print("✅ 物料使用汇总 (Material Usage Summary)")
+        print("✅ 物料明细-[门店名] (Detailed Material Spending per Store)")
+        print()
+        print("Each store will get its own detailed worksheet showing:")
+        print("   📋 Individual material usage with amounts")
+        print("   🏷️  Material classifications and categories")
+        print("   💰 Usage quantities, unit prices, and totals")
+        print("   📊 Subtotals by material type and grand totals")
+        print()
+
+        # Get target date
+        date_input = input(
+            "Enter target date (YYYY-MM-DD) or press Enter for current month: ").strip()
+        target_date = self.parse_date_input(date_input)
+
+        if not target_date:
+            print("❌ Invalid date format. Please use YYYY-MM-DD")
+            input("Press Enter to continue...")
+            return
+
+        print(f"📅 Target date: {target_date}")
+        confirm = input(
+            "Generate detailed monthly report? (y/N): ").lower()
+        if confirm != 'y':
+            return
+
+        # Create command to run monthly material report generation
+        command = f'{self.python_cmd} -m scripts.generate_monthly_material_report --date {target_date}'
+        success = self.run_command(
+            command, "Generate Monthly Material Report with Detailed Spending")
+
+        if success:
+            print(
+                "📊 Monthly report with detailed material spending generated successfully!")
+            print("📋 The report includes:")
+            print("   1. 月度统计概览 (Monthly Statistics Overview)")
+            print("   2. 物料差异分析 (Material Variance Analysis)")
+            print("   3. 物料使用汇总 (Material Usage Summary)")
+            print("   4. 物料明细-[门店名] (Detailed Spending for each Store)")
+            print()
+            print("💡 Each store worksheet shows individual material consumption")
+            print("   with detailed breakdowns by material type and category.")
+        else:
+            print("❌ Failed to generate detailed monthly report")
+
+        input("Press Enter to continue...")
+
+    def generate_monthly_beverage_report(self):
+        """Generate monthly beverage report with variance analysis"""
+        print("🍺 GENERATE MONTHLY BEVERAGE REPORT")
+        print("=" * 45)
+        print("This will generate a comprehensive monthly beverage report including:")
+        print("✅ 酒水统计概览 (Beverage Statistics Overview)")
+        print("✅ 酒水汇总表 (Beverage Summary by Store)")
+        print("✅ 酒水差异明细表 (Beverage Variance Details)")
+        print()
+        print("The report compares system sales data with inventory counts for:")
+        print("   🍺 Alcoholic beverages (含酒精饮料)")
+        print("   🥤 Non-alcoholic beverages (无酒精饮料)")
+        print("   💧 Water and other beverages (水及其他饮品)")
+        print()
+
+        # Get target date
+        date_input = input(
+            "Enter target date (YYYY-MM-DD) or press Enter for current month: ").strip()
+        target_date = self.parse_date_input(date_input)
+
+        if not target_date:
+            print("❌ Invalid date format. Please use YYYY-MM-DD")
+            input("Press Enter to continue...")
+            return
+
+        print(f"📅 Target date: {target_date}")
+        confirm = input(
+            "Generate monthly beverage report? (y/N): ").lower()
+        if confirm != 'y':
+            return
+
+        # Create command to run monthly beverage report generation
+        command = f'{self.python_cmd} -m scripts.generate_monthly_beverage_report --date {target_date}'
+        success = self.run_command(
+            command, "Generate Monthly Beverage Report")
+
+        if success:
+            print(
+                "🍺 Monthly beverage report generated successfully!")
+            print("📋 The report includes:")
+            print("   1. 酒水统计概览 (Beverage Statistics Overview)")
+            print("   2. 酒水汇总表 (Beverage Summary by Store)")
+            print("   3. 酒水差异明细表 (Beverage Variance Details)")
+            print()
+            print("💡 The report shows variance between system sales and inventory counts")
+            print("   for all beverage-related items across all stores.")
+        else:
+            print("❌ Failed to generate monthly beverage report")
+
+        input("Press Enter to continue...")
+
     def parse_date_input(self, date_input: str) -> str:
         """Parse user date input and return formatted date string"""
         from datetime import datetime
@@ -1465,6 +1645,26 @@ except Exception as e:
         command = f'{self.python_cmd} -m scripts.migrate_add_loss_rate'
         self.run_command(command, "Add Loss Rate Column Migration")
 
+    def run_material_type_migration(self):
+        """Run database migration to add material type tables"""
+        print("🔧 DATABASE MIGRATION: Add Material Type Tables")
+        print("=" * 50)
+        print("This will add material classification tables similar to dish types:")
+        print("✅ Create material_type table (11 types)")
+        print("✅ Create material_child_type table (6 child types)")
+        print("✅ Add material_type_id column to material table")
+        print("✅ Add material_child_type_id column to material table")
+        print("✅ Create appropriate indexes and triggers")
+        print("✅ Insert initial material type data")
+        print()
+
+        confirm = input("Run migration? (y/N): ").lower()
+        if confirm != 'y':
+            return
+
+        command = f'{self.python_cmd} -m scripts.migrate_add_material_types_simple'
+        self.run_command(command, "Add Material Type Tables Migration")
+
     def insert_constant_data(self):
         """Insert constant data"""
         command = f'{self.python_cmd} -c "exec(open(\'haidilao-database-querys/insert_const_data.sql\').read())"'
@@ -1492,6 +1692,14 @@ except Exception as e:
         if excel_file:
             command = f'{self.python_cmd} -m scripts.extract-materials "{excel_file}" --direct-db'
             self.run_command(command, "Extract Materials to Database")
+
+    def extract_material_detail_with_types(self):
+        """Extract material detail with type classifications from Excel file"""
+        excel_file = self.get_excel_file()
+        if excel_file:
+            command = f'{self.python_cmd} -m scripts.extract_material_detail_with_types "{excel_file}" --direct-db'
+            self.run_command(
+                command, "Extract Material Detail with Types to Database")
 
     def extract_dishes(self):
         """Extract dishes from Excel file"""

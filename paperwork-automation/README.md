@@ -20,14 +20,16 @@ This system processes Haidilao restaurant Excel data and generates **4 professio
 ### 📊 **Complete Report Generation System**
 
 - **🎯 4 Professional Worksheets**: 对比上月表 (Monthly Comparison), 同比数据 (Yearly Comparison), 分时段-上报 (Time Segment), 营业透视 (Business Insight)
-- **📈 Advanced Analytics**: Growth rates, MTD comparisons, turnover analysis, target achievement tracking
+- **🏪 Material Usage Summary (NEW)**: Store-by-store material consumption analysis with type classifications and financial tracking
+- **📋 Detailed Material Spending (NEW)**: Individual material consumption worksheets for each store with granular breakdowns by material type
+- **📈 Advanced Analytics**: Growth rates, MTD comparisons, turnover analysis, target achievement tracking, material variance analysis
 - **🎨 Professional Excel Formatting**: Conditional formatting, merged cells, proper styling, Chinese character support
 - **🏪 Smart Store Management**: Handles all 7 Canadian stores including Store 6 closure scenarios
 
 ### 🧪 **100% Test Coverage & Validation**
 
-- **📋 62 Comprehensive Tests** with **100% success rate** across all modules
-- **🎯 Complete Coverage**: Business Insight (9), Yearly Comparison (21), Time Segment (9), Data Extraction (18), Validation (5)
+- **📋 93 Comprehensive Tests** with **100% success rate** across all modules
+- **🎯 Complete Coverage**: Business Insight (9), Yearly Comparison (21), Time Segment (9), Material Usage Summary (16), Detailed Material Spending (15), Data Extraction (18), Validation (5)
 - **⚡ Performance Optimized**: < 1 second execution for core test suite
 - **🛡️ Bulletproof Error Handling**: Graceful degradation and comprehensive edge case coverage
 
@@ -235,11 +237,11 @@ The system automatically validates:
 
 ### **Comprehensive Test Suite (100% Coverage)**
 
-The system includes **62 comprehensive tests** with **100% success rate** covering all core functionality:
+The system includes **78 comprehensive tests** with **100% success rate** covering all core functionality:
 
 ```bash
-# Run complete test suite (62 tests)
-python3 -m unittest tests.test_business_insight_worksheet tests.test_yearly_comparison_worksheet tests.test_time_segment_worksheet tests.test_extract_all tests.test_validation_against_actual_data -v
+# Run complete test suite (78 tests)
+python3 -m unittest tests.test_business_insight_worksheet tests.test_yearly_comparison_worksheet tests.test_time_segment_worksheet tests.test_material_usage_summary_worksheet tests.test_extract_all tests.test_validation_against_actual_data -v
 
 # Quick core tests
 python3 -m unittest tests.test_business_insight_worksheet -q
@@ -261,6 +263,7 @@ python3 scripts/automation-menu.py
 - **🎯 Business Insight Worksheet**: 9 tests (initialization, data calculations, formatting)
 - **📊 Yearly Comparison Worksheet**: 21 tests (percentage calculations, totals, formatting, edge cases)
 - **⏰ Time Segment Worksheet**: 9 tests (data retrieval, calculations, structure)
+- **🏪 Material Usage Summary Worksheet**: 16 tests (NEW - store analysis, material type handling, formatting, data validation)
 - **📁 Data Extraction & Validation**: 18 tests (file processing, validation, error handling)
 - **✅ Integration & Validation**: 5 tests (actual data validation, structure matching)
 
@@ -280,7 +283,7 @@ python3 -m unittest discover tests -v
 
 - **⚡ Core Test Execution**: < 1 second
 - **📊 Complete Test Suite**: < 5 seconds
-- **🎯 Success Rate**: 100% (62/62 tests passing)
+- **🎯 Success Rate**: 100% (78/78 tests passing)
 - **🔄 Test Categories**: Initialization, Success paths, Error handling, Edge cases, Integration, Data validation
 
 ## 📊 Report Generation
@@ -304,6 +307,37 @@ python3 scripts/generate_database_report.py --date 2025-06-10
 - **📊 同比数据**: Year-over-year comparison with percentage changes
 - **⏰ 分时段-上报**: Time segment analysis with totals and differences
 - **🎯 营业透视**: Business insight with store performance rankings
+
+### **Monthly Material Usage Report (NEW)**
+
+Generate comprehensive monthly reports with **material usage summary by store and type**:
+
+```bash
+# Via automation menu (recommended)
+python3 scripts/automation-menu.py
+# Select: 📊 Single Report Generation → 8) Monthly Report with Material Usage Summary
+
+# Direct command
+python3 scripts/generate_monthly_report.py --date 2025-06-01
+```
+
+**Generated Monthly Report Structure:**
+
+- **📊 月度统计概览**: Monthly statistics overview with dish sales and material usage summaries
+- **📈 物料差异分析**: Material variance analysis comparing expected vs actual usage
+- **🏪 物料使用汇总**: **NEW - Material usage summary by store and material type**
+  - Organized by store with material type breakdowns
+  - Usage amounts in CAD with proper formatting
+  - Store totals and grand total across all stores
+  - Material categories: 成本-锅底类, 成本-荤菜类, 成本-素菜类, etc.
+
+**Material Usage Summary Features:**
+
+- **🏪 Store-by-Store Analysis**: Each store's material consumption broken down by type
+- **💰 Financial Tracking**: Usage amounts calculated using material prices and quantities
+- **📊 Professional Formatting**: Clean tables with proper borders, colors, and Chinese text support
+- **📈 Comprehensive Totals**: Store subtotals and system-wide grand totals
+- **🎯 Material Classification**: Leverages the new material type system (11 material types, 6 child types)
 
 **Output:** `output/database_report_YYYY_MM_DD.xlsx`
 

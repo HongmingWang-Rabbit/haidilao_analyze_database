@@ -13,6 +13,7 @@ Workflow:
 
 from utils.database import DatabaseManager, DatabaseConfig
 import sys
+import os
 import logging
 import pandas as pd
 from pathlib import Path
@@ -45,12 +46,16 @@ class MonthlyAutomationProcessor:
             'dish_types': 0,
             'dish_child_types': 0,
             'dishes': 0,
+            'material_types': 0,
+            'material_child_types': 0,
             'materials': 0,
             'dish_price_history': 0,
             'material_price_history': 0,
             'dish_monthly_sales': 0,
             'inventory_counts': 0,
             'dish_materials': 0,
+            'monthly_material_report': 0,
+            'monthly_beverage_report': 0,
             'errors': []
         }
 
@@ -237,91 +242,85 @@ class MonthlyAutomationProcessor:
             self.results['errors'].append(f"Dish data extraction failed: {e}")
             return False
 
-    def extract_materials(self, file_path: Path) -> bool:
-        """Extract materials and material price history from material detail."""
+    def extract_material_detail_with_types(self, file_path: Path) -> bool:
+        """Extract materials with type classifications from material detail."""
         logger.info(
-            f"MATERIAL: Extracting material data from: {file_path.name}")
+            f"MATERIAL: Extracting material detail with types from: {file_path.name}")
 
         try:
-            df = pd.read_excel(file_path)
-            logger.info(f"Loaded {len(df)} rows from material detail file")
+            import subprocess
+            import sys
 
-            with self.db_manager.get_connection() as conn:
-                cursor = conn.cursor()
+            # Run the dedicated material detail extraction script with types
+            cmd = [
+                sys.executable,
+                "scripts/extract_material_detail_with_types.py",
+                str(file_path),
+                "--direct-db"
+            ]
 
-                material_count = 0
-                price_history_count = 0
+            # Set up environment
+            env = os.environ.copy()
+            current_dir = str(Path.cwd())
+            if 'PYTHONPATH' in env:
+                env['PYTHONPATH'] = f"{current_dir};{env['PYTHONPATH']}"
+            else:
+                env['PYTHONPATH'] = current_dir
 
-                for _, row in df.iterrows():
-                    try:
-                        # Clean material number (remove trailing zeros)
-                        material_number = str(int(row['物料'])) if pd.notna(
-                            row['物料']) else None
-                        if not material_number:
-                            continue
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, cwd=Path.cwd(), env=env)
 
-                        # Insert or update material
-                        cursor.execute("""
-                            INSERT INTO material (
-                                name, material_number, description, unit
-                            )
-                            VALUES (%s, %s, %s, %s)
-                            ON CONFLICT (material_number) DO UPDATE SET
-                                name = EXCLUDED.name,
-                                description = EXCLUDED.description,
-                                unit = EXCLUDED.unit,
-                                updated_at = CURRENT_TIMESTAMP
-                        """, (
-                            row['物料描述'], material_number,
-                            row['物料描述'], row['单位描述']
-                        ))
-                        material_count += cursor.rowcount
+            if result.returncode == 0:
+                logger.info(
+                    "SUCCESS: Material detail extraction with types completed")
 
-                        # Extract material price history if price exists
-                        if pd.notna(row['系统发出单价']) and row['系统发出单价'] > 0:
-                            price = float(row['系统发出单价'])
+                # Try to parse output for counts
+                output = result.stdout + result.stderr
+                material_types_count = 0
+                material_child_types_count = 0
+                materials_count = 0
 
-                            # Mark existing prices as inactive if different
-                            cursor.execute("""
-                                UPDATE material_price_history
-                                SET is_active = FALSE
-                                WHERE material_id IN (SELECT id FROM material WHERE material_number = %s)
-                                AND price != %s AND is_active = TRUE
-                            """, (material_number, price))
+                # Look for success patterns in output
+                import re
+                type_match = re.search(r'Material types:\s*(\d+)', output)
+                if type_match:
+                    material_types_count = int(type_match.group(1))
 
-                            # Insert new price history
-                            cursor.execute("""
-                                INSERT INTO material_price_history (
-                                    material_id, district_id, price, effective_date, is_active
-                                )
-                                SELECT m.id, 1, %s, CURRENT_DATE, TRUE
-                                FROM material m
-                                WHERE m.material_number = %s
-                                ON CONFLICT (material_id, district_id, effective_date) DO UPDATE SET
-                                    price = EXCLUDED.price,
-                                    is_active = TRUE
-                            """, (price, material_number))
-                            price_history_count += cursor.rowcount
+                child_type_match = re.search(
+                    r'Material child types:\s*(\d+)', output)
+                if child_type_match:
+                    material_child_types_count = int(child_type_match.group(1))
 
-                    except Exception as e:
-                        logger.error(f"Error processing material row: {e}")
-                        self.results['errors'].append(
-                            f"Material extraction error: {e}")
-                        continue
+                material_match = re.search(
+                    r'Materials (?:inserted|updated):\s*(\d+)', output)
+                if material_match:
+                    materials_count = int(material_match.group(1))
 
-                conn.commit()
+                # Alternative pattern for total materials
+                total_match = re.search(
+                    r'Total materials processed:\s*(\d+)', output)
+                if total_match and not materials_count:
+                    materials_count = int(total_match.group(1))
 
-                self.log_result('materials', material_count,
-                                "Processed materials")
                 self.log_result(
-                    'material_price_history', price_history_count, "Processed material price history")
+                    'material_types', material_types_count, "Processed material types")
+                self.log_result(
+                    'material_child_types', material_child_types_count, "Processed material child types")
+                self.log_result('materials', materials_count,
+                                "Processed materials with types")
 
                 return True
+            else:
+                logger.error(
+                    f"ERROR: Material detail extraction with types failed: {result.stderr}")
+                self.results['errors'].append(
+                    f"Material detail extraction failed: {result.stderr}")
+                return False
 
         except Exception as e:
-            logger.error(f"Failed to extract material data: {e}")
+            logger.error(f"Failed to extract material detail with types: {e}")
             self.results['errors'].append(
-                f"Material data extraction failed: {e}")
+                f"Material detail extraction error: {e}")
             return False
 
     def extract_inventory_data(self, inventory_folder: Path) -> bool:
@@ -586,19 +585,30 @@ class MonthlyAutomationProcessor:
             return False
 
     def generate_analysis_report(self, target_date: str) -> bool:
+        """Generate both material and beverage variance analysis reports."""
+        logger.info(
+            f"REPORT: Generating variance analysis reports for {target_date}")
+
+        material_success = self.generate_material_report(target_date)
+        beverage_success = self.generate_beverage_report(target_date)
+
+        # Return True if at least one report was successful
+        return material_success or beverage_success
+
+    def generate_material_report(self, target_date: str) -> bool:
         """Generate material variance analysis report with NEW structure."""
         logger.info(
-            f"REPORT: Generating material variance analysis report for {target_date}")
+            f"MATERIAL REPORT: Generating material variance analysis report for {target_date}")
 
         try:
             # Use the updated monthly report generation instead of the old logic
             import subprocess
             import sys
 
-            # Call the updated monthly report generation script with proper module path
+            # Call the updated monthly material report generation script with proper module path
             cmd = [
                 sys.executable,
-                "-m", "scripts.generate_monthly_report",
+                "-m", "scripts.generate_monthly_material_report",
                 "--date", target_date
             ]
 
@@ -615,25 +625,74 @@ class MonthlyAutomationProcessor:
                 cmd, capture_output=True, text=True, cwd=Path.cwd(), env=env)
 
             if result.returncode == 0:
-                logger.info("SUCCESS: Monthly report generation completed")
-                # The generate_monthly_report.py script uses the new structure:
+                logger.info(
+                    "SUCCESS: Monthly material report generation completed")
+                # The generate_monthly_material_report.py script uses the new structure:
                 # - System Record (material_monthly_usage.material_used)
                 # - Inventory Count (inventory_count.counted_quantity)
                 # - Theoretical Usage (sum of dish_sales * standard_quantity * loss_rate)
                 # - Variance = System Record - Theoretical Usage
-                self.log_result('monthly_report', 1,
-                                "Generated monthly report with new structure")
+                self.log_result('monthly_material_report', 1,
+                                "Generated monthly material report with new structure")
                 return True
             else:
                 logger.error(
-                    f"ERROR: Monthly report generation failed: {result.stderr}")
+                    f"ERROR: Monthly material report generation failed: {result.stderr}")
                 self.results['errors'].append(
-                    f"Monthly report generation failed: {result.stderr}")
+                    f"Monthly material report generation failed: {result.stderr}")
                 return False
 
         except Exception as e:
-            logger.error(f"Failed to generate analysis report: {e}")
-            self.results['errors'].append(f"Report generation failed: {e}")
+            logger.error(f"Failed to generate material report: {e}")
+            self.results['errors'].append(
+                f"Material report generation failed: {e}")
+            return False
+
+    def generate_beverage_report(self, target_date: str) -> bool:
+        """Generate beverage variance analysis report."""
+        logger.info(
+            f"BEVERAGE REPORT: Generating beverage variance analysis report for {target_date}")
+
+        try:
+            import subprocess
+            import sys
+
+            # Call the beverage report generation script
+            cmd = [
+                sys.executable,
+                "-m", "scripts.generate_monthly_beverage_report",
+                "--date", target_date
+            ]
+
+            # Set up environment to include current directory in Python path
+            import os
+            env = os.environ.copy()
+            current_dir = str(Path.cwd())
+            if 'PYTHONPATH' in env:
+                env['PYTHONPATH'] = f"{current_dir};{env['PYTHONPATH']}"
+            else:
+                env['PYTHONPATH'] = current_dir
+
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, cwd=Path.cwd(), env=env)
+
+            if result.returncode == 0:
+                logger.info(
+                    "SUCCESS: Monthly beverage report generation completed")
+                self.log_result('monthly_beverage_report', 1,
+                                "Generated monthly beverage report with variance analysis")
+                return True
+            else:
+                logger.error(
+                    f"ERROR: Monthly beverage report generation failed: {result.stderr}")
+                self.results['errors'].append(
+                    f"Monthly beverage report generation failed: {result.stderr}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Failed to generate beverage report: {e}")
+            self.results['errors'].append(
+                f"Beverage report generation failed: {e}")
             return False
 
     def extract_material_monthly_usage(self, mb5b_folder: Path) -> bool:
@@ -710,11 +769,13 @@ class MonthlyAutomationProcessor:
             logger.error("No monthly dish sale file found")
             success = False
 
-        # Step 2: Extract from material detail
+        # Step 2: Extract from material detail (with material types)
         material_folder = self.input_folder / "material_detail"
-        material_files = list(material_folder.glob("*.xlsx"))
+        material_files = list(material_folder.glob(
+            "*.xlsx")) + list(material_folder.glob("*.XLSX"))
         if material_files:
-            success &= self.extract_materials(material_files[0])
+            success &= self.extract_material_detail_with_types(
+                material_files[0])
         else:
             logger.error("No material detail file found")
             success = False
@@ -737,7 +798,7 @@ class MonthlyAutomationProcessor:
             logger.error("No calculated dish material usage file found")
             success = False
 
-        # Step 5: Generate analysis report
+        # Step 5: Generate analysis reports (both material and beverage)
         if success:
             success &= self.generate_analysis_report(target_date)
 
@@ -756,6 +817,10 @@ class MonthlyAutomationProcessor:
         logger.info(
             f"SUCCESS: Dish child types: {self.results['dish_child_types']}")
         logger.info(f"SUCCESS: Dishes: {self.results['dishes']}")
+        logger.info(
+            f"SUCCESS: Material types: {self.results['material_types']}")
+        logger.info(
+            f"SUCCESS: Material child types: {self.results['material_child_types']}")
         logger.info(f"SUCCESS: Materials: {self.results['materials']}")
         logger.info(
             f"SUCCESS: Dish price history: {self.results['dish_price_history']}")
@@ -767,6 +832,14 @@ class MonthlyAutomationProcessor:
             f"SUCCESS: Inventory processing (System Record + Inventory Count): {self.results['inventory_counts']}")
         logger.info(
             f"SUCCESS: Dish-material relationships: {self.results['dish_materials']}")
+
+        # Report generation results
+        material_report_count = self.results.get('monthly_material_report', 0)
+        beverage_report_count = self.results.get('monthly_beverage_report', 0)
+        logger.info(
+            f"SUCCESS: Material variance report: {'✅ Generated' if material_report_count > 0 else '❌ Failed'}")
+        logger.info(
+            f"SUCCESS: Beverage variance report: {'✅ Generated' if beverage_report_count > 0 else '❌ Failed'}")
 
         if self.results['errors']:
             logger.warning(
