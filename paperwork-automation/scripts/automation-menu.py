@@ -300,7 +300,7 @@ class AutomationMenu:
                 # Check if at least one store folder has files
                 has_files = False
                 for store_folder in store_folders:
-                    store_files = list(store_folder.glob("*.xls*"))
+                    store_files = list(store_folder.glob("*.xls*")) + list(store_folder.glob("*.XLS*"))
                     if store_files:
                         has_files = True
                         break
@@ -309,8 +309,8 @@ class AutomationMenu:
                     missing_files.append(
                         f"{path} (no Excel files found in store subfolders)")
             else:
-                # Check if folder has files
-                files = list(path.glob("*.xls*"))
+                # Check if folder has files (handle both uppercase and lowercase extensions)
+                files = list(path.glob("*.xls*")) + list(path.glob("*.XLS*"))
                 if not files:
                     missing_files.append(f"{path} (no Excel files found)")
 
@@ -340,7 +340,7 @@ class AutomationMenu:
 
         # Step 1: Extract daily store reports
         daily_store_path = self.input_folder / "daily_report" / "daily_store_report"
-        daily_files = list(daily_store_path.glob("*.xls*"))
+        daily_files = list(daily_store_path.glob("*.xls*")) + list(daily_store_path.glob("*.XLS*"))
         # Filter out temporary Excel files (starting with ~$)
         daily_files = [f for f in daily_files if not f.name.startswith("~$")]
         if daily_files:
@@ -352,7 +352,7 @@ class AutomationMenu:
         # Step 2: Extract time segment reports (separate file)
         time_segment_path = self.input_folder / \
             "daily_report" / "time_segment_store_report"
-        time_files = list(time_segment_path.glob("*.xls*"))
+        time_files = list(time_segment_path.glob("*.xls*")) + list(time_segment_path.glob("*.XLS*"))
         # Filter out temporary Excel files (starting with ~$)
         time_files = [f for f in time_files if not f.name.startswith("~$")]
         if time_files:
@@ -442,7 +442,7 @@ class AutomationMenu:
 
         # Find monthly dish sales file (primary date source)
         monthly_dish_path = self.input_folder / "monthly_report" / "monthly_dish_sale"
-        dish_files = list(monthly_dish_path.glob("*.xls*"))
+        dish_files = list(monthly_dish_path.glob("*.xls*")) + list(monthly_dish_path.glob("*.XLS*"))
         dish_files = [f for f in dish_files if not f.name.startswith("~$")]
 
         if not dish_files:
@@ -464,7 +464,7 @@ class AutomationMenu:
             # Check calculated dish material file
             dish_material_path = self.input_folder / \
                 "monthly_report" / "calculated_dish_material_usage"
-            dish_material_files = list(dish_material_path.glob("*.xls*"))
+            dish_material_files = list(dish_material_path.glob("*.xls*")) + list(dish_material_path.glob("*.XLS*"))
             if dish_material_files:
                 calc_file = dish_material_files[0]
                 # Simple check for YYMM pattern in filename
