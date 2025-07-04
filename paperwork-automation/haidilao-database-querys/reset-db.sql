@@ -4,8 +4,12 @@
 -- First drop all tables that depend on other tables
 
 -- Drop monthly performance tables (new)
+DROP TABLE IF EXISTS monthly_combo_dish_sale;
 DROP TABLE IF EXISTS material_monthly_usage;
 DROP TABLE IF EXISTS dish_monthly_sale;
+
+-- Drop combo tables
+DROP TABLE IF EXISTS combo;
 
 -- Drop inventory and price history tables
 DROP TABLE IF EXISTS inventory_count;
@@ -269,6 +273,21 @@ CREATE TABLE inventory_count (
 );
 
 -- ========================================
+-- COMBO MANAGEMENT TABLES
+-- ========================================
+
+-- 套餐主表 (Combo Master Table)
+CREATE TABLE combo (
+    id SERIAL PRIMARY KEY,
+    combo_code VARCHAR NOT NULL UNIQUE, -- 套餐编码 (e.g., "3010184", "1000000303")
+    name VARCHAR NOT NULL,              -- 套餐名称 (e.g., "儿童套餐", "超值单人套餐")
+    description VARCHAR,                -- 描述
+    is_active BOOLEAN DEFAULT TRUE,     -- 是否活跃
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ========================================
 -- MONTHLY PERFORMANCE TRACKING TABLES
 -- ========================================
 
@@ -286,6 +305,20 @@ CREATE TABLE dish_monthly_sale (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(dish_id, store_id, month, year) -- 同一菜品同一门店同一月只能有一条记录
+);
+
+-- 套餐月度销售数据表 (Monthly Combo Dish Sales Performance)
+CREATE TABLE monthly_combo_dish_sale (
+    id SERIAL PRIMARY KEY,
+    combo_id INTEGER REFERENCES combo(id), -- 外键：套餐
+    dish_id INTEGER REFERENCES dish(id), -- 外键：菜品
+    store_id INTEGER REFERENCES store(id), -- 外键：门店
+    month INTEGER NOT NULL CHECK (month >= 1 AND month <= 12), -- 月份 (1-12)
+    year INTEGER NOT NULL CHECK (year >= 2020), -- 年份
+    sale_amount NUMERIC(12, 4) DEFAULT 0, -- 销售数量 (出品数量 - 退菜数量)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(combo_id, dish_id, store_id, month, year) -- 同一套餐同一菜品同一门店同一月只能有一条记录
 );
 
 -- 物料月度使用量表 (Monthly Material Usage)
@@ -347,10 +380,19 @@ CREATE INDEX idx_material_price_effective ON material_price_history(effective_da
 -- Inventory count indexes
 CREATE INDEX idx_inventory_count_store_date ON inventory_count(store_id, count_date);
 
+-- Combo indexes
+CREATE INDEX idx_combo_code ON combo(combo_code);
+CREATE INDEX idx_combo_active ON combo(is_active);
+
 -- Monthly performance indexes
 CREATE INDEX idx_dish_monthly_sale_dish_store_date ON dish_monthly_sale(dish_id, store_id, year, month);
 CREATE INDEX idx_dish_monthly_sale_store_date ON dish_monthly_sale(store_id, year, month);
 CREATE INDEX idx_dish_monthly_sale_date ON dish_monthly_sale(year, month);
+
+CREATE INDEX idx_monthly_combo_dish_sale_combo_dish_store_date ON monthly_combo_dish_sale(combo_id, dish_id, store_id, year, month);
+CREATE INDEX idx_monthly_combo_dish_sale_dish_store_date ON monthly_combo_dish_sale(dish_id, store_id, year, month);
+CREATE INDEX idx_monthly_combo_dish_sale_store_date ON monthly_combo_dish_sale(store_id, year, month);
+CREATE INDEX idx_monthly_combo_dish_sale_date ON monthly_combo_dish_sale(year, month);
 
 CREATE INDEX idx_material_monthly_usage_material_store_date ON material_monthly_usage(material_id, store_id, year, month);
 CREATE INDEX idx_material_monthly_usage_store_date ON material_monthly_usage(store_id, year, month);
@@ -397,7 +439,13 @@ CREATE TRIGGER update_material_updated_at BEFORE UPDATE ON material
 CREATE TRIGGER update_dish_material_updated_at BEFORE UPDATE ON dish_material
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+CREATE TRIGGER update_combo_updated_at BEFORE UPDATE ON combo
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 CREATE TRIGGER update_dish_monthly_sale_updated_at BEFORE UPDATE ON dish_monthly_sale
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_monthly_combo_dish_sale_updated_at BEFORE UPDATE ON monthly_combo_dish_sale
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_material_monthly_usage_updated_at BEFORE UPDATE ON material_monthly_usage

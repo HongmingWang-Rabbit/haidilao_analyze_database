@@ -65,15 +65,17 @@ class YearlyComparisonWorksheetGenerator:
                     return 0.0
                 return float(value)
 
-            # Current year values
-            current_tables = safe_float(current.get('total_tables', 0))
+            # Current year values - use explicit field names
+            current_tables = safe_float(current.get(
+                'total_tables_validated', 0))  # For table count display
             current_revenue = safe_float(current.get('total_revenue', 0))
             current_turnover = safe_float(current.get('avg_turnover_rate', 0))
-            current_per_table = safe_float(current.get('avg_per_table', 0))
+            current_per_table = safe_float(current.get(
+                'avg_per_table', 0))  # This uses served tables
 
-            # Previous year values
+            # Previous year values - use explicit field names
             previous_tables = safe_float(previous.get(
-                'total_tables', 0)) if previous else 0.0
+                'total_tables_validated', 0)) if previous else 0.0
             previous_revenue = safe_float(previous.get(
                 'total_revenue', 0)) if previous else 0.0
             previous_turnover = safe_float(previous.get(
@@ -130,22 +132,33 @@ class YearlyComparisonWorksheetGenerator:
             return float(value)
 
         # Calculate totals for 加拿大片区
+        # For table count display: use validated tables explicitly
         total_current_tables = sum(
-            safe_float_total(row['total_tables']) for row in yearly_current)
+            safe_float_total(row['total_tables_validated']) for row in yearly_current)
         total_previous_tables = sum(
-            safe_float_total(row['total_tables']) for row in yearly_previous)
+            safe_float_total(row['total_tables_validated']) for row in yearly_previous)
+
+        # For consumption calculation: use direct calculation (revenue / non-validated tables)
         total_current_revenue = sum(
             safe_float_total(row['total_revenue']) for row in yearly_current)
         total_previous_revenue = sum(
             safe_float_total(row['total_revenue']) for row in yearly_previous)
+
+        # Calculate total non-validated tables for proper per-table calculations
+        total_current_tables_served = sum(
+            safe_float_total(row['total_tables']) for row in yearly_current)  # non-validated
+        total_previous_tables_served = sum(
+            safe_float_total(row['total_tables']) for row in yearly_previous)  # non-validated
+
+        # Calculate per-table consumption using direct division (not average of averages)
+        total_current_per_table = total_current_revenue / \
+            total_current_tables_served if total_current_tables_served > 0 else 0.0
+        total_previous_per_table = total_previous_revenue / \
+            total_previous_tables_served if total_previous_tables_served > 0 else 0.0
         total_current_turnover = sum(
             safe_float_total(row['avg_turnover_rate']) for row in yearly_current) / max(1, len(yearly_current))
         total_previous_turnover = sum(safe_float_total(
             row['avg_turnover_rate']) for row in yearly_previous) / max(1, len(yearly_previous)) if yearly_previous else 0.0
-        total_current_per_table = total_current_revenue / \
-            total_current_tables if total_current_tables > 0 else 0.0
-        total_previous_per_table = total_previous_revenue / \
-            total_previous_tables if total_previous_tables > 0 else 0.0
 
         # Calculate total changes
         total_tables_change = total_current_tables - total_previous_tables

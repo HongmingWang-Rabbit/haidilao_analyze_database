@@ -97,7 +97,7 @@ class ComparisonWorksheetGenerator:
                                      for row in prev_month_dict.values()) if prev_month_dict else 0
 
             # Month-to-date totals
-            current_mtd_tables = sum(float(row['mtd_tables_served']) for row in current_mtd_dict.values(
+            current_mtd_tables = sum(float(row['mtd_tables']) for row in current_mtd_dict.values(
             )) if current_mtd_dict else monthly_tables
             current_mtd_revenue = sum(float(row['mtd_revenue']) for row in current_mtd_dict.values(
             )) if current_mtd_dict else monthly_revenue
@@ -177,9 +177,9 @@ class ComparisonWorksheetGenerator:
 
             # Month-to-date data
             current_mtd_tables = safe_float(current_mtd_row.get(
-                'mtd_tables_served', 0)) if current_mtd_row else monthly_tables
+                'mtd_tables', 0)) if current_mtd_row else monthly_tables
             current_mtd_tables_validated = safe_float(current_mtd_row.get(
-                'mtd_tables', 0)) if current_mtd_row else monthly_tables_validated
+                'mtd_tables_validated', 0)) if current_mtd_row else monthly_tables_validated
             current_mtd_discount = safe_float(current_mtd_row.get(
                 'mtd_discount_total', 0)) if current_mtd_row else monthly_discount
             current_mtd_revenue = safe_float(current_mtd_row.get(

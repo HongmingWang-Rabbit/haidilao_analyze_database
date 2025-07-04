@@ -300,7 +300,8 @@ class AutomationMenu:
                 # Check if at least one store folder has files
                 has_files = False
                 for store_folder in store_folders:
-                    store_files = list(store_folder.glob("*.xls*")) + list(store_folder.glob("*.XLS*"))
+                    store_files = list(store_folder.glob(
+                        "*.xls*")) + list(store_folder.glob("*.XLS*"))
                     if store_files:
                         has_files = True
                         break
@@ -340,7 +341,8 @@ class AutomationMenu:
 
         # Step 1: Extract daily store reports
         daily_store_path = self.input_folder / "daily_report" / "daily_store_report"
-        daily_files = list(daily_store_path.glob("*.xls*")) + list(daily_store_path.glob("*.XLS*"))
+        daily_files = list(daily_store_path.glob("*.xls*")) + \
+            list(daily_store_path.glob("*.XLS*"))
         # Filter out temporary Excel files (starting with ~$)
         daily_files = [f for f in daily_files if not f.name.startswith("~$")]
         if daily_files:
@@ -352,7 +354,8 @@ class AutomationMenu:
         # Step 2: Extract time segment reports (separate file)
         time_segment_path = self.input_folder / \
             "daily_report" / "time_segment_store_report"
-        time_files = list(time_segment_path.glob("*.xls*")) + list(time_segment_path.glob("*.XLS*"))
+        time_files = list(time_segment_path.glob("*.xls*")) + \
+            list(time_segment_path.glob("*.XLS*"))
         # Filter out temporary Excel files (starting with ~$)
         time_files = [f for f in time_files if not f.name.startswith("~$")]
         if time_files:
@@ -442,7 +445,8 @@ class AutomationMenu:
 
         # Find monthly dish sales file (primary date source)
         monthly_dish_path = self.input_folder / "monthly_report" / "monthly_dish_sale"
-        dish_files = list(monthly_dish_path.glob("*.xls*")) + list(monthly_dish_path.glob("*.XLS*"))
+        dish_files = list(monthly_dish_path.glob("*.xls*")) + \
+            list(monthly_dish_path.glob("*.XLS*"))
         dish_files = [f for f in dish_files if not f.name.startswith("~$")]
 
         if not dish_files:
@@ -464,7 +468,8 @@ class AutomationMenu:
             # Check calculated dish material file
             dish_material_path = self.input_folder / \
                 "monthly_report" / "calculated_dish_material_usage"
-            dish_material_files = list(dish_material_path.glob("*.xls*")) + list(dish_material_path.glob("*.XLS*"))
+            dish_material_files = list(dish_material_path.glob(
+                "*.xls*")) + list(dish_material_path.glob("*.XLS*"))
             if dish_material_files:
                 calc_file = dish_material_files[0]
                 # Simple check for YYMM pattern in filename
@@ -890,10 +895,11 @@ class AutomationMenu:
                 ("2", "Reset Test Database", "reset_test"),
                 ("3", "Migrate: Add Loss Rate Column", "migrate_loss_rate"),
                 ("4", "Migrate: Add Material Type Tables", "migrate_material_types"),
-                ("5", "Insert Constant Data", "insert_const"),
-                ("6", "Insert Monthly Targets", "insert_targets"),
-                ("7", "Verify Database Structure", "verify_structure"),
-                ("8", "Show Database Status", "show_status"),
+                ("5", "Migrate: Add Combo Tables", "migrate_combo_tables"),
+                ("6", "Insert Constant Data", "insert_const"),
+                ("7", "Insert Monthly Targets", "insert_targets"),
+                ("8", "Verify Database Structure", "verify_structure"),
+                ("9", "Show Database Status", "show_status"),
                 ("b", "← Back to Main Menu", "back")
             ]
 
@@ -912,12 +918,14 @@ class AutomationMenu:
             elif choice == '4':
                 self.run_material_type_migration()
             elif choice == '5':
-                self.insert_constant_data()
+                self.run_combo_tables_migration()
             elif choice == '6':
-                self.insert_monthly_targets()
+                self.insert_constant_data()
             elif choice == '7':
-                self.verify_database_structure()
+                self.insert_monthly_targets()
             elif choice == '8':
+                self.verify_database_structure()
+            elif choice == '9':
                 self.show_database_status()
             else:
                 print("❌ Invalid choice. Please try again.")
@@ -1664,6 +1672,27 @@ except Exception as e:
 
         command = f'{self.python_cmd} -m scripts.migrate_add_material_types_simple'
         self.run_command(command, "Add Material Type Tables Migration")
+
+    def run_combo_tables_migration(self):
+        """Run database migration to add combo tables"""
+        print("🔧 DATABASE MIGRATION: Add Combo Tables")
+        print("=" * 50)
+        print("This will add combo support to the database:")
+        print("✅ Create combo table (套餐基础信息)")
+        print("✅ Create monthly_combo_dish_sale table (套餐菜品销售数据)")
+        print("✅ Add appropriate indexes and triggers")
+        print("✅ Enable combo usage in material calculations")
+        print()
+        print("⚠️  This migration is safe and will not affect existing data.")
+        print("    Tables will only be created if they don't already exist.")
+        print()
+
+        confirm = input("Run migration? (y/N): ").lower()
+        if confirm != 'y':
+            return
+
+        command = f'{self.python_cmd} -m scripts.migrate_add_combo_tables'
+        self.run_command(command, "Add Combo Tables Migration")
 
     def insert_constant_data(self):
         """Insert constant data"""

@@ -195,9 +195,9 @@ class ReportDataProvider:
                     'monthly_discount_total': total_discount,
                     'avg_turnover_rate': avg_turnover,
                     'avg_per_table': total_revenue / total_tables_served if total_tables_validated > 0 else 0,
-                    # MTD fields
-                    'mtd_tables_served': total_tables_served,
-                    'mtd_tables': total_tables_validated,
+                    # MTD fields - FIXED: Explicit naming for both validated and non-validated
+                    'mtd_tables': total_tables_served,                    # Non-validated MTD tables
+                    'mtd_tables_validated': total_tables_validated,      # Validated MTD tables
                     'mtd_revenue': total_revenue,
                     'mtd_discount_total': total_discount,
                     # Previous period fields
@@ -205,12 +205,17 @@ class ReportDataProvider:
                     'prev_monthly_tables_validated': total_tables_validated,
                     'prev_monthly_revenue': total_revenue,
                     'prev_avg_turnover_rate': avg_turnover,
+                    # Non-validated prev MTD tables
                     'prev_mtd_tables': total_tables_served,
+                    'prev_mtd_tables_validated': total_tables_validated,  # Validated prev MTD tables
                     'prev_mtd_revenue': total_revenue,
                     # Average per table for full month (not MTD)
                     'prev_month_avg_per_table': total_revenue / total_tables_served if total_tables_served > 0 else 0,
-                    # Yearly comparison fields - FIX: Use non-validated table count
+                    # Yearly comparison fields - FIXED: Explicit separate fields for clarity
+                    # Non-validated tables (for consumption calculations)
                     'total_tables': total_tables_served,
+                    # Validated tables (for table count display)
+                    'total_tables_validated': total_tables_validated,
                     'total_revenue': total_revenue,
                     'avg_turnover_rate': avg_turnover,
                     'avg_per_table': total_revenue / total_tables_served if total_tables_served > 0 else 0
@@ -362,7 +367,7 @@ class ReportDataProvider:
             mtd_results = self.db_manager.fetch_all(
                 mtd_sql, (current_year, current_month, target_day))
 
-            # Get previous year full month aggregates
+            # Get previous year MTD aggregates (up to target day)
             prev_full_month_sql = """
             SELECT 
                 store_id, 
@@ -371,11 +376,12 @@ class ReportDataProvider:
             FROM store_time_report 
             WHERE EXTRACT(YEAR FROM date) = %s 
                 AND EXTRACT(MONTH FROM date) = %s
+                AND EXTRACT(DAY FROM date) <= %s
             GROUP BY store_id, time_segment_id
             """
 
             prev_full_results = self.db_manager.fetch_all(
-                prev_full_month_sql, (prev_year, current_month))
+                prev_full_month_sql, (prev_year, current_month, target_day))
 
             # Get previous year MTD aggregates
             prev_mtd_sql = """
@@ -394,7 +400,8 @@ class ReportDataProvider:
                 prev_mtd_sql, (prev_year, current_month, target_day))
 
             # Create lookup dictionaries for aggregated data
-            mtd_lookup = {(row['store_id'], row['time_segment_id'])                          : row for row in mtd_results}
+            mtd_lookup = {(row['store_id'], row['time_segment_id'])
+                           : row for row in mtd_results}
             prev_full_lookup = {
                 (row['store_id'], row['time_segment_id']): row for row in prev_full_results}
             prev_mtd_lookup = {

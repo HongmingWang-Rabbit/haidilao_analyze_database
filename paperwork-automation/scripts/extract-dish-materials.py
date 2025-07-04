@@ -272,12 +272,27 @@ def extract_dish_materials(df: pd.DataFrame) -> List[Dict]:
             skipped_count += 1
             continue
 
+        # Extract loss rate from column O "损耗" or use default 1.0
+        loss_rate = 1.0  # Default loss rate (no loss)
+
+        # Look for loss rate in various possible column names (prioritize "损耗" column)
+        for col_name in df.columns:
+            if '损耗' in str(col_name):  # Column O "损耗" - just look for this column
+                if pd.notna(row[col_name]):
+                    loss_rate = float(row[col_name])
+                    break
+            elif '耗损' in str(col_name) or '损失' in str(col_name):
+                if pd.notna(row[col_name]):
+                    loss_rate = float(row[col_name])
+                    break
+
         # Create dish-material relationship record
         dish_materials.append({
             'dish_code': dish_code,
             'dish_size': size,
             'material_number': material_number,
             'standard_quantity': standard_quantity,
+            'loss_rate': loss_rate,
             'dish_name': row['菜品名称'] if pd.notna(row['菜品名称']) else '',
             'material_description': row['物料描述'] if pd.notna(row['物料描述']) else ''
         })
@@ -318,13 +333,14 @@ def generate_sql_file(dish_materials: List[Dict], output_file: str) -> bool:
 
                 # Create comment with readable info
                 f.write(
-                    f"-- Dish: {dm['dish_name']} ({dm['dish_code']}) -> Material: {dm['material_description']} ({dm['material_number']})\n")
+                    f"-- Dish: {dm['dish_name']} ({dm['dish_code']}) -> Material: {dm['material_description']} ({dm['material_number']}) -> Loss Rate: {dm['loss_rate']}\n")
 
-                sql = f"""INSERT INTO dish_material (dish_id, material_id, standard_quantity)
+                sql = f"""INSERT INTO dish_material (dish_id, material_id, standard_quantity, loss_rate)
 SELECT 
     d.id as dish_id,
     m.id as material_id,
-    {standard_quantity}
+    {standard_quantity},
+    {dm['loss_rate']}
 FROM dish d
 CROSS JOIN material m
 WHERE d.full_code = {dish_code}
@@ -333,6 +349,7 @@ WHERE d.full_code = {dish_code}
 ON CONFLICT (dish_id, material_id)
 DO UPDATE SET
     standard_quantity = EXCLUDED.standard_quantity,
+    loss_rate = EXCLUDED.loss_rate,
     updated_at = CURRENT_TIMESTAMP;
 
 """
@@ -414,11 +431,12 @@ def insert_to_database(dish_materials: List[Dict], is_test: bool = False) -> boo
 
                         # Insert dish-material relationship
                         query = """
-                        INSERT INTO dish_material (dish_id, material_id, standard_quantity)
-                        VALUES (%s, %s, %s)
+                        INSERT INTO dish_material (dish_id, material_id, standard_quantity, loss_rate)
+                        VALUES (%s, %s, %s, %s)
                         ON CONFLICT (dish_id, material_id)
                         DO UPDATE SET
                             standard_quantity = EXCLUDED.standard_quantity,
+                            loss_rate = EXCLUDED.loss_rate,
                             updated_at = CURRENT_TIMESTAMP
                         RETURNING (xmax = 0) AS inserted;
                         """
@@ -426,7 +444,8 @@ def insert_to_database(dish_materials: List[Dict], is_test: bool = False) -> boo
                         cursor.execute(query, (
                             dish_id,
                             material_id,
-                            dm['standard_quantity']
+                            dm['standard_quantity'],
+                            dm['loss_rate']
                         ))
 
                         result = cursor.fetchone()

@@ -215,7 +215,7 @@ class MonthlyAutomationProcessor:
                                         updated_at = CURRENT_TIMESTAMP
                                 """, (
                                     store_id, int(year), int(month),
-                                    row['实收数量'], row['退菜数量'],
+                                    row['出品数量'], row['退菜数量'],
                                     row.get('免单数量', 0), row.get('赠菜数量', 0),
                                     full_code, row['规格']
                                 ))
@@ -342,7 +342,8 @@ class MonthlyAutomationProcessor:
                     logger.info(f"Processing store {store_id} inventory...")
 
                     # Find Excel files in store folder
-                    excel_files = list(store_folder.glob("*.xls*")) + list(store_folder.glob("*.XLS*"))
+                    excel_files = list(store_folder.glob(
+                        "*.xls*")) + list(store_folder.glob("*.XLS*"))
                     if not excel_files:
                         logger.warning(
                             f"No Excel files found in store {store_id} folder")
@@ -524,12 +525,13 @@ class MonthlyAutomationProcessor:
                         if standard_qty <= 0:
                             continue
 
-                        # Get loss rate - check for loss rate columns or use default 1.1
-                        loss_rate = 1.1  # Default loss rate as mentioned by user
+                        # Get loss rate from column O "损耗" or use default 1.0
+                        loss_rate = 1.0  # Default loss rate (no loss)
 
-                        # Look for loss rate in various possible column names
+                        # Look for loss rate in various possible column names (prioritize "损耗" column)
                         for col_name in df.columns:
-                            if '损耗' in str(col_name) and '率' in str(col_name):
+                            # Column O "损耗" - just look for this column
+                            if '损耗' in str(col_name):
                                 if pd.notna(row[col_name]):
                                     loss_rate = float(row[col_name])
                                     break
@@ -704,7 +706,8 @@ class MonthlyAutomationProcessor:
             import sys
 
             # Look for MB5B files
-            mb5b_files = list(mb5b_folder.glob("*.xls*")) + list(mb5b_folder.glob("*.XLS*"))
+            mb5b_files = list(mb5b_folder.glob("*.xls*")) + \
+                list(mb5b_folder.glob("*.XLS*"))
             if not mb5b_files:
                 logger.error("No MB5B file found for material monthly usage")
                 return False
@@ -762,7 +765,8 @@ class MonthlyAutomationProcessor:
 
         # Step 1: Extract from monthly dish sales
         dish_sale_folder = self.input_folder / "monthly_dish_sale"
-        dish_files = list(dish_sale_folder.glob("*.xlsx")) + list(dish_sale_folder.glob("*.XLSX"))
+        dish_files = list(dish_sale_folder.glob("*.xlsx")) + \
+            list(dish_sale_folder.glob("*.XLSX"))
         if dish_files:
             success &= self.extract_dish_types_and_dishes(dish_files[0])
         else:
@@ -791,7 +795,8 @@ class MonthlyAutomationProcessor:
 
         # Step 4: Extract dish-material relationships
         calc_folder = self.input_folder / "calculated_dish_material_usage"
-        calc_files = list(calc_folder.glob("*.xls*")) + list(calc_folder.glob("*.XLS*"))
+        calc_files = list(calc_folder.glob("*.xls*")) + \
+            list(calc_folder.glob("*.XLS*"))
         if calc_files:
             success &= self.extract_dish_materials(calc_files[0])
         else:

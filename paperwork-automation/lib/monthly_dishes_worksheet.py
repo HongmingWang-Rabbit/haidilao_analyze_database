@@ -125,7 +125,35 @@ class MonthlyDishesWorksheetGenerator:
                 year, month = target_dt.year, target_dt.month
 
                 # Comprehensive query to get dish-material data with all related information
+                # Include both regular dish sales and combo dish sales
                 sql = """
+                WITH combined_dish_sales AS (
+                    -- Regular dish sales
+                    SELECT 
+                        dish_id, store_id,
+                        sale_amount, return_amount, free_meal_amount, gift_amount
+                    FROM dish_monthly_sale 
+                    WHERE year = %s AND month = %s
+                    
+                    UNION ALL
+                    
+                    -- Combo dish sales (no return/free/gift amounts for combos)
+                    SELECT 
+                        dish_id, store_id,
+                        sale_amount, 0 as return_amount, 0 as free_meal_amount, 0 as gift_amount
+                    FROM monthly_combo_dish_sale 
+                    WHERE year = %s AND month = %s
+                ),
+                aggregated_sales AS (
+                    SELECT 
+                        dish_id, store_id,
+                        SUM(sale_amount) as total_sale_amount,
+                        SUM(return_amount) as total_return_amount,
+                        SUM(free_meal_amount) as total_free_meal_amount,
+                        SUM(gift_amount) as total_gift_amount
+                    FROM combined_dish_sales
+                    GROUP BY dish_id, store_id
+                )
                 SELECT 
                     dt.name as dish_type_name,
                     dct.name as dish_child_type_name,
@@ -147,11 +175,11 @@ class MonthlyDishesWorksheetGenerator:
                     dph.price as current_price,
                     dph.currency,
                     dph.effective_date as price_date,
-                    -- Monthly sales data
-                    COALESCE(dms.sale_amount, 0) as sale_amount,
-                    COALESCE(dms.return_amount, 0) as return_amount,
-                    COALESCE(dms.free_meal_amount, 0) as free_meal_amount,
-                    COALESCE(dms.gift_amount, 0) as gift_amount,
+                    -- Monthly sales data (aggregated from both regular and combo sales)
+                    COALESCE(ads.total_sale_amount, 0) as sale_amount,
+                    COALESCE(ads.total_return_amount, 0) as return_amount,
+                    COALESCE(ads.total_free_meal_amount, 0) as free_meal_amount,
+                    COALESCE(ads.total_gift_amount, 0) as gift_amount,
                     -- Material usage data
                     COALESCE(mmu.material_used, 0) as material_used,
                     -- Count total dish-material relationships for this dish
@@ -164,16 +192,15 @@ class MonthlyDishesWorksheetGenerator:
                 LEFT JOIN dish_price_history dph ON d.id = dph.dish_id 
                     AND dph.is_active = TRUE 
                     AND dph.store_id = 1  -- Use first store for reference price
-                LEFT JOIN dish_monthly_sale dms ON d.id = dms.dish_id 
-                    AND dms.year = %s AND dms.month = %s
+                LEFT JOIN aggregated_sales ads ON d.id = ads.dish_id
                 LEFT JOIN material_monthly_usage mmu ON m.id = mmu.material_id 
                     AND mmu.year = %s AND mmu.month = %s
-                    AND mmu.store_id = dms.store_id  -- Match store for material usage
+                    AND mmu.store_id = ads.store_id  -- Match store for material usage
                 WHERE d.is_active = TRUE
-                ORDER BY dms.store_id, dt.name, dct.name, d.name, m.name
+                ORDER BY ads.store_id, dt.name, dct.name, d.name, m.name
                 """
 
-                cursor.execute(sql, (year, month, year, month))
+                cursor.execute(sql, (year, month, year, month, year, month))
                 return cursor.fetchall()
 
         except Exception as e:
@@ -425,6 +452,7 @@ class MonthlyDishesWorksheetGenerator:
                     }]
 
                 # Get theoretical usage (dish sales * standard_quantity * loss_rate)
+                # Include both regular dish sales and combo dish sales
                 theoretical_sql = """
                 WITH dish_sales AS (
                     SELECT 
@@ -439,6 +467,24 @@ class MonthlyDishesWorksheetGenerator:
                     LEFT JOIN store s ON dms.store_id = s.id
                     WHERE d.is_active = TRUE AND dms.store_id IS NOT NULL
                 ),
+                combo_dish_sales AS (
+                    SELECT 
+                        d.id as dish_id,
+                        d.name as dish_name,
+                        mcds.store_id,
+                        s.name as store_name,
+                        COALESCE(mcds.sale_amount, 0) as net_sales
+                    FROM dish d
+                    LEFT JOIN monthly_combo_dish_sale mcds ON d.id = mcds.dish_id 
+                        AND mcds.year = %s AND mcds.month = %s
+                    LEFT JOIN store s ON mcds.store_id = s.id
+                    WHERE d.is_active = TRUE AND mcds.store_id IS NOT NULL
+                ),
+                combined_sales AS (
+                    SELECT dish_id, dish_name, store_id, store_name, net_sales FROM dish_sales
+                    UNION ALL
+                    SELECT dish_id, dish_name, store_id, store_name, net_sales FROM combo_dish_sales
+                ),
                 theoretical_usage AS (
                     SELECT 
                         m.id as material_id,
@@ -446,21 +492,22 @@ class MonthlyDishesWorksheetGenerator:
                         m.material_number,
                         m.unit as material_unit,
                         m.package_spec,
-                        ds.store_id,
-                        ds.store_name,
-                        SUM(ds.net_sales * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as theoretical_total
+                        cs.store_id,
+                        cs.store_name,
+                        SUM(cs.net_sales * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as theoretical_total
                     FROM material m
                     LEFT JOIN dish_material dm ON m.id = dm.material_id
-                    LEFT JOIN dish_sales ds ON dm.dish_id = ds.dish_id
-                    WHERE m.is_active = TRUE AND ds.store_id IS NOT NULL
+                    LEFT JOIN combined_sales cs ON dm.dish_id = cs.dish_id
+                    WHERE m.is_active = TRUE AND cs.store_id IS NOT NULL
                         AND m.id = ANY(%s)
-                    GROUP BY m.id, m.name, m.material_number, m.unit, m.package_spec, ds.store_id, ds.store_name
+                    GROUP BY m.id, m.name, m.material_number, m.unit, m.package_spec, cs.store_id, cs.store_name
                 )
                 SELECT * FROM theoretical_usage
                 ORDER BY store_name, material_name
                 """
 
-                cursor.execute(theoretical_sql, (year, month, material_ids))
+                cursor.execute(theoretical_sql, (year, month,
+                               year, month, material_ids))
                 theoretical_data = cursor.fetchall()
 
                 # Get system record (material_monthly_usage.material_used)

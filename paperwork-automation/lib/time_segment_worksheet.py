@@ -206,17 +206,19 @@ class TimeSegmentWorksheetGenerator:
                 # Turnover data - Use correct data sources
                 mtd_turnover = segment_data.get(
                     'mtd_avg_turnover', segment_data['turnover_current'])
-                # Same date from previous year
-                prev_year_same_date_turnover = segment_data['turnover_prev']
+                # Previous year MTD average instead of single day
+                prev_year_mtd_avg_turnover = segment_data.get(
+                    'prev_full_month_avg_turnover', segment_data['turnover_prev'])
                 target_turnover = segment_data['target']
 
-                target_diff_mtd = mtd_turnover - target_turnover
-                prev_diff_mtd = mtd_turnover - prev_year_same_date_turnover
+                target_diff_mtd = float(mtd_turnover) - float(target_turnover)
+                prev_diff_mtd = float(mtd_turnover) - \
+                    float(prev_year_mtd_avg_turnover)
 
                 ws.cell(row=current_row, column=3,
                         value=round(mtd_turnover, 5))
                 ws.cell(row=current_row, column=4, value=round(
-                    prev_year_same_date_turnover, 5))
+                    prev_year_mtd_avg_turnover, 5))
                 ws.cell(row=current_row, column=5,
                         value=round(target_turnover, 5))
                 ws.cell(row=current_row, column=6,

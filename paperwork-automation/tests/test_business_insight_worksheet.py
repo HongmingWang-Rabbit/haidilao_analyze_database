@@ -3,6 +3,7 @@
 Tests for business insight worksheet generator.
 """
 
+from lib.business_insight_worksheet import BusinessInsightWorksheetGenerator
 import unittest
 from datetime import datetime
 from openpyxl import Workbook
@@ -11,11 +12,11 @@ from pathlib import Path
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
-from lib.business_insight_worksheet import BusinessInsightWorksheetGenerator
+
 
 class TestBusinessInsightWorksheet(unittest.TestCase):
     """Test business insight worksheet generation"""
-    
+
     def setUp(self):
         """Set up test data"""
         self.store_names = {
@@ -23,8 +24,9 @@ class TestBusinessInsightWorksheet(unittest.TestCase):
             5: "加拿大五店", 6: "加拿大六店", 7: "加拿大七店"
         }
         self.target_date = "2025-06-10"
-        self.generator = BusinessInsightWorksheetGenerator(self.store_names, self.target_date)
-        
+        self.generator = BusinessInsightWorksheetGenerator(
+            self.store_names, self.target_date)
+
         # Test data
         self.daily_data = {
             1: {
@@ -44,7 +46,7 @@ class TestBusinessInsightWorksheet(unittest.TestCase):
                 'turnover_rate': 1.2
             }
         }
-        
+
         self.monthly_data = {
             1: {
                 'monthly_revenue': 221943.0,
@@ -73,7 +75,7 @@ class TestBusinessInsightWorksheet(unittest.TestCase):
                 'prev_month_avg_per_table': 159.7
             }
         }
-        
+
         self.previous_month_data = {
             1: {
                 'prev_monthly_revenue': 199748.7,
@@ -88,24 +90,24 @@ class TestBusinessInsightWorksheet(unittest.TestCase):
                 'prev_monthly_customers': 20229.7
             }
         }
-        
+
         self.current_mtd = {
             1: {
                 'mtd_revenue': 221943.0,
                 'mtd_tables': 1888.0,
-                'mtd_tables_served': 1888.0,
+                'mtd_tables': 1888.0,
                 'mtd_customers': 42293.0,
                 'mtd_discount_total': 2000.0
             },
             2: {
                 'mtd_revenue': 121390.0,
                 'mtd_tables': 760.0,
-                'mtd_tables_served': 760.0,
+                'mtd_tables': 760.0,
                 'mtd_customers': 22466.0,
                 'mtd_discount_total': 1500.0
             }
         }
-        
+
         self.prev_mtd = {
             1: {
                 'prev_mtd_revenue': 199748.7,
@@ -118,34 +120,34 @@ class TestBusinessInsightWorksheet(unittest.TestCase):
                 'customers': 20229.7
             }
         }
-        
+
         self.daily_ranking = {1: 1, 2: 2}
         self.monthly_ranking = {1: 1, 2: 2}
         self.daily_ranking_values = [22194.3, 12139.0]
         self.monthly_ranking_values = [221943.0, 121390.0]
-    
+
     def test_generator_initialization(self):
         """Test generator initialization"""
         self.assertEqual(self.generator.store_names, self.store_names)
         self.assertEqual(self.generator.target_date, self.target_date)
-    
+
     def test_worksheet_creation(self):
         """Test worksheet creation"""
         wb = Workbook()
         ws = self.generator.generate_worksheet(
             wb, self.daily_data, self.monthly_data, self.previous_month_data,
             self.monthly_data, self.current_mtd, self.prev_mtd,
-            self.daily_ranking, self.monthly_ranking, 
+            self.daily_ranking, self.monthly_ranking,
             self.daily_ranking_values, self.monthly_ranking_values
         )
-        
+
         # Check worksheet exists
         self.assertIsNotNone(ws)
         self.assertEqual(ws.title, "营业透视")
-        
+
         # Check worksheet is in workbook
         self.assertIn("营业透视", [sheet.title for sheet in wb.worksheets])
-    
+
     def test_date_title(self):
         """Test date title formatting"""
         wb = Workbook()
@@ -155,12 +157,12 @@ class TestBusinessInsightWorksheet(unittest.TestCase):
             self.daily_ranking, self.monthly_ranking,
             self.daily_ranking_values, self.monthly_ranking_values
         )
-        
+
         # Check date title
         title_cell = ws['A1']
         self.assertIn("2025-06-10", title_cell.value)
         self.assertTrue(title_cell.font.bold)
-    
+
     def test_store_basic_info_section(self):
         """Test store basic information section"""
         wb = Workbook()
@@ -170,7 +172,7 @@ class TestBusinessInsightWorksheet(unittest.TestCase):
             self.daily_ranking, self.monthly_ranking,
             self.daily_ranking_values, self.monthly_ranking_values
         )
-        
+
         # Find headers row (should be row 2)
         headers_found = False
         for row in ws.iter_rows(min_row=1, max_row=5):
@@ -180,17 +182,17 @@ class TestBusinessInsightWorksheet(unittest.TestCase):
                     break
             if headers_found:
                 break
-        
+
         self.assertTrue(headers_found, "Store basic info headers not found")
-        
+
         # Check data rows contain store names
         store_names_found = []
         for row in ws.iter_rows(min_row=3, max_row=10):
             if row[0].value in self.store_names.values():
                 store_names_found.append(row[0].value)
-        
+
         self.assertGreater(len(store_names_found), 0, "No store data found")
-    
+
     def test_business_analysis_section(self):
         """Test business data analysis section"""
         wb = Workbook()
@@ -200,7 +202,7 @@ class TestBusinessInsightWorksheet(unittest.TestCase):
             self.daily_ranking, self.monthly_ranking,
             self.daily_ranking_values, self.monthly_ranking_values
         )
-        
+
         # Find business analysis section
         analysis_section_found = False
         for row in ws.iter_rows():
@@ -210,9 +212,10 @@ class TestBusinessInsightWorksheet(unittest.TestCase):
                     break
             if analysis_section_found:
                 break
-        
-        self.assertTrue(analysis_section_found, "Business analysis section not found")
-    
+
+        self.assertTrue(analysis_section_found,
+                        "Business analysis section not found")
+
     def test_turnover_analysis_section(self):
         """Test turnover rate analysis section"""
         wb = Workbook()
@@ -222,7 +225,7 @@ class TestBusinessInsightWorksheet(unittest.TestCase):
             self.daily_ranking, self.monthly_ranking,
             self.daily_ranking_values, self.monthly_ranking_values
         )
-        
+
         # Find turnover analysis section
         turnover_section_found = False
         for row in ws.iter_rows():
@@ -232,9 +235,10 @@ class TestBusinessInsightWorksheet(unittest.TestCase):
                     break
             if turnover_section_found:
                 break
-        
-        self.assertTrue(turnover_section_found, "Turnover analysis section not found")
-    
+
+        self.assertTrue(turnover_section_found,
+                        "Turnover analysis section not found")
+
     def test_data_calculations(self):
         """Test data calculations are correct"""
         wb = Workbook()
@@ -244,7 +248,7 @@ class TestBusinessInsightWorksheet(unittest.TestCase):
             self.daily_ranking, self.monthly_ranking,
             self.daily_ranking_values, self.monthly_ranking_values
         )
-        
+
         # Find data rows and verify calculations
         data_found = False
         for row in ws.iter_rows(min_row=3, max_row=15):
@@ -254,9 +258,9 @@ class TestBusinessInsightWorksheet(unittest.TestCase):
                 daily_revenue = row[1].value
                 self.assertAlmostEqual(daily_revenue, 2.22, places=1)
                 break
-        
+
         self.assertTrue(data_found, "Store data calculations not found")
-    
+
     def test_formatting_applied(self):
         """Test formatting is applied correctly"""
         wb = Workbook()
@@ -266,7 +270,7 @@ class TestBusinessInsightWorksheet(unittest.TestCase):
             self.daily_ranking, self.monthly_ranking,
             self.daily_ranking_values, self.monthly_ranking_values
         )
-        
+
         # Check that cells have borders and alignment
         cells_with_formatting = 0
         for row in ws.iter_rows(min_row=1, max_row=10, min_col=1, max_col=5):
@@ -274,9 +278,9 @@ class TestBusinessInsightWorksheet(unittest.TestCase):
                 if cell.value is not None:
                     if cell.border.left.style or cell.alignment.horizontal:
                         cells_with_formatting += 1
-        
+
         self.assertGreater(cells_with_formatting, 0, "No formatting applied")
-    
+
     def test_column_widths_set(self):
         """Test column widths are set properly"""
         wb = Workbook()
@@ -286,14 +290,15 @@ class TestBusinessInsightWorksheet(unittest.TestCase):
             self.daily_ranking, self.monthly_ranking,
             self.daily_ranking_values, self.monthly_ranking_values
         )
-        
+
         # Check that column widths are set
         column_widths_set = 0
         for col in ['A', 'B', 'C', 'D', 'E']:
             if ws.column_dimensions[col].width > 0:
                 column_widths_set += 1
-        
+
         self.assertGreater(column_widths_set, 0, "Column widths not set")
 
+
 if __name__ == '__main__':
-    unittest.main() 
+    unittest.main()
