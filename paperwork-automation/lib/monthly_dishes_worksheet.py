@@ -83,16 +83,16 @@ class MonthlyDishesWorksheetGenerator:
             ws['A1'].font = Font(bold=True, size=14)
             return ws
 
-        # Set column widths for readability (added store column)
-        column_widths = [8, 12, 15, 12, 15, 15, 15, 15, 15, 12, 20]
+        # Set column widths for readability (added combo usage column)
+        column_widths = [8, 12, 15, 12, 15, 15, 15, 15, 15, 15, 12, 20, 12]
         for i, width in enumerate(column_widths, 1):
             if i <= len(column_widths):
                 ws.column_dimensions[get_column_letter(i)].width = width
 
         current_row = 1
 
-        # Title section
-        ws.merge_cells(f'A{current_row}:K{current_row}')
+        # Title section (now extends to M column for 13 columns)
+        ws.merge_cells(f'A{current_row}:M{current_row}')
         ws[f'A{current_row}'] = f"物料用量差异分析 - {target_dt.strftime('%Y年%m月')}"
         ws[f'A{current_row}'].font = Font(bold=True, size=16, color="FFFFFF")
         ws[f'A{current_row}'].alignment = Alignment(
@@ -444,6 +444,7 @@ class MonthlyDishesWorksheetGenerator:
                         'material_unit': '',
                         'package_spec': '',
                         'theoretical_usage': 0,
+                        'combo_usage': 0,
                         'system_record': 0,
                         'inventory_count': 0,
                         'variance_amount': 0,
@@ -451,9 +452,8 @@ class MonthlyDishesWorksheetGenerator:
                         'variance_status': '正常'
                     }]
 
-                # Get theoretical usage (dish sales * standard_quantity * loss_rate)
-                # Include both regular dish sales and combo dish sales
-                theoretical_sql = """
+                # Get regular theoretical usage (dish sales * standard_quantity * loss_rate)
+                regular_theoretical_sql = """
                 WITH dish_sales AS (
                     SELECT 
                         d.id as dish_id,
@@ -467,7 +467,34 @@ class MonthlyDishesWorksheetGenerator:
                     LEFT JOIN store s ON dms.store_id = s.id
                     WHERE d.is_active = TRUE AND dms.store_id IS NOT NULL
                 ),
-                combo_dish_sales AS (
+                regular_theoretical_usage AS (
+                    SELECT 
+                        m.id as material_id,
+                        m.name as material_name,
+                        m.material_number,
+                        m.unit as material_unit,
+                        m.package_spec,
+                        ds.store_id,
+                        ds.store_name,
+                        SUM(ds.net_sales * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as theoretical_total
+                    FROM material m
+                    LEFT JOIN dish_material dm ON m.id = dm.material_id
+                    LEFT JOIN dish_sales ds ON dm.dish_id = ds.dish_id
+                    WHERE m.is_active = TRUE AND ds.store_id IS NOT NULL
+                        AND m.id = ANY(%s)
+                    GROUP BY m.id, m.name, m.material_number, m.unit, m.package_spec, ds.store_id, ds.store_name
+                )
+                SELECT * FROM regular_theoretical_usage
+                ORDER BY store_name, material_name
+                """
+
+                cursor.execute(regular_theoretical_sql,
+                               (year, month, material_ids))
+                regular_theoretical_data = cursor.fetchall()
+
+                # Get combo usage (combo dish sales * standard_quantity * loss_rate)
+                combo_usage_sql = """
+                WITH combo_dish_sales AS (
                     SELECT 
                         d.id as dish_id,
                         d.name as dish_name,
@@ -480,35 +507,29 @@ class MonthlyDishesWorksheetGenerator:
                     LEFT JOIN store s ON mcds.store_id = s.id
                     WHERE d.is_active = TRUE AND mcds.store_id IS NOT NULL
                 ),
-                combined_sales AS (
-                    SELECT dish_id, dish_name, store_id, store_name, net_sales FROM dish_sales
-                    UNION ALL
-                    SELECT dish_id, dish_name, store_id, store_name, net_sales FROM combo_dish_sales
-                ),
-                theoretical_usage AS (
+                combo_theoretical_usage AS (
                     SELECT 
                         m.id as material_id,
                         m.name as material_name,
                         m.material_number,
                         m.unit as material_unit,
                         m.package_spec,
-                        cs.store_id,
-                        cs.store_name,
-                        SUM(cs.net_sales * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as theoretical_total
+                        cds.store_id,
+                        cds.store_name,
+                        SUM(cds.net_sales * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as combo_total
                     FROM material m
                     LEFT JOIN dish_material dm ON m.id = dm.material_id
-                    LEFT JOIN combined_sales cs ON dm.dish_id = cs.dish_id
-                    WHERE m.is_active = TRUE AND cs.store_id IS NOT NULL
+                    LEFT JOIN combo_dish_sales cds ON dm.dish_id = cds.dish_id
+                    WHERE m.is_active = TRUE AND cds.store_id IS NOT NULL
                         AND m.id = ANY(%s)
-                    GROUP BY m.id, m.name, m.material_number, m.unit, m.package_spec, cs.store_id, cs.store_name
+                    GROUP BY m.id, m.name, m.material_number, m.unit, m.package_spec, cds.store_id, cds.store_name
                 )
-                SELECT * FROM theoretical_usage
+                SELECT * FROM combo_theoretical_usage
                 ORDER BY store_name, material_name
                 """
 
-                cursor.execute(theoretical_sql, (year, month,
-                               year, month, material_ids))
-                theoretical_data = cursor.fetchall()
+                cursor.execute(combo_usage_sql, (year, month, material_ids))
+                combo_usage_data = cursor.fetchall()
 
                 # Get system record (material_monthly_usage.material_used)
                 system_sql = """
@@ -556,8 +577,10 @@ class MonthlyDishesWorksheetGenerator:
                 inventory_data = cursor.fetchall()
 
                 # Combine all data
-                theoretical_dict = {
-                    (row['material_id'], row['store_id']): row for row in theoretical_data}
+                regular_theoretical_dict = {
+                    (row['material_id'], row['store_id']): row for row in regular_theoretical_data}
+                combo_usage_dict = {
+                    (row['material_id'], row['store_id']): row for row in combo_usage_data}
                 system_dict = {
                     (row['material_id'], row['store_id']): row for row in system_data}
                 inventory_dict = {
@@ -568,18 +591,20 @@ class MonthlyDishesWorksheetGenerator:
 
                 # Get all unique material-store combinations
                 all_combinations = set()
-                for row in theoretical_data + system_data + inventory_data:
+                for row in regular_theoretical_data + combo_usage_data + system_data + inventory_data:
                     all_combinations.add((row['material_id'], row['store_id']))
 
                 for material_id, store_id in all_combinations:
-                    theoretical_row = theoretical_dict.get(
+                    regular_theoretical_row = regular_theoretical_dict.get(
+                        (material_id, store_id), {})
+                    combo_usage_row = combo_usage_dict.get(
                         (material_id, store_id), {})
                     system_row = system_dict.get((material_id, store_id), {})
                     inventory_row = inventory_dict.get(
                         (material_id, store_id), {})
 
                     # Get material info from any available row
-                    info_row = theoretical_row or system_row or inventory_row
+                    info_row = regular_theoretical_row or combo_usage_row or system_row or inventory_row
                     if not info_row:
                         continue
 
@@ -592,14 +617,17 @@ class MonthlyDishesWorksheetGenerator:
                     store_name = info_row.get(
                         'store_name', f'Store_{store_id}')
 
-                    theoretical_usage = theoretical_row.get(
+                    regular_theoretical_usage = regular_theoretical_row.get(
                         'theoretical_total', 0) or 0
+                    combo_usage = combo_usage_row.get('combo_total', 0) or 0
+                    theoretical_usage = regular_theoretical_usage + \
+                        combo_usage  # Combined for variance calculation
                     system_record = system_row.get('system_record', 0) or 0
                     inventory_count = inventory_row.get(
                         'inventory_count', 0) or 0
 
                     # Calculate variance to match Excel formula: H - (G + I)
-                    # This matches the Excel formula: =H{row}-(G{row}+I{row})
+                    # This matches the Excel formula: =I{row}-(G{row}+H{row}) (will be updated with new column positions)
                     variance_amount = system_record - \
                         (theoretical_usage + inventory_count)
 
@@ -628,7 +656,8 @@ class MonthlyDishesWorksheetGenerator:
                         'material_number': material_number,
                         'material_unit': material_unit,
                         'package_spec': package_spec,
-                        'theoretical_usage': theoretical_usage,
+                        'theoretical_usage': regular_theoretical_usage,
+                        'combo_usage': combo_usage,
                         'system_record': system_record,
                         'inventory_count': inventory_count,
                         'variance_amount': variance_amount,
@@ -659,11 +688,14 @@ class MonthlyDishesWorksheetGenerator:
 
         total_theoretical = sum(row['theoretical_usage']
                                 for row in variance_data)
+        total_combo_usage = sum(row['combo_usage']
+                                for row in variance_data)
+        total_combined_theoretical = total_theoretical + total_combo_usage
         total_system = sum(row['system_record'] for row in variance_data)
         total_inventory = sum(row['inventory_count'] for row in variance_data)
-        total_variance = total_system - total_theoretical
+        total_variance = total_system - total_combined_theoretical
         overall_variance_percent = (
-            total_variance / total_theoretical * 100) if total_theoretical > 0 else 0
+            total_variance / total_combined_theoretical * 100) if total_combined_theoretical > 0 else 0
 
         # Create summary section
         ws.merge_cells(f'A{current_row}:D{current_row}')
@@ -680,6 +712,7 @@ class MonthlyDishesWorksheetGenerator:
             ("超量使用物料", over_usage),
             ("使用不足物料", under_usage),
             ("总理论用量", f"{total_theoretical:.2f}"),
+            ("总套餐用量", f"{total_combo_usage:.2f}"),
             ("总系统记录", f"{total_system:.2f}"),
             ("总库存盘点", f"{total_inventory:.2f}"),
             ("总差异", f"{total_variance:.2f}"),
@@ -697,8 +730,8 @@ class MonthlyDishesWorksheetGenerator:
             # Color code summary metrics
             if i >= 5:  # Usage metrics
                 fill_color = "E8F5E8"
-                # Overall variance (now index 9)
-                if i == 9 and abs(overall_variance_percent) > 5:
+                # Overall variance (now index 10)
+                if i == 10 and abs(overall_variance_percent) > 5:
                     fill_color = "FFE6E6" if overall_variance_percent > 0 else "FFF0E6"
                 cell_label.fill = PatternFill(
                     start_color=fill_color, end_color=fill_color, fill_type="solid")
@@ -712,10 +745,10 @@ class MonthlyDishesWorksheetGenerator:
         """Add main variance data section"""
         current_row = start_row
 
-        # Headers
+        # Headers (added combo usage column)
         headers = [
             "序号", "门店", "物料名称", "物料号", "单位", "包装规格",
-            "理论用量", "系统记录", "库存盘点", "差异数量", "差异率(%)", "状态"
+            "理论用量", "套餐用量", "系统记录", "库存盘点", "差异数量", "差异率(%)", "状态"
         ]
 
         for col, header in enumerate(headers, 1):
@@ -728,7 +761,7 @@ class MonthlyDishesWorksheetGenerator:
 
         # Data rows
         for row_number, data in enumerate(variance_data, 1):
-            # Basic data (columns A-I)
+            # Basic data (columns A-J)
             basic_data = [
                 row_number,                      # A: 序号
                 data['store_name'],              # B: 门店
@@ -736,39 +769,40 @@ class MonthlyDishesWorksheetGenerator:
                 data['material_number'] or '',   # D: 物料号
                 data['material_unit'] or '',     # E: 单位
                 data['package_spec'] or '',      # F: 包装规格
-                data['theoretical_usage'],       # G: 理论用量
-                data['system_record'],           # H: 系统记录
-                data['inventory_count']          # I: 库存盘点
+                data['theoretical_usage'],       # G: 理论用量 (regular only)
+                data['combo_usage'],             # H: 套餐用量 (NEW COLUMN)
+                data['system_record'],           # I: 系统记录
+                data['inventory_count']          # J: 库存盘点
             ]
 
-            # Insert basic data (A-I)
+            # Insert basic data (A-J)
             for col, value in enumerate(basic_data, 1):
                 cell = ws.cell(row=current_row, column=col, value=value)
 
                 # Format numeric columns
-                if col in [7, 8, 9]:  # Usage amounts and inventory count
+                if col in [7, 8, 9, 10]:  # Usage amounts, combo usage, system record, inventory count
                     cell.number_format = '#,##0.0000'
 
                 # Center align certain columns
                 if col in [1, 2, 5]:  # Serial, store, unit
                     cell.alignment = Alignment(horizontal='center')
 
-            # J: 差异数量 (Variance Amount) - Excel formula: = H - (G+I)
-            variance_formula = f"=H{current_row}-(G{current_row}+I{current_row})"
+            # K: 差异数量 (Variance Amount) - Excel formula: = I - (G+H+J)
+            variance_formula = f"=I{current_row}-(G{current_row}+H{current_row}+J{current_row})"
             variance_cell = ws.cell(
-                row=current_row, column=10, value=variance_formula)
+                row=current_row, column=11, value=variance_formula)
             variance_cell.number_format = '#,##0.0000'
 
-            # K: 差异率 (Variance Rate) - Excel formula: = ABS(J/G)*100 with error handling
-            # Multiply by 100 and use regular number format with % symbol
-            rate_formula = f"=IF(G{current_row}=0,IF(J{current_row}=0,0,100),ABS(J{current_row}/G{current_row})*100)"
-            rate_cell = ws.cell(row=current_row, column=11, value=rate_formula)
+            # L: 差异率 (Variance Rate) - Excel formula: = ABS(K/(G+H))*100 with error handling
+            # Use combined theoretical usage (G+H) for percentage calculation
+            rate_formula = f"=IF((G{current_row}+H{current_row})=0,IF(K{current_row}=0,0,100),ABS(K{current_row}/(G{current_row}+H{current_row}))*100)"
+            rate_cell = ws.cell(row=current_row, column=12, value=rate_formula)
             # Fixed percentage format with exactly 2 decimal places
             rate_cell.number_format = '0.00"%"'
             rate_cell.alignment = Alignment(horizontal='center')
 
-            # L: 状态 (Status)
-            status_cell = ws.cell(row=current_row, column=12,
+            # M: 状态 (Status)
+            status_cell = ws.cell(row=current_row, column=13,
                                   value=data['variance_status'])
             status_cell.alignment = Alignment(horizontal='center')
 
@@ -778,8 +812,8 @@ class MonthlyDishesWorksheetGenerator:
                 row_fill = PatternFill(
                     start_color=fill_color, end_color=fill_color, fill_type="solid")
 
-                # Apply fill to all cells in this row
-                for col in range(1, 13):
+                # Apply fill to all cells in this row (now 13 columns)
+                for col in range(1, 14):
                     ws.cell(row=current_row, column=col).fill = row_fill
 
             current_row += 1
@@ -805,8 +839,8 @@ class MonthlyDishesWorksheetGenerator:
 
         # Apply borders to data section
         for row in range(data_start_row, max_row + 1):
-            # 12 columns for variance data (added inventory count column)
-            for col in range(1, 13):
+            # 13 columns for variance data (added combo usage column)
+            for col in range(1, 14):
                 cell = ws.cell(row=row, column=col)
                 cell.border = thin_border
 

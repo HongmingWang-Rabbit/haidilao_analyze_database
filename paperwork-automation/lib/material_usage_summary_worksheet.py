@@ -85,7 +85,7 @@ class MaterialUsageSummaryGenerator:
             JOIN store s ON mmu.store_id = s.id
             LEFT JOIN material_price_history mph ON m.id = mph.material_id 
                 AND mph.is_active = TRUE
-                AND mph.district_id = s.district_id
+                AND mph.store_id = s.id
             WHERE mmu.year = %s AND mmu.month = %s
             GROUP BY s.id, s.name, mt.id, mt.name
             ORDER BY s.id, mt.sort_order, mt.name

@@ -247,13 +247,13 @@ CREATE TABLE dish_price_history (
 CREATE TABLE material_price_history (
     id SERIAL PRIMARY KEY,
     material_id INTEGER REFERENCES material(id), -- 外键：物料
-    district_id INTEGER REFERENCES district(id), -- 外键：区域 (不同区域采购价可能不同)
+    store_id INTEGER REFERENCES store(id), -- 外键：门店 (不同门店可能价格不同)
     price NUMERIC(12, 4) NOT NULL,     -- 价格 (更高精度以支持小单位物料)
     currency VARCHAR(3) DEFAULT 'CAD', -- 货币类型
     effective_date DATE NOT NULL,      -- 生效日期
     is_active BOOLEAN DEFAULT TRUE,    -- 是否当前有效价格
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(material_id, district_id, effective_date) -- 同一物料同一区域同一日期只能有一个价格
+    UNIQUE(material_id, store_id, effective_date) -- 同一物料同一门店同一日期只能有一个价格
 );
 
 -- ========================================
@@ -373,7 +373,7 @@ CREATE INDEX idx_dish_price_dish_store ON dish_price_history(dish_id, store_id);
 CREATE INDEX idx_dish_price_active ON dish_price_history(is_active);
 CREATE INDEX idx_dish_price_effective ON dish_price_history(effective_date);
 
-CREATE INDEX idx_material_price_material_district ON material_price_history(material_id, district_id);
+CREATE INDEX idx_material_price_material_store ON material_price_history(material_id, store_id);
 CREATE INDEX idx_material_price_active ON material_price_history(is_active);
 CREATE INDEX idx_material_price_effective ON material_price_history(effective_date);
 
@@ -541,7 +541,7 @@ INSERT INTO store_monthly_target (
 -- 加拿大五店 (Store ID: 5)
 (5, '2025-07-01', 5.10, 135.95, 1147806, 38.5, 114780.6, 0.695265),
 -- 加拿大六店 (Store ID: 6)
-(6, '2025-07-01', 3.60, 117.39, 710000, 39.0, 30000, 0.695265),
+(6, '2025-07-01', 3.30, 117.39, 700000, 41.0, -30000, 0.695265),
 -- 加拿大七店 (Store ID: 7)
 (7, '2025-07-01', 3.95, 148.86, 980000.00, 40.0, 40000, 0.695265)
 ON CONFLICT (store_id, month) DO UPDATE SET
@@ -624,9 +624,9 @@ INSERT INTO store_monthly_time_target (
 (5, '2025-07-01', 4, 1.10),  -- 22:00-(次)07:59
 -- 加拿大六店 (Store ID: 6) - Total target: 3.60
 (6, '2025-07-01', 1, 0.60),  -- 08:00-13:59
-(6, '2025-07-01', 2, 0.50),  -- 14:00-16:59
-(6, '2025-07-01', 3, 1.80),  -- 17:00-21:59
-(6, '2025-07-01', 4, 0.70),  -- 22:00-(次)07:59
+(6, '2025-07-01', 2, 0.40),  -- 14:00-16:59
+(6, '2025-07-01', 3, 1.30),  -- 17:00-21:59
+(6, '2025-07-01', 4, 1.00),  -- 22:00-(次)07:59
 -- 加拿大七店 (Store ID: 7) - Total target: 3.85
 (7, '2025-07-01', 1, 0.7),  -- 08:00-13:59
 (7, '2025-07-01', 2, 0.6),  -- 14:00-16:59

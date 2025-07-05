@@ -108,7 +108,7 @@ class DetailedMaterialSpendingGenerator:
             LEFT JOIN material_child_type mct ON m.material_child_type_id = mct.id
             LEFT JOIN material_price_history mph ON m.id = mph.material_id 
                 AND mph.is_active = TRUE
-                AND mph.district_id = (SELECT district_id FROM store WHERE id = %s)
+                AND mph.store_id = %s
             WHERE mmu.store_id = %s 
                 AND mmu.year = %s 
                 AND mmu.month = %s

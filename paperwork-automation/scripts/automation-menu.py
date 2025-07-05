@@ -288,8 +288,8 @@ class AutomationMenu:
                 missing_files.append(str(path))
                 continue
 
-            # Special handling for inventory_checking_result (has store subfolders)
-            if "inventory_checking_result" in str(path):
+            # Special handling for folders with store subfolders
+            if "inventory_checking_result" in str(path) or "material_detail" in str(path):
                 # Check for store subfolders (1, 2, 7, etc.)
                 store_folders = [d for d in path.iterdir(
                 ) if d.is_dir() and d.name.isdigit()]
@@ -598,27 +598,8 @@ class AutomationMenu:
 
         print("\n🚀 Starting complete monthly automation...")
 
-        # First, run database migration to ensure loss_rate column exists
-        print("🔧 Running database migrations...")
-
-        # Run loss rate migration
-        migration_command = f'{self.python_cmd} -m scripts.migrate_add_loss_rate'
-        migration_success = self.run_command(
-            migration_command, "Database Migration for Loss Rate")
-
-        if not migration_success:
-            print("❌ Loss rate migration failed. Continuing with automation anyway...")
-            print("💡 Note: Loss rate calculations may use default values")
-
-        # Run material type migration
-        material_type_migration_command = f'{self.python_cmd} -m scripts.migrate_add_material_types_simple --confirm'
-        material_type_success = self.run_command(
-            material_type_migration_command, "Material Type Tables Migration")
-
-        if not material_type_success:
-            print(
-                "❌ Material type migration failed. Continuing with automation anyway...")
-            print("💡 Note: Material type classifications may not be available")
+        # Note: Database migrations are one-time operations and should be run manually
+        # if needed from the Database Management menu
 
         # Run the new monthly automation script
         command = f'{self.python_cmd} -m scripts.complete_monthly_automation_new --date {target_date} --inventory-count-date {inventory_count_date}'
@@ -667,6 +648,10 @@ class AutomationMenu:
                  "material_detail_types"),
                 ("9", "Dishes Master Data (File → Database)", "dishes"),
                 ("0", "Dish Price History (File → Database)", "price_history"),
+                ("p", "Material Prices by Store (File → Database)",
+                 "material_prices_store"),
+                ("z", "Batch Extract Material Prices (All Stores)",
+                 "batch_material_prices"),
                 ("b", "← Back to Main Menu", "back")
             ]
 
@@ -703,6 +688,10 @@ class AutomationMenu:
             elif choice == '0':
                 self.extract_with_file_selection(
                     "price_history", "Dish Price History")
+            elif choice == 'p':
+                self.extract_material_prices_by_store()
+            elif choice == 'z':
+                self.extract_material_prices_batch()
             else:
                 print("❌ Invalid choice. Please try again.")
                 input("Press Enter to continue...")
@@ -893,13 +882,14 @@ class AutomationMenu:
             options = [
                 ("1", "Reset Database (Full)", "reset_full"),
                 ("2", "Reset Test Database", "reset_test"),
-                ("3", "Migrate: Add Loss Rate Column", "migrate_loss_rate"),
-                ("4", "Migrate: Add Material Type Tables", "migrate_material_types"),
-                ("5", "Migrate: Add Combo Tables", "migrate_combo_tables"),
-                ("6", "Insert Constant Data", "insert_const"),
-                ("7", "Insert Monthly Targets", "insert_targets"),
-                ("8", "Verify Database Structure", "verify_structure"),
-                ("9", "Show Database Status", "show_status"),
+                ("3", "Reset Materials Only (Development)", "reset_materials_only"),
+                ("4", "Migrate: Add Loss Rate Column", "migrate_loss_rate"),
+                ("5", "Migrate: Add Material Type Tables", "migrate_material_types"),
+                ("6", "Migrate: Add Combo Tables", "migrate_combo_tables"),
+                ("7", "Insert Constant Data", "insert_const"),
+                ("8", "Insert Monthly Targets", "insert_targets"),
+                ("9", "Verify Database Structure", "verify_structure"),
+                ("0", "Show Database Status", "show_status"),
                 ("b", "← Back to Main Menu", "back")
             ]
 
@@ -914,18 +904,20 @@ class AutomationMenu:
             elif choice == '2':
                 self.reset_database(test_only=True)
             elif choice == '3':
-                self.run_loss_rate_migration()
+                self.reset_materials_only()
             elif choice == '4':
-                self.run_material_type_migration()
+                self.run_loss_rate_migration()
             elif choice == '5':
-                self.run_combo_tables_migration()
+                self.run_material_type_migration()
             elif choice == '6':
-                self.insert_constant_data()
+                self.run_combo_tables_migration()
             elif choice == '7':
-                self.insert_monthly_targets()
+                self.insert_constant_data()
             elif choice == '8':
-                self.verify_database_structure()
+                self.insert_monthly_targets()
             elif choice == '9':
+                self.verify_database_structure()
+            elif choice == '0':
                 self.show_database_status()
             else:
                 print("❌ Invalid choice. Please try again.")
@@ -1638,6 +1630,63 @@ except Exception as e:
                 print("❌ Reset script not found")
                 input("Press Enter to continue...")
 
+    def reset_materials_only(self):
+        """Reset material tables only using the development reset script"""
+        print("🧪 RESET MATERIALS ONLY (DEVELOPMENT)")
+        print("=" * 50)
+        print("This will reset ONLY material-related tables:")
+        print("🔄 DROP: material_monthly_usage, inventory_count, material_price_history")
+        print("🔄 DROP: dish_material, material, material_child_type, material_type")
+        print("✅ RECREATE: All material tables with correct schema")
+        print("✅ INSERT: Default material types and child types")
+        print()
+        print("⚠️  WARNING: This will delete all material data but preserve:")
+        print("   ✅ Stores, dishes, and dish sales data")
+        print("   ✅ All other non-material tables")
+        print()
+        print("📄 Reset script: tests/reset_materials_only.sql")
+
+        # Ask for database choice
+        print("\n🗄️  Database Selection:")
+        print("1. Test database (recommended)")
+        print("2. Production database")
+
+        db_choice = input("Enter choice (1/2): ").strip()
+        use_test_db = db_choice != '2'
+        db_name = "test" if use_test_db else "production"
+
+        print(f"\n📊 Target database: {db_name}")
+        confirm = input(
+            f"Reset materials in {db_name} database? (y/N): ").lower()
+
+        if confirm != 'y':
+            return
+
+        reset_script = self.project_root / "tests" / "reset_materials_only.sql"
+        if not reset_script.exists():
+            print("❌ Reset script not found: tests/reset_materials_only.sql")
+            input("Press Enter to continue...")
+            return
+
+        # Run the reset using Python database helper
+        command = f'{self.python_cmd} -m tests.test_material_reset'
+        if not use_test_db:
+            command += " --production-db"
+
+        success = self.run_command(
+            command, f"Reset Materials Only ({db_name} database)")
+
+        if success:
+            print("✅ Material tables reset completed successfully!")
+            print("📊 All material tables have been recreated with proper schema")
+            print("📝 Default material types and child types have been inserted")
+            print()
+            print("💡 You can now run material extraction to populate the tables")
+        else:
+            print("❌ Material reset failed. Check the error messages above.")
+
+        input("Press Enter to continue...")
+
     def run_loss_rate_migration(self):
         """Run database migration to add loss_rate column"""
         print("🔧 DATABASE MIGRATION: Add Loss Rate Column")
@@ -1645,6 +1694,20 @@ except Exception as e:
         print("This will add the loss_rate column to the dish_material table.")
         print("This is required for proper material variance calculations.")
         print()
+        print("⚠️  Note: This is a one-time migration. If already applied, this will fail.")
+        print("📄 Migration file: haidilao-database-querys/add_loss_rate_column.sql")
+        print()
+
+        # Check if migration file exists
+        migration_file = Path(
+            "haidilao-database-querys/add_loss_rate_column.sql")
+        if not migration_file.exists():
+            print(
+                "ℹ️  Migration file not found - this migration was likely already applied.")
+            print("📋 Loss rate column should already exist in dish_material table.")
+            print("🔍 Use Database Status to verify the current database structure.")
+            input("Press Enter to continue...")
+            return
 
         confirm = input("Run migration? (y/N): ").lower()
         if confirm != 'y':
@@ -1736,6 +1799,66 @@ except Exception as e:
         if excel_file:
             command = f'{self.python_cmd} -m scripts.extract-dishes "{excel_file}" --direct-db'
             self.run_command(command, "Extract Dishes to Database")
+
+    def extract_material_prices_by_store(self):
+        """Extract material prices by store from Excel file"""
+        excel_file = self.get_excel_file()
+        if not excel_file:
+            return
+
+        # Ask for store ID (optional, can be auto-detected)
+        print("🏪 Store ID Detection:")
+        print("1. Auto-detect from filename/file content")
+        print("2. Manually specify store ID")
+
+        choice = input("Enter your choice (1 or 2): ").strip()
+
+        command = f'{self.python_cmd} scripts/extract_material_prices_by_store.py --input "{excel_file}"'
+
+        if choice == '2':
+            store_id = input("Enter store ID (1-7): ").strip()
+            try:
+                store_id = int(store_id)
+                if 1 <= store_id <= 7:
+                    command += f' --store-id {store_id}'
+                else:
+                    print("❌ Invalid store ID. Using auto-detection.")
+            except ValueError:
+                print("❌ Invalid store ID. Using auto-detection.")
+
+        self.run_command(command, "Extract Material Prices by Store")
+
+    def extract_material_prices_batch(self):
+        """Batch extract material prices from all store folders"""
+        print("🏪 Batch Material Price Extraction")
+        print("This will process all store folders in material_detail directory")
+        print("📁 Expected structure:")
+        print("   Input/monthly_report/material_detail/")
+        print("   ├── 1/ (store 1 files)")
+        print("   ├── 2/ (store 2 files)")
+        print("   ├── 3/ (store 3 files)")
+        print("   └── ... (other stores)")
+
+        # Ask for custom path (optional)
+        print("\n🗂️ Material Detail Path")
+        print("Default: Input/monthly_report/material_detail")
+        custom_path = input(
+            "Enter custom path or press Enter for default: ").strip()
+
+        if custom_path:
+            if not Path(custom_path).exists():
+                print(f"❌ Path not found: {custom_path}")
+                return
+            command = f'{self.python_cmd} -m scripts.extract_material_detail_prices_by_store_batch --material-detail-path "{custom_path}"'
+        else:
+            command = f'{self.python_cmd} -m scripts.extract_material_detail_prices_by_store_batch'
+
+        # Ask for debug mode
+        debug = input("Enable debug mode? (y/n): ").strip().lower()
+        if debug in ['y', 'yes']:
+            command += " --debug"
+
+        self.run_command(command, "Batch Extract Material Prices (All Stores)")
 
     def show_status(self):
         """Show system status"""

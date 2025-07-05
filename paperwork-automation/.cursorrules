@@ -97,6 +97,7 @@ paperwork-automation/
 - Handle missing/null values gracefully
 - Support Chinese store names and time segments properly
 - **CRITICAL**: When reading dish codes from Excel, remove `.0` suffix from float conversions
+- **CRITICAL**: When reading material numbers from Excel, ALWAYS use `dtype={'物料': str}` to prevent float64 conversion that causes precision loss and makes different material numbers appear identical
 - Use Unicode escape sequences for Chinese column names in code for reliability
 - Always test data filtering step-by-step when debugging extraction issues
 - **Multi-Source Data Handling**:
@@ -104,6 +105,40 @@ paperwork-automation/
   - Inventory files: Extract materials and dish-material relationships
   - Handle different Excel structures and worksheet names
   - Implement proper data validation before database insertion
+- **Material Number Handling**: Remove leading zeros with `material_number.lstrip('0')` but preserve as string throughout processing
+- **Representative Product Selection**: When multiple products share same material number, select product with highest total contribution (price × quantity) per material per store per month
+- **Target Date Parameter Passing**: Ensure --target-date parameter is properly passed through all automation workflows to prevent CURRENT_DATE usage
+
+### Excel Reading Patterns - CRITICAL LESSONS LEARNED
+
+**MAJOR BUG DISCOVERED**: Pandas default Excel reading converts material numbers to float64, causing precision loss:
+- Material numbers like `'000000000001500680'` and `'000000000001500681'` both become `1500680.0`
+- This makes different materials appear identical, causing incorrect price calculations
+- **SOLUTION**: Always specify `dtype={'物料': str}` when reading Excel files with material numbers
+
+**Correct Excel Reading Pattern**:
+```python
+# CORRECT - Preserves material number precision
+dtype_spec = {'物料': str}
+df = pd.read_excel(file_path, engine='openpyxl', dtype=dtype_spec)
+
+# INCORRECT - Causes precision loss
+df = pd.read_excel(file_path, engine='openpyxl')  # Default converts to float64
+```
+
+**Material Number Processing**:
+```python
+# Clean material number - remove leading zeros but keep as string
+material_number = str(material_number).strip().lstrip('0')
+```
+
+**Representative Product Selection Logic**:
+When multiple products share the same material number:
+1. Group by material_name (product description)
+2. Calculate total contribution (price × quantity) for each product group
+3. Select the product group with highest total contribution
+4. Use weighted average price for that selected product group
+5. Store only ONE record per (material_number, store_id, effective_date)
 
 ## 🧪 TESTING REQUIREMENTS
 
@@ -167,6 +202,24 @@ paperwork-automation/
   - Implements price history activation logic
   - Successfully processes 2,340+ price records
   - Integrated in automation menu as option 9
+
+- **Store-Specific Material Price System** (`scripts/extract_material_prices_by_store.py`)
+  - **Database Schema Migration**: Changed `material_price_history` from `district_id` to `store_id`
+  - Extracts material prices from Excel files on a store-by-store basis
+  - Auto-detects store ID from filename or manual specification
+  - Handles price history activation (deactivates old prices)
+  - Updated all related queries to use store-specific pricing
+  - Migration script: `migrate_material_price_history_to_store.sql`
+  - Integrated in automation menu as option 'p'
+
+- **Batch Material Price Extraction System** (`scripts/extract_material_detail_prices_by_store_batch.py`)
+  - **CRITICAL EXCEL READING FIX**: Uses `dtype={'物料': str}` to prevent float64 conversion that caused material number precision loss
+  - Processes all stores in parallel for efficient material price extraction
+  - Implements representative product selection logic (highest total contribution per material)
+  - Supports proper target date parameter passing to prevent CURRENT_DATE usage
+  - Handles leading zero removal from material numbers while preserving as strings
+  - Calculates weighted averages correctly per individual material number
+  - Integrated with monthly automation workflow
 
 - **Enhanced Automation Menu Structure** (`scripts/automation-menu.py`)
   - Organized into logical sections with emoji indicators
@@ -287,7 +340,8 @@ def run_new_feature(self):
 │   ├── d - Extract Dishes (with sizes)
 │   ├── m - Extract Materials  
 │   ├── q - Extract Dish-Material Relationships
-│   └── 9 - Extract Dish Price History
+│   ├── 9 - Extract Dish Price History
+│   └── p - Extract Material Prices by Store
 ├── 🗄️ DATABASE OPERATIONS
 │   ├── r - Reset Database
 │   ├── v - View Database Data
@@ -373,6 +427,10 @@ Before any commit, ensure:
 - [ ] Chinese text handling works correctly
 - [ ] Database connections cleaned up properly
 - [ ] **Excel float conversion**: Dish codes stripped of `.0` suffix
+- [ ] **CRITICAL: Material number reading**: Use `dtype={'物料': str}` in pd.read_excel() to prevent float64 conversion precision loss
+- [ ] **Target date parameter**: Ensure --target-date parameter is properly passed through automation workflows
+- [ ] **Representative product selection**: Verify logic picks product with highest total contribution per material
+- [ ] **Date handling**: Check for CURRENT_DATE usage and replace with target_date where appropriate
 - [ ] **Debugging approach**: Create step-by-step diagnostic scripts for complex issues
 - [ ] **Unicode handling**: Chinese column names use escape sequences for reliability
 
@@ -520,6 +578,11 @@ When extraction scripts produce no results:
 - **Material relationship failures**: Verify both dish and material exist before creating relationships
 - **Data extraction debugging**: Create step-by-step diagnostic scripts to isolate issues
 - **Store 6 conversion**: Legacy conversion logic kept for reference but removed from daily workflow
+- **CRITICAL: Material number float64 conversion bug**: When different material numbers (1500680, 1500681, etc.) all appear as same value (1500680.0), use `dtype={'物料': str}` in pd.read_excel() to prevent pandas from converting string material numbers to float64
+- **Effective date shows system date instead of target date**: Check for CURRENT_DATE usage in SQL and replace with proper target_date parameter passing through automation workflows
+- **Representative product selection errors**: When material prices are unexpectedly high/low, verify that representative product selection is working correctly - should pick product with highest total contribution (price × quantity) per material
+- **Material price weighted average calculation**: Ensure weighted averages are calculated per individual material number, not across all products sharing a material number
+- **Target date parameter not passed**: When automation scripts show wrong dates, verify --target-date parameter is added to script and properly passed through complete_monthly_automation_new.py
 
 ---
 

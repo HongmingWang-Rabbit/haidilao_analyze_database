@@ -180,13 +180,13 @@ class MonthlyAutomationProcessor:
                                 INSERT INTO dish_price_history (
                                     dish_id, store_id, price, effective_date, is_active
                                 )
-                                SELECT d.id, %s, %s, CURRENT_DATE, TRUE
+                                SELECT d.id, %s, %s, %s, TRUE
                                 FROM dish d
                                 WHERE d.full_code = %s AND d.size = %s
                                 ON CONFLICT (dish_id, store_id, effective_date) DO UPDATE SET
                                     price = EXCLUDED.price,
                                     is_active = TRUE
-                            """, (store_id, price, full_code, row['规格']))
+                            """, (store_id, price, self.target_date, full_code, row['规格']))
                             price_history_count += cursor.rowcount
 
                         # Extract monthly sales data
@@ -323,6 +323,206 @@ class MonthlyAutomationProcessor:
                 f"Material detail extraction error: {e}")
             return False
 
+    def extract_material_master_data(self, material_folder: Path) -> bool:
+        """Extract material master data (materials, types) from first available store Excel file."""
+        logger.info(
+            f"MATERIAL MASTER: Extracting material types and materials from: {material_folder}")
+
+        try:
+            # Find first available Excel file from any store
+            excel_file = None
+            for store_folder in sorted(material_folder.iterdir()):
+                if not store_folder.is_dir():
+                    continue
+
+                # Look for Excel files in this store folder
+                excel_files = list(store_folder.glob("*.xlsx")) + list(store_folder.glob("*.XLSX")) + \
+                    list(store_folder.glob("*.xls")) + \
+                    list(store_folder.glob("*.XLS"))
+
+                if excel_files:
+                    excel_file = excel_files[0]
+                    logger.info(
+                        f"Using store {store_folder.name} file for material master data: {excel_file.name}")
+                    break
+
+            if not excel_file:
+                logger.error(
+                    "No Excel files found in any store folder for material extraction")
+                self.results['errors'].append(
+                    "No Excel files found for material extraction")
+                return False
+
+            # Run the material extraction script
+            import subprocess
+            import sys
+
+            cmd = [
+                sys.executable,
+                "-m",
+                "scripts.extract_material_detail_with_types",
+                str(excel_file),
+                "--direct-db",
+                "--quiet"
+            ]
+
+            if self.config.is_test:
+                cmd.append("--test-db")
+
+            # Set up environment
+            env = os.environ.copy()
+            current_dir = str(Path.cwd())
+            if 'PYTHONPATH' in env:
+                env['PYTHONPATH'] = f"{current_dir};{env['PYTHONPATH']}"
+            else:
+                env['PYTHONPATH'] = current_dir
+
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, cwd=Path.cwd(), env=env, encoding='utf-8', errors='replace')
+
+            if result.returncode == 0:
+                logger.info(
+                    "SUCCESS: Material master data extraction completed")
+
+                # Parse output for counts if available
+                output = result.stdout + result.stderr
+                import re
+
+                # Look for material counts in output
+                types_match = re.search(r'Material types: (\d+)', output)
+                child_types_match = re.search(
+                    r'Material child types: (\d+)', output)
+                materials_match = re.search(
+                    r'Total materials processed: (\d+)', output)
+
+                types_count = int(types_match.group(1)) if types_match else 0
+                child_types_count = int(child_types_match.group(
+                    1)) if child_types_match else 0
+                materials_count = int(materials_match.group(
+                    1)) if materials_match else 0
+
+                self.log_result('material_types', types_count,
+                                "Extracted material types")
+                self.log_result(
+                    'material_child_types', child_types_count, "Extracted material child types")
+                self.log_result('materials', materials_count,
+                                "Extracted materials with type associations")
+
+                return True
+            else:
+                logger.error(
+                    f"ERROR: Material master data extraction failed: {result.stderr}")
+                self.results['errors'].append(
+                    f"Material master data extraction failed: {result.stderr}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Failed to extract material master data: {e}")
+            self.results['errors'].append(
+                f"Material master data extraction error: {e}")
+            return False
+
+    def extract_material_detail_batch(self, material_folder: Path) -> bool:
+        """Extract material detail with types and store-specific pricing from all store subfolders."""
+        logger.info(
+            f"MATERIAL: Batch extracting material detail from store subfolders: {material_folder}")
+
+        try:
+            import subprocess
+            import sys
+
+            # Run the dedicated batch material detail extraction script
+            cmd = [
+                sys.executable,
+                "-m",
+                "scripts.extract_material_detail_prices_by_store_batch",
+                "--material-detail-path",
+                str(material_folder),
+                "--target-date",
+                self.target_date,
+                "--test" if self.config.is_test else ""
+            ]
+
+            # Remove empty --test flag if not testing
+            if not self.config.is_test:
+                cmd = [arg for arg in cmd if arg]
+
+            # Set up environment
+            env = os.environ.copy()
+            current_dir = str(Path.cwd())
+            if 'PYTHONPATH' in env:
+                env['PYTHONPATH'] = f"{current_dir};{env['PYTHONPATH']}"
+            else:
+                env['PYTHONPATH'] = current_dir
+
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, cwd=Path.cwd(), env=env, encoding='utf-8', errors='replace')
+
+            if result.returncode == 0:
+                logger.info(
+                    "SUCCESS: Batch material detail extraction completed")
+
+                # Parse output for processing counts
+                output = result.stdout + result.stderr
+
+                # Look for processing counts in output
+                import re
+                stores_match = re.search(r'🏪 Stores processed: (\d+)', output)
+                prices_match = re.search(
+                    r'💰 Total prices extracted: (\d+)', output)
+
+                stores_count = int(stores_match.group(1)
+                                   ) if stores_match else 0
+                prices_count = int(prices_match.group(1)
+                                   ) if prices_match else 0
+
+                self.log_result('materials', 0,
+                                "Material master data (handled by separate extraction)")
+                self.log_result('material_price_history', prices_count,
+                                f"Extracted material prices from {stores_count} stores")
+
+                return True
+            else:
+                # Check if this is just a "materials not found" issue
+                error_output = result.stderr.strip()
+                if "Material not found" in error_output or not error_output:
+                    logger.warning(
+                        "WARNING: Batch material detail extraction had missing materials (expected)")
+                    logger.info(
+                        "This is normal - materials need to be imported first via material extraction")
+
+                    # Parse what was actually processed
+                    output = result.stdout + result.stderr
+                    import re
+                    stores_match = re.search(
+                        r'🏪 Stores processed: (\d+)', output)
+                    prices_match = re.search(
+                        r'💰 Total prices extracted: (\d+)', output)
+
+                    stores_count = int(stores_match.group(1)
+                                       ) if stores_match else 0
+                    prices_count = int(prices_match.group(1)
+                                       ) if prices_match else 0
+
+                    if stores_count > 0 and prices_count > 0:
+                        logger.info(
+                            f"Successfully processed {prices_count} prices from {stores_count} stores")
+                        self.log_result('material_price_history', prices_count,
+                                        f"Extracted material prices from {stores_count} stores (materials pending)")
+                        return True
+
+                logger.error(
+                    f"ERROR: Batch material detail extraction failed: {error_output}")
+                self.results['errors'].append(
+                    f"Batch material detail extraction failed: {error_output}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Failed to extract material detail batch: {e}")
+            self.results['errors'].append(
+                f"Batch material detail extraction error: {e}")
+            return False
+
     def extract_inventory_data(self, inventory_folder: Path) -> bool:
         """Extract inventory data from store folders."""
         logger.info(
@@ -442,22 +642,8 @@ class MonthlyAutomationProcessor:
                                 # NOTE: Now using inventory file for both System Record and Inventory Count
                                 # This eliminates discrepancies between different data sources
 
-                                # Extract material price if we have both stock quantity and physical count
-                                if stock_qty > 0 and counted_qty > 0:
-                                    # Estimate unit price from stock value / physical count
-                                    unit_price = stock_qty / counted_qty
-
-                                    # Insert material price history
-                                    cursor.execute("""
-                                        INSERT INTO material_price_history (
-                                            material_id, district_id, price, effective_date, is_active
-                                        )
-                                        SELECT m.id, 1, %s, CURRENT_DATE, TRUE
-                                        FROM material m
-                                        WHERE m.material_number = %s
-                                        ON CONFLICT (material_id, district_id, effective_date) DO UPDATE SET
-                                            price = EXCLUDED.price
-                                    """, (unit_price, material_number))
+                                # NOTE: Material prices should come from material detail files only,
+                                # not from inventory data (which contains quantities, not prices)
 
                                 successful_rows += 1
 
@@ -773,18 +959,14 @@ class MonthlyAutomationProcessor:
             logger.error("No monthly dish sale file found")
             success = False
 
-        # Step 2: Extract from material detail (with material types)
+        # Step 2: Extract material master data (materials, types) from first available store
         material_folder = self.input_folder / "material_detail"
-        material_files = list(material_folder.glob(
-            "*.xlsx")) + list(material_folder.glob("*.XLSX"))
-        if material_files:
-            success &= self.extract_material_detail_with_types(
-                material_files[0])
-        else:
-            logger.error("No material detail file found")
-            success = False
+        success &= self.extract_material_master_data(material_folder)
 
-        # Step 3: Extract from inventory checking results (System Record + Inventory Count)
+        # Step 3: Extract material prices from all stores (now that materials exist)
+        success &= self.extract_material_detail_batch(material_folder)
+
+        # Step 4: Extract from inventory checking results (System Record + Inventory Count)
         # This now handles both: 库存数量 → System Record, 盘点数量 → Inventory Count
         inventory_folder = self.input_folder / "inventory_checking_result"
         if inventory_folder.exists():
@@ -793,7 +975,7 @@ class MonthlyAutomationProcessor:
             logger.error("No inventory checking result folder found")
             success = False
 
-        # Step 4: Extract dish-material relationships
+        # Step 5: Extract dish-material relationships
         calc_folder = self.input_folder / "calculated_dish_material_usage"
         calc_files = list(calc_folder.glob("*.xls*")) + \
             list(calc_folder.glob("*.XLS*"))
@@ -803,7 +985,7 @@ class MonthlyAutomationProcessor:
             logger.error("No calculated dish material usage file found")
             success = False
 
-        # Step 5: Generate analysis reports (both material and beverage)
+        # Step 6: Generate analysis reports (both material and beverage)
         if success:
             success &= self.generate_analysis_report(target_date)
 
