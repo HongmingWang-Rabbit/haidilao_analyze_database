@@ -117,7 +117,6 @@ CREATE TABLE store_monthly_target (
   revenue NUMERIC(14, 2),                    -- 营业收入目标（含税）
   labor_percentage NUMERIC(5, 2),            -- 人工成本占比（百分比形式：如 28.5）
   gross_revenue NUMERIC(14, 2),              -- 毛收入目标
-  monthly_CAD_USD_rate NUMERIC(8, 4),        -- 本月 CAD/USD 汇率
   
   UNIQUE(store_id, month)                    -- 防止重复插入同一店铺同一月目标
 );
@@ -398,6 +397,9 @@ CREATE INDEX idx_material_monthly_usage_material_store_date ON material_monthly_
 CREATE INDEX idx_material_monthly_usage_store_date ON material_monthly_usage(store_id, year, month);
 CREATE INDEX idx_material_monthly_usage_date ON material_monthly_usage(year, month);
 
+-- Month static data indexes
+CREATE INDEX idx_month_static_data_month ON month_static_data(month);
+
 -- ========================================
 -- TRIGGERS FOR UPDATED_AT
 -- ========================================
@@ -449,6 +451,9 @@ CREATE TRIGGER update_monthly_combo_dish_sale_updated_at BEFORE UPDATE ON monthl
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_material_monthly_usage_updated_at BEFORE UPDATE ON material_monthly_usage
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_month_static_data_updated_at BEFORE UPDATE ON month_static_data
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ========================================
@@ -511,46 +516,44 @@ INSERT INTO store_monthly_target (
     table_avg_spending, 
     revenue, 
     labor_percentage, 
-    gross_revenue, 
-    monthly_CAD_USD_rate
+    gross_revenue
 ) VALUES
 -- 加拿大一店 (Store ID: 1)
-(1, '2025-06-01', 4.20, 151.98, 1014900.00, 41.0, 50000, 0.695265),
+(1, '2025-06-01', 4.20, 151.98, 1014900.00, 41.0, 50000),
 -- 加拿大二店 (Store ID: 2) 
-(2, '2025-06-01', 3.50, 140.21, 530000, 42.0, 10000, 0.695265),
+(2, '2025-06-01', 3.50, 140.21, 530000, 42.0, 10000),
 -- 加拿大三店 (Store ID: 3)
-(3, '2025-06-01', 5.20, 124.00, 928500.00, 38.5, 80000, 0.695265),
+(3, '2025-06-01', 5.20, 124.00, 928500.00, 38.5, 80000),
 -- 加拿大四店 (Store ID: 4)
-(4, '2025-06-01', 4.00, 130.95, 1100000, 38.5, 121002, 0.695265),
+(4, '2025-06-01', 4.00, 130.95, 1100000, 38.5, 121002),
 -- 加拿大五店 (Store ID: 5)
-(5, '2025-06-01', 5.10, 135.95, 1144000, 38.5, 122350.8, 0.695265),
+(5, '2025-06-01', 5.10, 135.95, 1144000, 38.5, 122350.8),
 -- 加拿大六店 (Store ID: 6)
-(6, '2025-06-01', 3.60, 117.39, 710000, 39.0, 30000, 0.695265),
+(6, '2025-06-01', 3.60, 117.39, 710000, 39.0, 30000),
 -- 加拿大七店 (Store ID: 7)
-(7, '2025-06-01', 3.85, 148.86, 980000.00, 41.0, 50000, 0.695265),
+(7, '2025-06-01', 3.85, 148.86, 980000.00, 41.0, 50000),
 
 
 -- 加拿大一店 (Store ID: 1)
-(1, '2025-07-01', 4.26, 151.98, 1035000.00, 41.0, 50000, 0.695265),
+(1, '2025-07-01', 4.26, 151.98, 1035000.00, 41.0, 50000),
 -- 加拿大二店 (Store ID: 2) 
-(2, '2025-07-01', 3.20, 140.21, 550000, 40.0, 5000, 0.695265),
+(2, '2025-07-01', 3.20, 140.21, 550000, 40.0, 5000),
 -- 加拿大三店 (Store ID: 3)
-(3, '2025-07-01', 5.10, 124.00, 941011.00, 39, 70000, 0.695265),
+(3, '2025-07-01', 5.10, 124.00, 941011.00, 39, 70000),
 -- 加拿大四店 (Store ID: 4)
-(4, '2025-07-01', 3.90, 130.95, 1057875, 38.5, 105787.5, 0.695265),
+(4, '2025-07-01', 3.90, 130.95, 1057875, 38.5, 105787.5),
 -- 加拿大五店 (Store ID: 5)
-(5, '2025-07-01', 5.10, 135.95, 1147806, 38.5, 114780.6, 0.695265),
+(5, '2025-07-01', 5.10, 135.95, 1147806, 38.5, 114780.6),
 -- 加拿大六店 (Store ID: 6)
-(6, '2025-07-01', 3.30, 117.39, 700000, 41.0, -30000, 0.695265),
+(6, '2025-07-01', 3.30, 117.39, 700000, 41.0, -30000),
 -- 加拿大七店 (Store ID: 7)
-(7, '2025-07-01', 3.95, 148.86, 980000.00, 40.0, 40000, 0.695265)
+(7, '2025-07-01', 3.95, 148.86, 980000.00, 40.0, 40000)
 ON CONFLICT (store_id, month) DO UPDATE SET
     turnover_rate = EXCLUDED.turnover_rate,
     table_avg_spending = EXCLUDED.table_avg_spending,
     revenue = EXCLUDED.revenue,
     labor_percentage = EXCLUDED.labor_percentage,
-    gross_revenue = EXCLUDED.gross_revenue,
-    monthly_CAD_USD_rate = EXCLUDED.monthly_CAD_USD_rate;
+    gross_revenue = EXCLUDED.gross_revenue;
 
 -- Time segment targets for June 2025
 -- Based on operational patterns for each time segment
@@ -634,6 +637,28 @@ INSERT INTO store_monthly_time_target (
 (7, '2025-07-01', 4, 0.65)   -- 22:00-(次)07:59
 ON CONFLICT (store_id, month, time_segment_id) DO UPDATE SET
     turnover_rate = EXCLUDED.turnover_rate;
+
+-- ========================================
+-- MONTHLY STATIC DATA (Exchange Rates, etc.)
+-- ========================================
+
+CREATE TABLE month_static_data (
+    id SERIAL PRIMARY KEY,
+    month DATE NOT NULL UNIQUE,                    -- 月份（每月第一天作为标识）
+    cad_usd_rate NUMERIC(8, 4) NOT NULL,          -- 本月 CAD/USD 汇率
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT check_month_first_day CHECK (EXTRACT(DAY FROM month) = 1)
+);
+
+-- Insert exchange rate data for 2025
+INSERT INTO month_static_data (month, cad_usd_rate) VALUES
+('2025-06-01', 0.695265),  -- June 2025 CAD/USD rate
+('2025-07-01', 0.695265)   -- July 2025 CAD/USD rate (same rate used)
+ON CONFLICT (month) DO UPDATE SET
+    cad_usd_rate = EXCLUDED.cad_usd_rate,
+    updated_at = CURRENT_TIMESTAMP;
 
 -- ========================================
 -- RESET COMPLETE

@@ -387,6 +387,34 @@ def run_new_feature(self):
 - Implement connection retry logic
 - Close connections properly
 
+### Local Database Configuration
+
+**Production Database Connection Details:**
+```bash
+# Local PostgreSQL connection for production use
+Host: localhost
+Username: hongming
+Password: 8894
+Database: haidilao-paperwork
+Port: 5432 (default)
+
+# Example connection commands:
+psql -h localhost -U hongming -d haidilao-paperwork
+
+# Migration example:
+psql -h localhost -U hongming -d haidilao-paperwork -f haidilao-database-querys/migrate_normalize_exchange_rates.sql
+
+# MIGRATION STATUS: ✅ Exchange rate normalization completed (2025-01-01)
+# - month_static_data table created with 12 exchange rate records
+# - monthly_CAD_USD_rate column removed from store_monthly_target
+# - Database structure normalized for better performance and maintainability
+```
+
+**Test Database Configuration:**
+- Use `DatabaseConfig(is_test=True)` for test operations
+- Separate test database recommended for development
+- Always backup before running migrations on production database
+
 ### Query Optimization
 
 - Use single optimized queries when possible

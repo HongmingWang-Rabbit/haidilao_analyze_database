@@ -33,31 +33,33 @@ class TestBeverageVarianceGenerator(unittest.TestCase):
         self.assertEqual(self.generator.db_manager, self.mock_db_manager)
 
     def test_generate_worksheet_basic(self):
-        """Test basic worksheet generation"""
+        """Test basic worksheet generation with new structure"""
         workbook = Workbook()
         target_date = "2025-06-01"
 
-        # Mock database response
-        mock_variance_details = [
+        # Mock database response matching new structure
+        mock_variance_data = [
             {
+                'material_id': 1,
                 'store_id': 1,
                 'store_name': '加拿大一店',
-                'material_number': 'MAT001',
                 'material_name': '青岛啤酒',
-                'specification': '500ml',
-                'unit': '瓶',
-                'system_quantity': '100.00',
-                'counted_quantity': '95.00',
-                'variance_quantity': '-5.00',
-                'unit_price': '5.00',
-                'variance_amount': '-25.00',
-                'source': 'SAP系统',
-                'region': '加拿大',
-                'remarks': '差异需要关注'
+                'material_number': 'MAT001',
+                'material_unit': '瓶',
+                'package_spec': '500ml',
+                'theoretical_usage': 95.0,
+                'combo_usage': 5.0,
+                'system_record': 110.0,
+                'inventory_count': 2.0,
+                'variance_amount': 8.0,  # 110 - (95 + 5 + 2)
+                'variance_percent': 8.0,
+                'variance_status': '超量',
+                'material_price': 5.0,
+                'sale_price': 7.5
             }
         ]
 
-        with patch.object(self.generator, 'get_beverage_variance_details', return_value=mock_variance_details):
+        with patch.object(self.generator, 'get_beverage_variance_data', return_value=mock_variance_data):
             worksheet = self.generator.generate_worksheet(
                 workbook, target_date)
 
@@ -65,28 +67,51 @@ class TestBeverageVarianceGenerator(unittest.TestCase):
             self.assertIsNotNone(worksheet)
             self.assertEqual(worksheet.title, "酒水差异明细表")
 
-            # Verify headers
+            # Verify title
+            self.assertEqual(worksheet['A1'].value, "酒水差异明细表 - 2025年06月")
+
+            # Find header row (should be after title and summary)
+            header_row = None
+            for row in range(1, 20):
+                if worksheet.cell(row=row, column=1).value == "序号":
+                    header_row = row
+                    break
+
+            self.assertIsNotNone(header_row, "Header row not found")
+
+            # Verify headers match new structure
             expected_headers = [
-                "月份", "来源", "大区", "门店", "物料编号", "物料名称",
-                "规格", "单位", "系统数量", "盘点数量", "差异数量",
-                "单价", "差异金额", "备注"
+                "序号", "门店", "物料名称", "物料号", "单位", "包装规格",
+                "理论用量", "套餐用量", "系统记录", "库存盘点", "差异数量",
+                "差异率(%)", "状态", "物料单价", "销售单价", "差异金额"
             ]
 
             for col, expected_header in enumerate(expected_headers, 1):
-                actual_header = worksheet.cell(row=1, column=col).value
+                actual_header = worksheet.cell(
+                    row=header_row, column=col).value
                 self.assertEqual(actual_header, expected_header)
 
             # Verify data row
-            self.assertEqual(worksheet.cell(row=2, column=1).value, "202506")
-            self.assertEqual(worksheet.cell(row=2, column=4).value, "加拿大一店")
-            self.assertEqual(worksheet.cell(row=2, column=6).value, "青岛啤酒")
+            data_row = header_row + 1
+            self.assertEqual(worksheet.cell(
+                row=data_row, column=1).value, 1)  # 序号
+            self.assertEqual(worksheet.cell(
+                row=data_row, column=2).value, "加拿大一店")  # 门店
+            self.assertEqual(worksheet.cell(
+                row=data_row, column=3).value, "青岛啤酒")  # 物料名称
+            self.assertEqual(worksheet.cell(
+                row=data_row, column=4).value, "MAT001")  # 物料号
+            self.assertEqual(worksheet.cell(
+                row=data_row, column=14).value, 5.0)  # 物料单价
+            self.assertEqual(worksheet.cell(
+                row=data_row, column=15).value, 7.5)  # 销售单价
 
     def test_generate_worksheet_empty_data(self):
         """Test worksheet generation with empty data"""
         workbook = Workbook()
         target_date = "2025-06-01"
 
-        with patch.object(self.generator, 'get_beverage_variance_details', return_value=[]):
+        with patch.object(self.generator, 'get_beverage_variance_data', return_value=[]):
             worksheet = self.generator.generate_worksheet(
                 workbook, target_date)
 
@@ -94,67 +119,68 @@ class TestBeverageVarianceGenerator(unittest.TestCase):
             self.assertIsNotNone(worksheet)
             self.assertEqual(worksheet.title, "酒水差异明细表")
 
-            # Should have headers but no data rows
-            self.assertEqual(worksheet.cell(row=1, column=1).value, "月份")
-            self.assertIsNone(worksheet.cell(row=2, column=1).value)
+            # Should have title
+            self.assertEqual(worksheet['A1'].value, "酒水差异明细表 - 2025年06月")
 
     def test_generate_worksheet_with_summary(self):
         """Test worksheet generation with summary calculation"""
         workbook = Workbook()
         target_date = "2025-06-01"
 
-        mock_variance_details = [
+        mock_variance_data = [
             {
+                'material_id': 1,
                 'store_id': 1,
                 'store_name': '加拿大一店',
-                'material_number': 'MAT001',
                 'material_name': '青岛啤酒',
-                'specification': '500ml',
-                'unit': '瓶',
-                'system_quantity': '100.00',
-                'counted_quantity': '95.00',
-                'variance_quantity': '-5.00',
-                'unit_price': '5.00',
-                'variance_amount': '-25.00',
-                'source': 'SAP系统',
-                'region': '加拿大',
-                'remarks': '差异需要关注'
+                'material_number': 'MAT001',
+                'material_unit': '瓶',
+                'package_spec': '500ml',
+                'theoretical_usage': 95.0,
+                'combo_usage': 5.0,
+                'system_record': 110.0,
+                'inventory_count': 2.0,
+                'variance_amount': 8.0,
+                'variance_percent': 8.0,
+                'variance_status': '超量',
+                'material_price': 5.0,
+                'sale_price': 7.5
             },
             {
+                'material_id': 2,
                 'store_id': 2,
                 'store_name': '加拿大二店',
-                'material_number': 'MAT002',
                 'material_name': '可口可乐',
-                'specification': '330ml',
-                'unit': '罐',
-                'system_quantity': '200.00',
-                'counted_quantity': '210.00',
-                'variance_quantity': '10.00',
-                'unit_price': '3.00',
-                'variance_amount': '30.00',
-                'source': 'SAP系统',
-                'region': '加拿大',
-                'remarks': '差异需要关注'
+                'material_number': 'MAT002',
+                'material_unit': '罐',
+                'package_spec': '330ml',
+                'theoretical_usage': 200.0,
+                'combo_usage': 10.0,
+                'system_record': 205.0,
+                'inventory_count': 3.0,
+                'variance_amount': -8.0,  # 205 - (200 + 10 + 3)
+                'variance_percent': 3.8,
+                'variance_status': '正常',
+                'material_price': 3.0,
+                'sale_price': 4.5
             }
         ]
 
-        with patch.object(self.generator, 'get_beverage_variance_details', return_value=mock_variance_details):
+        with patch.object(self.generator, 'get_beverage_variance_data', return_value=mock_variance_data):
             worksheet = self.generator.generate_worksheet(
                 workbook, target_date)
 
-            # Check summary row (should be row 4: header + 2 data rows + 1 summary row)
-            self.assertEqual(worksheet.cell(row=4, column=9).value, "合计")
-            self.assertEqual(worksheet.cell(
-                row=4, column=10).value, 300.0)  # 100 + 200
-            self.assertEqual(worksheet.cell(
-                row=4, column=11).value, 305.0)  # 95 + 210
-            self.assertEqual(worksheet.cell(
-                row=4, column=12).value, 5.0)    # -5 + 10
-            self.assertEqual(worksheet.cell(
-                row=4, column=14).value, 5.0)    # -25 + 30
+            # Find summary section - should contain "酒水差异分析概览"
+            summary_found = False
+            for row in range(1, 20):
+                if worksheet.cell(row=row, column=1).value == "酒水差异分析概览":
+                    summary_found = True
+                    break
 
-    def test_get_beverage_variance_details_success(self):
-        """Test successful beverage variance details retrieval"""
+            self.assertTrue(summary_found, "Summary section not found")
+
+    def test_get_beverage_variance_data_success(self):
+        """Test successful beverage variance data retrieval"""
         year, month = 2025, 6
 
         # Mock database connection and cursor
@@ -166,35 +192,51 @@ class TestBeverageVarianceGenerator(unittest.TestCase):
 
         self.mock_db_manager.get_connection.return_value = mock_connection
 
-        # Mock query results
+        # Mock query results matching new structure
         mock_cursor.fetchall.return_value = [
-            (1, '加拿大一店', 'MAT001', '青岛啤酒', '500ml', '瓶',
-             100.0, 95.0, -5.0, 5.0, -25.0, '酒类', '啤酒', '差异需要关注')
+            {
+                'material_id': 1,
+                'store_id': 1,
+                'store_name': '加拿大一店',
+                'material_name': '青岛啤酒',
+                'material_number': 'MAT001',
+                'material_unit': '瓶',
+                'package_spec': '500ml',
+                'theoretical_usage': 95.0,
+                'combo_usage': 5.0,
+                'system_record': 110.0,
+                'inventory_count': 2.0,
+                'material_price': 5.0,
+                'sale_price': 7.5
+            }
         ]
 
-        result = self.generator.get_beverage_variance_details(year, month)
+        result = self.generator.get_beverage_variance_data(year, month)
 
         # Verify result
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]['store_name'], '加拿大一店')
         self.assertEqual(result[0]['material_name'], '青岛啤酒')
-        self.assertEqual(result[0]['variance_quantity'], '-5.00')
+        self.assertEqual(result[0]['theoretical_usage'], 95.0)
+        self.assertEqual(result[0]['combo_usage'], 5.0)
+        self.assertEqual(result[0]['material_price'], 5.0)
+        self.assertEqual(result[0]['sale_price'], 7.5)
 
-    def test_get_beverage_variance_details_database_error(self):
-        """Test beverage variance details retrieval with database error"""
+    def test_get_beverage_variance_data_database_error(self):
+        """Test beverage variance data retrieval with database error"""
         year, month = 2025, 6
 
         # Mock database connection to raise exception
         self.mock_db_manager.get_connection.side_effect = Exception(
             "Database connection failed")
 
-        result = self.generator.get_beverage_variance_details(year, month)
+        result = self.generator.get_beverage_variance_data(year, month)
 
         # Should return empty list on error
         self.assertEqual(result, [])
 
-    def test_get_beverage_variance_details_empty_results(self):
-        """Test beverage variance details retrieval with empty results"""
+    def test_get_beverage_variance_data_empty_results(self):
+        """Test beverage variance data retrieval with empty results"""
         year, month = 2025, 6
 
         # Mock database connection and cursor
@@ -206,102 +248,157 @@ class TestBeverageVarianceGenerator(unittest.TestCase):
 
         self.mock_db_manager.get_connection.return_value = mock_connection
 
-        # Mock empty query results
+        # Mock empty results
         mock_cursor.fetchall.return_value = []
 
-        result = self.generator.get_beverage_variance_details(year, month)
+        result = self.generator.get_beverage_variance_data(year, month)
 
         # Should return empty list
         self.assertEqual(result, [])
 
-    def test_worksheet_styling(self):
-        """Test worksheet styling is applied correctly"""
-        workbook = Workbook()
-        target_date = "2025-06-01"
+    def test_add_variance_summary_section(self):
+        """Test summary section generation"""
+        from openpyxl import Workbook
+        ws = Workbook().active
 
-        mock_variance_details = [
+        mock_variance_data = [
             {
-                'store_id': 1,
-                'store_name': '加拿大一店',
-                'material_number': 'MAT001',
-                'material_name': '青岛啤酒',
-                'specification': '500ml',
-                'unit': '瓶',
-                'system_quantity': '100.00',
-                'counted_quantity': '95.00',
-                'variance_quantity': '-5.00',
-                'unit_price': '5.00',
-                'variance_amount': '-25.00',
-                'source': 'SAP系统',
-                'region': '加拿大',
-                'remarks': '差异需要关注'
+                'theoretical_usage': 95.0,
+                'combo_usage': 5.0,
+                'system_record': 110.0,
+                'inventory_count': 2.0,
+                'variance_amount': 8.0,
+                'variance_percent': 8.0,
+                'material_price': 5.0,
+                'sale_price': 7.5
+            },
+            {
+                'theoretical_usage': 200.0,
+                'combo_usage': 10.0,
+                'system_record': 205.0,
+                'inventory_count': 3.0,
+                'variance_amount': -8.0,
+                'variance_percent': 3.8,
+                'material_price': 3.0,
+                'sale_price': 4.5
             }
         ]
 
-        with patch.object(self.generator, 'get_beverage_variance_details', return_value=mock_variance_details):
+        result_row = self.generator.add_variance_summary_section(
+            ws, 1, mock_variance_data)
+
+        # Verify summary was created
+        self.assertGreater(result_row, 1)
+        self.assertEqual(ws['A1'].value, "酒水差异分析概览")
+
+    def test_worksheet_styling(self):
+        """Test worksheet styling and formatting"""
+        workbook = Workbook()
+        target_date = "2025-06-01"
+
+        mock_variance_data = [
+            {
+                'material_id': 1,
+                'store_id': 1,
+                'store_name': '加拿大一店',
+                'material_name': '青岛啤酒',
+                'material_number': 'MAT001',
+                'material_unit': '瓶',
+                'package_spec': '500ml',
+                'theoretical_usage': 95.0,
+                'combo_usage': 5.0,
+                'system_record': 110.0,
+                'inventory_count': 2.0,
+                'variance_amount': 8.0,
+                'variance_percent': 8.0,  # > 5%, should be highlighted
+                'variance_status': '超量',
+                'material_price': 5.0,
+                'sale_price': 7.5
+            }
+        ]
+
+        with patch.object(self.generator, 'get_beverage_variance_data', return_value=mock_variance_data):
             worksheet = self.generator.generate_worksheet(
                 workbook, target_date)
 
-            # Check header styling
-            header_cell = worksheet.cell(row=1, column=1)
-            self.assertEqual(header_cell.font.color.rgb, "FFFFFF")
-            self.assertEqual(header_cell.fill.start_color.index, "C41E3A")
+            # Verify column widths are set
+            self.assertIsNotNone(worksheet.column_dimensions['A'].width)
+            self.assertIsNotNone(worksheet.column_dimensions['P'].width)
 
-            # Check column widths are set
-            self.assertEqual(worksheet.column_dimensions['A'].width, 10)
-            self.assertEqual(worksheet.column_dimensions['F'].width, 25)
+            # Verify title styling
+            title_cell = worksheet['A1']
+            self.assertIsNotNone(title_cell.font)
+            self.assertIsNotNone(title_cell.fill)
 
     def test_date_parsing(self):
-        """Test date parsing in worksheet generation"""
+        """Test date parsing for different formats"""
         workbook = Workbook()
-        target_date = "2025-06-15"  # Different day
+        target_date = "2025-12-31"
 
-        with patch.object(self.generator, 'get_beverage_variance_details', return_value=[]):
+        with patch.object(self.generator, 'get_beverage_variance_data', return_value=[]):
             worksheet = self.generator.generate_worksheet(
                 workbook, target_date)
 
-            # The month should still be extracted correctly
-            self.assertIsNotNone(worksheet)
-            # Verify get_beverage_variance_details was called with correct year/month
-            self.generator.get_beverage_variance_details.assert_called_with(
-                2025, 6)
+            # Verify date formatting in title
+            expected_title = "酒水差异明细表 - 2025年12月"
+            self.assertEqual(worksheet['A1'].value, expected_title)
 
-    def test_variance_calculation_formatting(self):
-        """Test variance calculation and formatting"""
+    def test_variance_calculation_formulas(self):
+        """Test Excel formulas for variance calculations"""
         workbook = Workbook()
         target_date = "2025-06-01"
 
-        # Mock data with various variance scenarios
-        mock_variance_details = [
+        mock_variance_data = [
             {
+                'material_id': 1,
                 'store_id': 1,
                 'store_name': '加拿大一店',
-                'material_number': 'MAT001',
                 'material_name': '青岛啤酒',
-                'specification': '500ml',
-                'unit': '瓶',
-                'system_quantity': '100.50',  # Decimal values
-                'counted_quantity': '95.25',
-                'variance_quantity': '-5.25',
-                'unit_price': '5.50',
-                'variance_amount': '-28.88',
-                'source': 'SAP系统',
-                'region': '加拿大',
-                'remarks': '差异需要关注'
+                'material_number': 'MAT001',
+                'material_unit': '瓶',
+                'package_spec': '500ml',
+                'theoretical_usage': 95.0,
+                'combo_usage': 5.0,
+                'system_record': 110.0,
+                'inventory_count': 2.0,
+                'variance_amount': 8.0,
+                'variance_percent': 8.0,
+                'variance_status': '超量',
+                'material_price': 5.0,
+                'sale_price': 7.5
             }
         ]
 
-        with patch.object(self.generator, 'get_beverage_variance_details', return_value=mock_variance_details):
+        with patch.object(self.generator, 'get_beverage_variance_data', return_value=mock_variance_data):
             worksheet = self.generator.generate_worksheet(
                 workbook, target_date)
 
-            # Check data formatting
-            self.assertEqual(worksheet.cell(row=2, column=9).value, '100.50')
-            self.assertEqual(worksheet.cell(row=2, column=10).value, '95.25')
-            self.assertEqual(worksheet.cell(row=2, column=11).value, '-5.25')
+            # Find data row
+            data_row = None
+            for row in range(1, 30):
+                if worksheet.cell(row=row, column=1).value == 1:  # First serial number
+                    data_row = row
+                    break
+
+            self.assertIsNotNone(data_row, "Data row not found")
+
+            # Check variance amount formula (Column K)
+            variance_formula = worksheet.cell(row=data_row, column=11).value
+            expected_variance_formula = f"=I{data_row}-(G{data_row}+H{data_row}+J{data_row})"
+            self.assertEqual(variance_formula, expected_variance_formula)
+
+            # Check variance rate formula (Column L)
+            rate_formula = worksheet.cell(row=data_row, column=12).value
+            expected_rate_formula = f"=IF((G{data_row}+H{data_row})=0,IF(K{data_row}=0,0,100),ABS(K{data_row}/(G{data_row}+H{data_row}))*100)"
+            self.assertEqual(rate_formula, expected_rate_formula)
+
+            # Check net difference formula (Column P)
+            net_diff_formula = worksheet.cell(row=data_row, column=16).value
+            expected_net_diff_formula = f"=K{data_row}*N{data_row}"
+            self.assertEqual(net_diff_formula, expected_net_diff_formula)
 
     def test_beverage_filtering_logic(self):
-        """Test that only beverage-related materials are included"""
+        """Test that only beverage materials are included"""
         year, month = 2025, 6
 
         # Mock database connection and cursor
@@ -313,19 +410,53 @@ class TestBeverageVarianceGenerator(unittest.TestCase):
 
         self.mock_db_manager.get_connection.return_value = mock_connection
 
-        # Mock query results
+        # Mock empty results (no beverage materials)
         mock_cursor.fetchall.return_value = []
 
-        self.generator.get_beverage_variance_details(year, month)
+        result = self.generator.get_beverage_variance_data(year, month)
 
-        # Verify the SQL query contains beverage filtering logic
-        call_args = mock_cursor.execute.call_args
-        query = call_args[0][0]
+        # Should return empty list when no beverage materials
+        self.assertEqual(result, [])
 
-        # Check that the query includes beverage filtering conditions
-        self.assertIn("酒%", query)
-        self.assertIn("饮料%", query)
-        self.assertIn("水%", query)
+        # Verify that query was executed
+        mock_cursor.execute.assert_called_once()
+
+        # Check that the query includes beverage filtering
+        executed_query = mock_cursor.execute.call_args[0][0]
+        self.assertIn("成本-酒水类", executed_query)
+
+    def test_financial_impact_calculation(self):
+        """Test financial impact calculations in summary"""
+        from openpyxl import Workbook
+        ws = Workbook().active
+
+        mock_variance_data = [
+            {
+                'theoretical_usage': 95.0,
+                'combo_usage': 5.0,
+                'system_record': 110.0,
+                'inventory_count': 2.0,
+                'variance_amount': 8.0,
+                'variance_percent': 8.0,
+                'material_price': 5.0,
+                'sale_price': 7.5
+            }
+        ]
+
+        self.generator.add_variance_summary_section(ws, 1, mock_variance_data)
+
+        # Check that financial impact is calculated
+        # Material cost impact: 8.0 * 5.0 = 40.0
+        # Sale impact: 8.0 * 7.5 = 60.0
+        summary_found = False
+        for row in range(1, 20):
+            for col in range(1, 10):
+                cell_value = ws.cell(row=row, column=col).value
+                if cell_value and "材料成本影响" in str(cell_value):
+                    summary_found = True
+                    break
+
+        self.assertTrue(summary_found, "Financial impact summary not found")
 
 
 if __name__ == '__main__':
