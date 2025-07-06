@@ -736,7 +736,8 @@ class AutomationMenu:
                  "monthly_material_usage"),
                 ("9", "Monthly Material Report with Detailed Spending",
                     "monthly_detailed_spending"),
-                ("b", "Monthly Beverage Report", "monthly_beverage_report"),
+                ("g", "Gross Margin Report (毛利报表)", "gross_margin_report"),
+                ("v", "Monthly Beverage Report", "monthly_beverage_report"),
                 ("b", "← Back to Main Menu", "back")
             ]
 
@@ -764,7 +765,9 @@ class AutomationMenu:
                 self.generate_monthly_material_usage_report()
             elif choice == '9':
                 self.generate_monthly_detailed_spending_report()
-            elif choice == 'b':
+            elif choice == 'g':
+                self.generate_gross_margin_report()
+            elif choice == 'v':
                 self.generate_monthly_beverage_report()
             else:
                 print("❌ Invalid choice. Please try again.")
@@ -1519,6 +1522,65 @@ except Exception as e:
             pass
 
         return None
+
+    def generate_gross_margin_report(self):
+        """Generate gross margin report (毛利报表)"""
+        print("📊 Generating gross margin report (毛利报表)...")
+        print("This will create a comprehensive gross margin analysis report.")
+
+        # Get target date from user
+        print("\n📅 Enter target date for the report:")
+        print("Format options:")
+        print("  - YYYY-MM-DD (e.g., 2025-06-30)")
+        print("  - Press Enter for current month end")
+
+        date_input = input("\nEnter date: ").strip()
+
+        # Parse and validate the date
+        if not date_input:
+            from datetime import datetime
+            today = datetime.now()
+            # Use last day of current month
+            import calendar
+            last_day = calendar.monthrange(today.year, today.month)[1]
+            target_date = f"{today.year}-{today.month:02d}-{last_day:02d}"
+        else:
+            try:
+                from datetime import datetime
+                datetime.strptime(date_input, '%Y-%m-%d')
+                target_date = date_input
+            except ValueError:
+                print("❌ Invalid date format. Please use YYYY-MM-DD format.")
+                input("Press Enter to continue...")
+                return
+
+        print(f"📅 Using target date: {target_date}")
+        print("📋 Report will include:")
+        print("   1. 菜品价格变动及菜品损耗表 (Detailed Revenue Data)")
+        print("   2. 原材料成本变动表 (Material Cost Analysis)")
+        print("   3. 打折优惠表 (Discount Analysis)")
+
+        confirm = input(
+            "\nGenerate gross margin report with this date? (y/N): ").lower()
+        if confirm != 'y':
+            return
+
+        command = f'{self.python_cmd} -m scripts.generate_gross_margin_report --target-date {target_date}'
+        success = self.run_command(command, "Generate Gross Margin Report")
+
+        if success:
+            print("✅ Gross margin report generated successfully!")
+            print("📋 The report includes:")
+            print("   1. 菜品价格变动及菜品损耗表 (Detailed Revenue Data)")
+            print("   2. 原材料成本变动表 (Material Cost Analysis)")
+            print("   3. 打折优惠表 (Discount Analysis)")
+            print()
+            print("💡 The report shows dish price changes, material cost impacts,")
+            print("   and discount analysis for comprehensive gross margin analysis.")
+        else:
+            print("❌ Failed to generate gross margin report")
+
+        input("Press Enter to continue...")
 
     def generate_specific_report(self, report_type: str):
         """Generate specific report type"""

@@ -56,6 +56,7 @@ class MonthlyAutomationProcessor:
             'dish_materials': 0,
             'monthly_material_report': 0,
             'monthly_beverage_report': 0,
+            'gross_margin_report': 0,
             'errors': []
         }
 
@@ -773,15 +774,16 @@ class MonthlyAutomationProcessor:
             return False
 
     def generate_analysis_report(self, target_date: str) -> bool:
-        """Generate both material and beverage variance analysis reports."""
+        """Generate material, beverage, and gross margin analysis reports."""
         logger.info(
-            f"REPORT: Generating variance analysis reports for {target_date}")
+            f"REPORT: Generating variance and analysis reports for {target_date}")
 
         material_success = self.generate_material_report(target_date)
         beverage_success = self.generate_beverage_report(target_date)
+        gross_margin_success = self.generate_gross_margin_report(target_date)
 
         # Return True if at least one report was successful
-        return material_success or beverage_success
+        return material_success or beverage_success or gross_margin_success
 
     def generate_material_report(self, target_date: str) -> bool:
         """Generate material variance analysis report with NEW structure."""
@@ -881,6 +883,53 @@ class MonthlyAutomationProcessor:
             logger.error(f"Failed to generate beverage report: {e}")
             self.results['errors'].append(
                 f"Beverage report generation failed: {e}")
+            return False
+
+    def generate_gross_margin_report(self, target_date: str) -> bool:
+        """Generate gross margin analysis report."""
+        logger.info(
+            f"GROSS MARGIN REPORT: Generating gross margin analysis report for {target_date}")
+
+        try:
+            import subprocess
+            import sys
+
+            # Call the gross margin report generation script
+            cmd = [
+                sys.executable,
+                "-m", "scripts.generate_gross_margin_report",
+                "--target-date", target_date
+            ]
+
+            # Set up environment to include current directory in Python path
+            import os
+            env = os.environ.copy()
+            current_dir = str(Path.cwd())
+            if 'PYTHONPATH' in env:
+                env['PYTHONPATH'] = f"{current_dir};{env['PYTHONPATH']}"
+            else:
+                env['PYTHONPATH'] = current_dir
+
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, cwd=Path.cwd(), env=env)
+
+            if result.returncode == 0:
+                logger.info(
+                    "SUCCESS: Gross margin report generation completed")
+                self.log_result('gross_margin_report', 1,
+                                "Generated gross margin report with price and material analysis")
+                return True
+            else:
+                logger.error(
+                    f"ERROR: Gross margin report generation failed: {result.stderr}")
+                self.results['errors'].append(
+                    f"Gross margin report generation failed: {result.stderr}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Failed to generate gross margin report: {e}")
+            self.results['errors'].append(
+                f"Gross margin report generation failed: {e}")
             return False
 
     def extract_material_monthly_usage(self, mb5b_folder: Path) -> bool:
@@ -1023,10 +1072,13 @@ class MonthlyAutomationProcessor:
         # Report generation results
         material_report_count = self.results.get('monthly_material_report', 0)
         beverage_report_count = self.results.get('monthly_beverage_report', 0)
+        gross_margin_report_count = self.results.get('gross_margin_report', 0)
         logger.info(
             f"SUCCESS: Material variance report: {'✅ Generated' if material_report_count > 0 else '❌ Failed'}")
         logger.info(
             f"SUCCESS: Beverage variance report: {'✅ Generated' if beverage_report_count > 0 else '❌ Failed'}")
+        logger.info(
+            f"SUCCESS: Gross margin analysis report: {'✅ Generated' if gross_margin_report_count > 0 else '❌ Failed'}")
 
         if self.results['errors']:
             logger.warning(

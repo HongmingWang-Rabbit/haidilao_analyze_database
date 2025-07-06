@@ -400,8 +400,7 @@ class ReportDataProvider:
                 prev_mtd_sql, (prev_year, current_month, target_day))
 
             # Create lookup dictionaries for aggregated data
-            mtd_lookup = {(row['store_id'], row['time_segment_id'])
-                           : row for row in mtd_results}
+            mtd_lookup = {(row['store_id'], row['time_segment_id'])                          : row for row in mtd_results}
             prev_full_lookup = {
                 (row['store_id'], row['time_segment_id']): row for row in prev_full_results}
             prev_mtd_lookup = {
@@ -554,4 +553,283 @@ class ReportDataProvider:
 
         except Exception as e:
             print(f"❌ Error getting daily store performance data: {e}")
+            return []
+
+    def get_gross_margin_dish_price_data(self, target_date: str):
+        """
+        Get dish price data for gross margin analysis.
+
+        Args:
+            target_date: Target date in YYYY-MM-DD format
+
+        Returns:
+            List of dish price data dictionaries
+        """
+        from datetime import datetime
+
+        # Parse target date to get year and month
+        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
+        current_year = target_dt.year
+        current_month = target_dt.month
+
+        # Calculate previous month and year
+        if current_month == 1:
+            prev_month = 12
+            prev_month_year = current_year - 1
+        else:
+            prev_month = current_month - 1
+            prev_month_year = current_year
+
+        prev_year = current_year - 1
+
+        sql = """
+        SELECT 
+            s.id as store_id,
+            s.name as store_name,
+            '加拿大' as region,
+            d.full_code as dish_code,
+            SUBSTRING(d.full_code, 1, 8) as dish_short_code,
+            d.name as dish_name,
+            d.size as specification,
+            CONCAT(s.name, d.full_code) as unique_code,
+            '' as combo_code,
+            0 as dish_weight_kg,
+            '' as dish_unit,
+            
+            -- Current period sales data (from dish_monthly_sale)
+            COALESCE(dms.sale_amount, 0) as current_period_sales,
+            COALESCE(dms.sale_amount, 0) as theoretical_usage,
+            
+            -- Price data from dish_price_history
+            COALESCE(dph_current.price, 0) as current_price,
+            COALESCE(dph_prev.price, 0) as previous_price,
+            COALESCE(dph_prev_year.price, 0) as last_year_price,
+            
+            -- Aggregated material data: all materials for this dish with material number
+            COALESCE(
+                STRING_AGG(
+                    CASE 
+                        WHEN m.name IS NOT NULL AND dm.standard_quantity IS NOT NULL THEN
+                            m.material_number || ' - ' || m.name || ' - ' || ROUND(dm.standard_quantity * COALESCE(dms.sale_amount, 0), 2)::text
+                        ELSE NULL
+                    END, 
+                    E'\n' 
+                    ORDER BY m.material_number
+                ), 
+                ''
+            ) as material_list_with_usage,
+            
+            -- Total material cost for this dish: sum(material_price * standard_quantity * dish_sales)
+            COALESCE(
+                SUM(
+                    CASE 
+                        WHEN mph.price IS NOT NULL AND dm.standard_quantity IS NOT NULL AND dms.sale_amount IS NOT NULL THEN
+                            mph.price * dm.standard_quantity * dms.sale_amount
+                        ELSE 0
+                    END
+                ), 
+                0
+            ) as total_material_cost,
+            
+            -- Keep individual material fields for backward compatibility
+            '' as material_code,
+            '' as material_name,
+            0 as material_price_per_kg,
+            0 as current_material_usage,
+            
+            -- Combo data (placeholder)
+            0 as combo_usage,
+            0 as combo_sales,
+            
+            -- Additional fields
+            '' as price_adjustment_date,
+            0 as click_rate,
+            0 as actual_gross_margin,
+            '' as dish_category,
+            
+            -- Loss analysis (placeholder)
+            0 as theoretical_usage_loss,
+            0 as actual_usage_loss,
+            0 as current_month_loss_cost,
+            0 as previous_month_loss_cost,
+            0 as comparable_period_loss_cost
+            
+        FROM store s
+        CROSS JOIN dish d
+        LEFT JOIN dish_monthly_sale dms ON d.id = dms.dish_id 
+            AND s.id = dms.store_id
+            AND dms.year = %s
+            AND dms.month = %s
+        LEFT JOIN dish_price_history dph_current ON d.id = dph_current.dish_id
+            AND s.id = dph_current.store_id
+            AND dph_current.is_active = true
+            AND EXTRACT(YEAR FROM dph_current.effective_date) = %s
+            AND EXTRACT(MONTH FROM dph_current.effective_date) = %s
+        LEFT JOIN dish_price_history dph_prev ON d.id = dph_prev.dish_id
+            AND s.id = dph_prev.store_id
+            AND dph_prev.is_active = true
+            AND EXTRACT(YEAR FROM dph_prev.effective_date) = %s
+            AND EXTRACT(MONTH FROM dph_prev.effective_date) = %s
+        LEFT JOIN dish_price_history dph_prev_year ON d.id = dph_prev_year.dish_id
+            AND s.id = dph_prev_year.store_id
+            AND dph_prev_year.is_active = true
+            AND EXTRACT(YEAR FROM dph_prev_year.effective_date) = %s
+            AND EXTRACT(MONTH FROM dph_prev_year.effective_date) = %s
+        LEFT JOIN dish_material dm ON d.id = dm.dish_id
+        LEFT JOIN material m ON dm.material_id = m.id
+        LEFT JOIN material_price_history mph ON m.id = mph.material_id
+            AND s.id = mph.store_id
+            AND mph.is_active = true
+            AND EXTRACT(YEAR FROM mph.effective_date) = %s
+            AND EXTRACT(MONTH FROM mph.effective_date) = %s
+        WHERE s.id BETWEEN 1 AND 7
+            AND (dms.sale_amount > 0 OR dph_current.price > 0)
+        GROUP BY s.id, s.name, d.id, d.full_code, d.name, d.size, 
+                 dms.sale_amount, dph_current.price, dph_prev.price, dph_prev_year.price
+        ORDER BY s.id, d.full_code
+        """
+
+        try:
+            results = self.db_manager.fetch_all(sql, (
+                current_year, current_month,  # mds current period
+                current_year, current_month,  # dph_current
+                prev_month_year, prev_month,  # dph_prev
+                prev_year, current_month,     # dph_prev_year
+                current_year, current_month   # mph current
+            ))
+
+            return results
+
+        except Exception as e:
+            print(f"❌ Error getting gross margin dish price data: {e}")
+            return []
+
+    def get_gross_margin_material_cost_data(self, target_date: str):
+        """
+        Get material cost data for gross margin analysis.
+
+        Args:
+            target_date: Target date in YYYY-MM-DD format
+
+        Returns:
+            List of material cost data dictionaries
+        """
+        from datetime import datetime
+
+        # Parse target date
+        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
+        current_year = target_dt.year
+        current_month = target_dt.month
+
+        # Calculate previous month
+        if current_month == 1:
+            prev_month = 12
+            prev_month_year = current_year - 1
+        else:
+            prev_month = current_month - 1
+            prev_month_year = current_year
+
+        sql = """
+        SELECT 
+            s.id as store_id,
+            s.name as store_name,
+            m.material_number,
+            m.name as material_name,
+            
+            -- Current period price
+            COALESCE(mph_current.price, 0) as current_price,
+            
+            -- Previous period price
+            COALESCE(mph_prev.price, 0) as previous_price,
+            
+            -- Usage data from material_monthly_usage
+            COALESCE(mmu.material_used, 0) as current_usage,
+            COALESCE(mph_current.price * mmu.material_used, 0) as current_cost,
+            
+            -- Calculate cost impact
+            CASE 
+                WHEN mph_prev.price > 0 AND mmu.material_used > 0 THEN
+                    (mph_current.price - mph_prev.price) * mmu.material_used
+                ELSE 0
+            END as cost_impact
+            
+        FROM store s
+        CROSS JOIN material m
+        LEFT JOIN material_price_history mph_current ON m.id = mph_current.material_id
+            AND s.id = mph_current.store_id
+            AND mph_current.is_active = true
+            AND EXTRACT(YEAR FROM mph_current.effective_date) = %s
+            AND EXTRACT(MONTH FROM mph_current.effective_date) = %s
+        LEFT JOIN material_price_history mph_prev ON m.id = mph_prev.material_id
+            AND s.id = mph_prev.store_id
+            AND mph_prev.is_active = true
+            AND EXTRACT(YEAR FROM mph_prev.effective_date) = %s
+            AND EXTRACT(MONTH FROM mph_prev.effective_date) = %s
+        LEFT JOIN material_monthly_usage mmu ON m.id = mmu.material_id
+            AND s.id = mmu.store_id
+            AND mmu.year = %s
+            AND mmu.month = %s
+        WHERE s.id BETWEEN 1 AND 7
+            AND (mph_current.price > 0 OR mmu.material_used > 0)
+        ORDER BY s.id, m.material_number
+        """
+
+        try:
+            results = self.db_manager.fetch_all(sql, (
+                current_year, current_month,  # mph_current
+                prev_month_year, prev_month,  # mph_prev
+                current_year, current_month   # mmu current
+            ))
+
+            return results
+
+        except Exception as e:
+            print(f"❌ Error getting gross margin material cost data: {e}")
+            return []
+
+    def get_gross_margin_discount_data(self, target_date: str):
+        """
+        Get discount data for gross margin analysis.
+
+        Args:
+            target_date: Target date in YYYY-MM-DD format
+
+        Returns:
+            List of discount data dictionaries
+        """
+        from datetime import datetime
+
+        # Parse target date
+        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
+        current_year = target_dt.year
+        current_month = target_dt.month
+
+        sql = """
+        SELECT 
+            s.id as store_id,
+            s.name as store_name,
+            SUM(dr.discount_total) as total_discount,
+            SUM(dr.revenue_tax_not_included) as total_revenue,
+            CASE 
+                WHEN SUM(dr.revenue_tax_not_included) > 0 THEN
+                    SUM(dr.discount_total) / SUM(dr.revenue_tax_not_included) * 100
+                ELSE 0
+            END as discount_percentage,
+            COUNT(*) as days_with_discount
+        FROM store s
+        LEFT JOIN daily_report dr ON s.id = dr.store_id
+            AND EXTRACT(YEAR FROM dr.date) = %s
+            AND EXTRACT(MONTH FROM dr.date) = %s
+        WHERE s.id BETWEEN 1 AND 7
+        GROUP BY s.id, s.name
+        ORDER BY s.id
+        """
+
+        try:
+            results = self.db_manager.fetch_all(
+                sql, (current_year, current_month))
+            return results
+
+        except Exception as e:
+            print(f"❌ Error getting gross margin discount data: {e}")
             return []
