@@ -8,6 +8,7 @@ from lib.business_insight_worksheet import BusinessInsightWorksheetGenerator
 from lib.time_segment_worksheet import TimeSegmentWorksheetGenerator
 from lib.yearly_comparison_worksheet import YearlyComparisonWorksheetGenerator
 from lib.comparison_worksheet import ComparisonWorksheetGenerator
+from lib.yearly_comparison_daily_worksheet import YearlyComparisonDailyWorksheetGenerator
 from lib.monthly_dishes_worksheet import MonthlyDishesWorksheetGenerator
 from lib.daily_store_tracking_worksheet import DailyStoreTrackingGenerator
 from lib.database_queries import ReportDataProvider
@@ -49,6 +50,8 @@ class DatabaseReportGenerator:
         self.comparison_generator = ComparisonWorksheetGenerator(
             self.store_names, self.target_date)
         self.yearly_generator = YearlyComparisonWorksheetGenerator(
+            self.store_names, self.target_date)
+        self.yearly_daily_generator = YearlyComparisonDailyWorksheetGenerator(
             self.store_names, self.target_date)
         self.time_segment_generator = TimeSegmentWorksheetGenerator(
             self.store_names, self.target_date, self.data_provider)
@@ -94,6 +97,16 @@ class DatabaseReportGenerator:
         # Generate yearly comparison worksheet (同比数据)
         yearly_ws = self.yearly_generator.generate_worksheet(
             wb, yearly_current, yearly_previous
+        )
+
+        # Generate year-over-year daily comparison worksheet (对比上年表)
+        # Note: Use daily_data and monthly_data as they contain the prev_yearly_* fields
+        yearly_daily_ws = self.yearly_daily_generator.generate_worksheet(
+            # daily_data contains prev_yearly_* fields
+            wb, daily_data, monthly_data, daily_data,
+            monthly_data,  # Use monthly_data as targets
+            current_mtd, current_mtd,  # current_mtd contains prev_yearly_mtd_* fields
+            daily_ranking, monthly_ranking, daily_ranking_values, monthly_ranking_values
         )
 
         # Generate time segment worksheet (分时段-上报)

@@ -254,6 +254,48 @@ class ReportDataProvider:
         yearly_previous = aggregate_store_data(
             data_by_period.get('prev_year_mtd', {}))
 
+        # Process year-over-year data with proper field mapping
+        prev_year_data = aggregate_store_data(
+            data_by_period.get('prev_year_mtd', {}))
+        prev_year_mtd_data = aggregate_store_data(
+            data_by_period.get('prev_year_mtd', {}))
+
+        # Add year-over-year fields to the aggregated data
+        def add_yearly_fields(data_list, prev_year_list, prev_year_mtd_list):
+            """Add year-over-year comparison fields to each store's data"""
+            for store_data in data_list:
+                store_id = store_data['store_id']
+
+                # Find corresponding previous year data
+                prev_year_store = next(
+                    (s for s in prev_year_list if s['store_id'] == store_id), {})
+                prev_year_mtd_store = next(
+                    (s for s in prev_year_mtd_list if s['store_id'] == store_id), {})
+
+                # Add year-over-year fields
+                store_data['prev_yearly_tables'] = prev_year_store.get(
+                    'total_tables', 0)
+                store_data['prev_yearly_tables_validated'] = prev_year_store.get(
+                    'total_tables_validated', 0)
+                store_data['prev_yearly_revenue'] = prev_year_store.get(
+                    'total_revenue', 0)
+                store_data['prev_yearly_mtd_tables'] = prev_year_mtd_store.get(
+                    'total_tables', 0)
+                store_data['prev_yearly_mtd_tables_validated'] = prev_year_mtd_store.get(
+                    'total_tables_validated', 0)
+                store_data['prev_yearly_mtd_revenue'] = prev_year_mtd_store.get(
+                    'total_revenue', 0)
+
+            return data_list
+
+        # Add year-over-year fields to all relevant datasets
+        monthly_data = add_yearly_fields(
+            monthly_data, prev_year_data, prev_year_mtd_data)
+        current_mtd = add_yearly_fields(
+            current_mtd, prev_year_data, prev_year_mtd_data)
+        daily_data = add_yearly_fields(
+            daily_data, prev_year_data, prev_year_mtd_data)
+
         # Calculate rankings
         daily_ranking_names = []
         monthly_ranking_names = []
@@ -400,8 +442,7 @@ class ReportDataProvider:
                 prev_mtd_sql, (prev_year, current_month, target_day))
 
             # Create lookup dictionaries for aggregated data
-            mtd_lookup = {(row['store_id'], row['time_segment_id'])
-                           : row for row in mtd_results}
+            mtd_lookup = {(row['store_id'], row['time_segment_id'])                          : row for row in mtd_results}
             prev_full_lookup = {
                 (row['store_id'], row['time_segment_id']): row for row in prev_full_results}
             prev_mtd_lookup = {

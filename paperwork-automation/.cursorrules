@@ -9,12 +9,14 @@
 ## 🎯 PROJECT OVERVIEW
 
 This is a production-grade automation system for processing Haidilao restaurant Excel data
-and generating comprehensive database reports with 4 worksheets:
+and generating comprehensive database reports with 6 worksheets:
 
 - 对比上月表 (Monthly Comparison)
 - 同比数据 (Yearly Comparison)
+- 对比上年表 (Year-over-Year Daily Comparison)
 - 分时段-上报 (Time Segment Report)
 - 营业透视 (Business Insight)
+- 门店日-加拿大 (Daily Store Tracking)
 
 ## 📁 PROJECT STRUCTURE
 
@@ -33,6 +35,7 @@ paperwork-automation/
 ├── lib/                       # Core business logic
 │   ├── comparison_worksheet.py
 │   ├── yearly_comparison_worksheet.py
+│   ├── yearly_comparison_daily_worksheet.py
 │   ├── time_segment_worksheet.py
 │   ├── business_insight_worksheet.py
 │   ├── data_extraction.py
@@ -227,6 +230,14 @@ When multiple products share the same material number:
   - 🗄️ Database Operations: reset (r), view data (v), run tests (t)
   - 📋 Report Generation: database reports (g), custom workflows
   - Clear navigation with section headers and consistent command patterns
+
+- **Year-over-Year Daily Comparison System** (`lib/yearly_comparison_daily_worksheet.py`)
+  - **NEW**: Added "对比上年表" worksheet to daily reports
+  - Same structure as monthly comparison but compares to same month in previous year
+  - Year-over-year table count, revenue, and per-table consumption comparisons
+  - MTD vs same period last year comparisons for accurate trending
+  - Integrated with existing database queries and report generation workflow
+  - Brings daily report to 6 comprehensive worksheets total
 
 ## 📋 MANDATORY UPDATE REQUIREMENTS
 

@@ -19,7 +19,7 @@ This system processes Haidilao restaurant Excel data and generates **4 professio
 
 ### 📊 **Complete Report Generation System**
 
-- **🎯 4 Professional Worksheets**: 对比上月表 (Monthly Comparison), 同比数据 (Yearly Comparison), 分时段-上报 (Time Segment), 营业透视 (Business Insight)
+- **🎯 6 Professional Worksheets**: 对比上月表 (Monthly Comparison), 同比数据 (Yearly Comparison), 对比上年表 (Year-over-Year Comparison), 分时段-上报 (Time Segment), 营业透视 (Business Insight), 门店日-加拿大 (Daily Store Tracking)
 - **🏪 Material Usage Summary (NEW)**: Store-by-store material consumption analysis with type classifications and financial tracking
 - **📋 Detailed Material Spending (NEW)**: Individual material consumption worksheets for each store with granular breakdowns by material type
 - **📈 Advanced Analytics**: Growth rates, MTD comparisons, turnover analysis, target achievement tracking, material variance analysis
@@ -305,8 +305,10 @@ python3 scripts/generate_database_report.py --date 2025-06-10
 
 - **📈 对比上月表**: Monthly comparison with growth rates and target completion
 - **📊 同比数据**: Year-over-year comparison with percentage changes
+- **📅 对比上年表**: Year-over-year daily comparison with same structure as monthly comparison
 - **⏰ 分时段-上报**: Time segment analysis with totals and differences
 - **🎯 营业透视**: Business insight with store performance rankings
+- **🏪 门店日-加拿大**: Daily store performance tracking with normalized scoring
 
 ### **Monthly Material Usage Report (NEW)**
 
