@@ -611,6 +611,7 @@ When extraction scripts produce no results:
 - **Representative product selection errors**: When material prices are unexpectedly high/low, verify that representative product selection is working correctly - should pick product with highest total contribution (price × quantity) per material
 - **Material price weighted average calculation**: Ensure weighted averages are calculated per individual material number, not across all products sharing a material number
 - **Target date parameter not passed**: When automation scripts show wrong dates, verify --target-date parameter is added to script and properly passed through complete_monthly_automation_new.py
+- **Gross margin report price history fixes**: Fixed price history logic in `get_gross_margin_dish_price_data` and `get_gross_margin_material_cost_data` to properly handle missing historical price data. Key improvements: 1) For "去年同期单价", changed from per-store lookup to dish-level lookup to find the most recent historical price across all stores (e.g., dish 1060062 now correctly shows $20.95 from 2024-05-31 instead of falling back to current $24.95). 2) For "上期单价", uses fallback to current price when no previous period data exists. 3) Used separate CTEs instead of UNION ALL to avoid PostgreSQL limitations.
 
 ---
 

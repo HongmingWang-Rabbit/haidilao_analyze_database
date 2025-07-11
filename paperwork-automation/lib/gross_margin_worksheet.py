@@ -43,18 +43,15 @@ class GrossMarginWorksheetGenerator:
             10,  # 去年同期单价
             12,  # 环比价格变动
             12,  # 同比价格变动
-            15,  # 对应物料代码
+            15,  # 本期收入
             20,  # 对应物料名称
-            10,  # 单价/KG
             10,  # 本期耗用量
             10,  # 套餐、拼盘用量
             10,  # 套餐销量
             12,  # 环比影响收入
             12,  # 同比影响收入
             12,  # 调价日期
-            10,  # 点击率
             10,  # 实际毛利率
-            12,  # 识别单品类别
             10,  # 理论耗用量
             10,  # 实际耗用量
             12,  # 本月损耗影响成本金额
@@ -91,7 +88,7 @@ class GrossMarginWorksheetGenerator:
         current_row = start_row
 
         # Main title row
-        ws.merge_cells(f'A{current_row}:AJ{current_row}')
+        ws.merge_cells(f'A{current_row}:AC{current_row}')
         ws[f'A{current_row}'] = f"菜品销售报表（本币） - {target_dt.strftime('%Y年%m月')}"
         ws[f'A{current_row}'].font = Font(bold=True, size=14)
         ws[f'A{current_row}'].alignment = Alignment(
@@ -102,11 +99,11 @@ class GrossMarginWorksheetGenerator:
 
         # Category headers row
         category_headers = [
-            ("A", "O", "菜品销售报表（本币）"),
-            ("R", "U", "原材料耗用（本币）"),
-            ("X", "Y", "菜品价格调整影响"),
-            ("Z", "AB", "识别菜品类别"),
-            ("AD", "AJ", "菜品损耗影响金额（环比及同比）")
+            ("A", "N", "菜品销售报表（本币）"),
+            ("P", "R", "原材料耗用（本币）"),
+            ("S", "T", "菜品价格调整影响"),
+            ("U", "V", "理论与实际耗用量"),
+            ("W", "AC", "菜品损耗影响金额（环比及同比）")
         ]
 
         for start_col, end_col, title in category_headers:
@@ -131,8 +128,8 @@ class GrossMarginWorksheetGenerator:
             "规格", "本期销量", "理论耗用量", "本期单价", "上期单价",
             "去年同期单价", "环比价格变动", "同比价格变动", "本期收入", "对应物料名称（对应zfi0156每个门店V）",
             "本期耗用量(对应zfi0156每个门店V）", "套餐、拼盘用量",
-            "套餐销量", "环比影响收入", "同比影响收入", "调价日期", "点击率-按门店V汇总", "实际毛利率",
-            "识别单品类别", "理论耗用量", "实际耗用量", "本月损耗影响成本金额", "上月损耗影响成本金额",
+            "套餐销量", "环比影响收入", "同比影响收入", "调价日期", "实际毛利率",
+            "理论耗用量", "实际耗用量", "本月损耗影响成本金额", "上月损耗影响成本金额",
             "损耗环比变动金额", "可比期间损耗影响成本金额", "损耗同比变动金额"
         ]
 
@@ -230,7 +227,6 @@ class GrossMarginWorksheetGenerator:
                 # Additional fields
                 price_adjustment_date = data_row.get(
                     'price_adjustment_date', '')
-                click_rate = self._safe_float(data_row.get('click_rate', 0))
 
                 # Calculate actual gross margin: (revenue - cost) / revenue * 100%
                 if current_revenue > 0:
@@ -238,8 +234,6 @@ class GrossMarginWorksheetGenerator:
                         (current_revenue - total_material_cost) / current_revenue) * 100
                 else:
                     actual_gross_margin = 0
-
-                dish_category = data_row.get('dish_category', '')
 
                 # Loss analysis
                 theoretical_usage_loss = self._safe_float(
@@ -255,7 +249,7 @@ class GrossMarginWorksheetGenerator:
                     data_row.get('comparable_period_loss_cost', 0))
                 loss_change_yoy = current_month_loss_cost - comparable_period_loss_cost
 
-                # Create row data (removed unnecessary columns, added revenue)
+                # Create row data (removed unnecessary columns: click_rate, dish_category)
                 row_data = [
                     region,
                     store_name,
@@ -279,9 +273,7 @@ class GrossMarginWorksheetGenerator:
                     revenue_impact_mom,
                     revenue_impact_yoy,
                     price_adjustment_date,
-                    click_rate,
                     f"{actual_gross_margin:.2f}%" if actual_gross_margin != 0 else "0%",
-                    dish_category,
                     theoretical_usage_loss,
                     actual_usage_loss,
                     current_month_loss_cost,
@@ -344,7 +336,7 @@ class GrossMarginWorksheetGenerator:
             11: 12,  # 去年同期单价
             12: 12,  # 环比价格变动
             13: 12,  # 同比价格变动
-            14: 15,  # 本期收入 (NEW COLUMN)
+            14: 15,  # 本期收入
             15: 30,  # 对应物料名称（多行显示，包含材料编号）
             16: 15,  # 本期耗用量（总材料成本）
             17: 12,  # 套餐、拼盘用量
@@ -352,16 +344,14 @@ class GrossMarginWorksheetGenerator:
             19: 12,  # 环比影响收入
             20: 12,  # 同比影响收入
             21: 12,  # 调价日期
-            22: 15,  # 点击率
-            23: 12,  # 实际毛利率
-            24: 12,  # 识别单品类别
-            25: 12,  # 理论耗用量
-            26: 12,  # 实际耗用量
-            27: 15,  # 本月损耗影响成本金额
-            28: 15,  # 上月损耗影响成本金额
-            29: 15,  # 损耗环比变动金额
-            30: 18,  # 可比期间损耗影响成本金额
-            31: 15  # 损耗同比变动金额
+            22: 12,  # 实际毛利率
+            23: 12,  # 理论耗用量
+            24: 12,  # 实际耗用量
+            25: 15,  # 本月损耗影响成本金额
+            26: 15,  # 上月损耗影响成本金额
+            27: 15,  # 损耗环比变动金额
+            28: 18,  # 可比期间损耗影响成本金额
+            29: 15   # 损耗同比变动金额
         }
 
         from openpyxl.utils import get_column_letter

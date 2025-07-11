@@ -8,6 +8,7 @@ Generates comprehensive gross margin analysis reports including:
 """
 
 from lib.gross_margin_worksheet import GrossMarginWorksheetGenerator
+from lib.store_gross_profit_worksheet import StoreGrossProfitWorksheetGenerator
 from lib.database_queries import ReportDataProvider
 from utils.database import DatabaseManager, DatabaseConfig
 import argparse
@@ -111,6 +112,20 @@ def generate_gross_margin_report(target_date: str, output_path: str = None):
         except Exception as e:
             logger.error(
                 f"❌ Error generating discount analysis worksheet: {e}")
+            # Continue with other worksheets
+
+        # Generate store gross profit worksheet
+        logger.info("📊 Generating store gross profit worksheet...")
+        try:
+            store_gross_profit_generator = StoreGrossProfitWorksheetGenerator(
+                data_provider)
+            store_gross_profit_generator.generate_worksheet(wb, target_date)
+            logger.info(
+                "✅ Store gross profit worksheet generated successfully")
+
+        except Exception as e:
+            logger.error(
+                f"❌ Error generating store gross profit worksheet: {e}")
             # Continue with saving
 
         # Determine output filename
@@ -132,6 +147,7 @@ def generate_gross_margin_report(target_date: str, output_path: str = None):
         logger.info(f"   - 菜品价格变动及菜品损耗表 (Detailed Revenue Data)")
         logger.info(f"   - 原材料成本变动表 (Material Cost Analysis)")
         logger.info(f"   - 打折优惠表 (Discount Analysis)")
+        logger.info(f"   - 各店毛利率分析 (Store Gross Profit Analysis)")
 
         return True
 

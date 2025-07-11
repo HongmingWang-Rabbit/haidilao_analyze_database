@@ -7,6 +7,7 @@ Streamlined workflow-focused interface for complete automation.
 import os
 import sys
 import subprocess
+import re
 from pathlib import Path
 from typing import List, Tuple, Optional
 from dotenv import load_dotenv
@@ -652,6 +653,8 @@ class AutomationMenu:
                  "material_prices_store"),
                 ("z", "Batch Extract Material Prices (All Stores)",
                  "batch_material_prices"),
+                ("h", "Historical Data Extraction (All Months)",
+                 "historical_data"),
                 ("b", "← Back to Main Menu", "back")
             ]
 
@@ -692,6 +695,8 @@ class AutomationMenu:
                 self.extract_material_prices_by_store()
             elif choice == 'z':
                 self.extract_material_prices_batch()
+            elif choice == 'h':
+                self.extract_historical_data()
             else:
                 print("❌ Invalid choice. Please try again.")
                 input("Press Enter to continue...")
@@ -1559,6 +1564,7 @@ except Exception as e:
         print("   1. 菜品价格变动及菜品损耗表 (Detailed Revenue Data)")
         print("   2. 原材料成本变动表 (Material Cost Analysis)")
         print("   3. 打折优惠表 (Discount Analysis)")
+        print("   4. 各店毛利率分析 (Store Gross Profit Analysis)")
 
         confirm = input(
             "\nGenerate gross margin report with this date? (y/N): ").lower()
@@ -1574,9 +1580,7 @@ except Exception as e:
             print("   1. 菜品价格变动及菜品损耗表 (Detailed Revenue Data)")
             print("   2. 原材料成本变动表 (Material Cost Analysis)")
             print("   3. 打折优惠表 (Discount Analysis)")
-            print()
-            print("💡 The report shows dish price changes, material cost impacts,")
-            print("   and discount analysis for comprehensive gross margin analysis.")
+            print("   4. 各店毛利率分析 (Store Gross Profit Analysis)")
         else:
             print("❌ Failed to generate gross margin report")
 
@@ -1921,6 +1925,81 @@ except Exception as e:
             command += " --debug"
 
         self.run_command(command, "Batch Extract Material Prices (All Stores)")
+
+    def extract_historical_data(self):
+        """Extract all historical data from history_files/monthly_report_inputs"""
+        print("🍲 HISTORICAL DATA EXTRACTION")
+        print("=" * 40)
+        print("📋 This will extract ALL historical data from:")
+        print("   history_files/monthly_report_inputs/")
+        print("   • Dishes and dish types from monthly_dish_sale/")
+        print("   • Dish price history from monthly_dish_sale/")
+        print("   • Materials from monthly_material_usage/")
+        print("   • Material prices from material_detail/ store folders")
+        print("   • Skips empty calculated_dish_material_usage & inventory_checking_result")
+        print()
+        print("⚠️  This is a COMPREHENSIVE extraction that will take significant time!")
+        print("💡 Processes all months from 2024-05 to 2025-06")
+        print("🔧 Uses critical material dtype={'物料': str} fix")
+        print()
+
+        # Get optional date range from user
+        start_month = input(
+            "Enter start month (YYYY-MM, or press Enter for all months): ").strip()
+        if start_month and not re.match(r'^\d{4}-\d{2}$', start_month):
+            print("❌ Invalid format. Please use YYYY-MM format.")
+            input("Press Enter to continue...")
+            return
+
+        end_month = input(
+            "Enter end month (YYYY-MM, or press Enter for all months): ").strip()
+        if end_month and not re.match(r'^\d{4}-\d{2}$', end_month):
+            print("❌ Invalid format. Please use YYYY-MM format.")
+            input("Press Enter to continue...")
+            return
+
+        print()
+        print("📊 Processing Options:")
+        print("   • Start month:",
+              start_month if start_month else "All months (2024-05)")
+        print("   • End month:", end_month if end_month else "All months (2025-06)")
+        print()
+
+        # Final confirmation
+        if input("🚀 Start historical data extraction? (y/n): ").lower() != 'y':
+            print("Operation cancelled.")
+            return
+
+        # Build command
+        command = f'{self.python_cmd} -m scripts.extract_historical_data_batch'
+
+        # Add date range if specified
+        if start_month:
+            command += f' --start-month {start_month}'
+        if end_month:
+            command += f' --end-month {end_month}'
+
+        # Ask if user wants debug output
+        if input("Enable debug output? (y/n): ").lower() == 'y':
+            command += ' --debug'
+
+        # Ask if user wants to use test database
+        if input("Use test database? (y/n): ").lower() == 'y':
+            command += ' --test'
+
+        print()
+        print("🔄 Starting historical data extraction...")
+        print("⏱️  This may take 30-60 minutes depending on data volume.")
+        print()
+
+        success = self.run_command(command, "Historical Data Extraction")
+        if success:
+            print("🎉 Historical data extraction completed successfully!")
+            print("📊 Check the output summary for detailed statistics.")
+        else:
+            print("❌ Historical data extraction failed. Please check the logs.")
+
+        input("Press Enter to continue...")
 
     def show_status(self):
         """Show system status"""

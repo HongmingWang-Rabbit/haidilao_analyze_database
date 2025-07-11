@@ -400,7 +400,8 @@ class ReportDataProvider:
                 prev_mtd_sql, (prev_year, current_month, target_day))
 
             # Create lookup dictionaries for aggregated data
-            mtd_lookup = {(row['store_id'], row['time_segment_id'])                          : row for row in mtd_results}
+            mtd_lookup = {(row['store_id'], row['time_segment_id'])
+                           : row for row in mtd_results}
             prev_full_lookup = {
                 (row['store_id'], row['time_segment_id']): row for row in prev_full_results}
             prev_mtd_lookup = {
@@ -583,6 +584,94 @@ class ReportDataProvider:
         prev_year = current_year - 1
 
         sql = """
+        WITH dish_current_price AS (
+            SELECT 
+                dish_id, store_id, price,
+                MIN(effective_date) as earliest_price_date
+            FROM dish_price_history
+            WHERE is_active = true
+                AND EXTRACT(YEAR FROM effective_date) = %s
+                AND EXTRACT(MONTH FROM effective_date) = %s
+            GROUP BY dish_id, store_id, price
+        ),
+        dish_previous_price AS (
+            SELECT DISTINCT ON (dish_id, store_id)
+                dish_id, store_id, price
+            FROM dish_price_history
+            WHERE is_active = true
+                AND (
+                    EXTRACT(YEAR FROM effective_date) < %s
+                    OR (EXTRACT(YEAR FROM effective_date) = %s AND EXTRACT(MONTH FROM effective_date) < %s)
+                )
+            ORDER BY dish_id, store_id, effective_date DESC
+        ),
+        dish_last_year_price AS (
+            -- Get the most recent price before same period last year for each dish (not per store)
+            SELECT DISTINCT ON (dish_id)
+                dish_id, price, effective_date
+            FROM dish_price_history
+            WHERE is_active = true
+                AND effective_date <= %s
+            ORDER BY dish_id, effective_date DESC
+        ),
+        -- Calculate theoretical usage (dish_sales * standard_quantity * loss_rate)
+        dish_theoretical_usage AS (
+            SELECT 
+                d.id as dish_id,
+                s.id as store_id,
+                -- Regular dish sales theoretical usage
+                COALESCE(
+                    SUM((COALESCE(dms.sale_amount, 0) - COALESCE(dms.return_amount, 0)) * 
+                        COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)), 
+                    0
+                ) as regular_theoretical_usage,
+                -- Combo dish sales theoretical usage
+                COALESCE(
+                    SUM(COALESCE(mcds.sale_amount, 0) * 
+                        COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)), 
+                    0
+                ) as combo_theoretical_usage
+            FROM dish d
+            CROSS JOIN store s
+            LEFT JOIN dish_monthly_sale dms ON d.id = dms.dish_id 
+                AND s.id = dms.store_id
+                AND dms.year = %s AND dms.month = %s
+            LEFT JOIN monthly_combo_dish_sale mcds ON d.id = mcds.dish_id 
+                AND s.id = mcds.store_id
+                AND mcds.year = %s AND mcds.month = %s
+            LEFT JOIN dish_material dm ON d.id = dm.dish_id
+            WHERE s.id BETWEEN 1 AND 7
+            GROUP BY d.id, s.id
+        ),
+        -- Get actual usage from material_monthly_usage
+        dish_actual_usage AS (
+            SELECT 
+                d.id as dish_id,
+                s.id as store_id,
+                COALESCE(SUM(mmu.material_used), 0) as actual_material_usage
+            FROM dish d
+            CROSS JOIN store s
+            LEFT JOIN dish_material dm ON d.id = dm.dish_id
+            LEFT JOIN material_monthly_usage mmu ON dm.material_id = mmu.material_id
+                AND s.id = mmu.store_id
+                AND mmu.year = %s AND mmu.month = %s
+            WHERE s.id BETWEEN 1 AND 7
+            GROUP BY d.id, s.id
+        ),
+        -- Get combo sales data
+        dish_combo_sales AS (
+            SELECT 
+                d.id as dish_id,
+                s.id as store_id,
+                COALESCE(SUM(mcds.sale_amount), 0) as combo_sales_amount
+            FROM dish d
+            CROSS JOIN store s
+            LEFT JOIN monthly_combo_dish_sale mcds ON d.id = mcds.dish_id
+                AND s.id = mcds.store_id
+                AND mcds.year = %s AND mcds.month = %s
+            WHERE s.id BETWEEN 1 AND 7
+            GROUP BY d.id, s.id
+        )
         SELECT 
             s.id as store_id,
             s.name as store_name,
@@ -598,12 +687,18 @@ class ReportDataProvider:
             
             -- Current period sales data (from dish_monthly_sale)
             COALESCE(dms.sale_amount, 0) as current_period_sales,
-            COALESCE(dms.sale_amount, 0) as theoretical_usage,
             
-            -- Price data from dish_price_history
-            COALESCE(dph_current.price, 0) as current_price,
-            COALESCE(dph_prev.price, 0) as previous_price,
-            COALESCE(dph_prev_year.price, 0) as last_year_price,
+            -- Use corrected theoretical usage calculation
+            COALESCE(dtu.regular_theoretical_usage, 0) as theoretical_usage,
+            COALESCE(dtu.combo_theoretical_usage, 0) as combo_usage,
+            
+            -- Price data: use current price as fallback for missing historical prices
+            COALESCE(dcp.price, 0) as current_price,
+            COALESCE(dpp.price, dcp.price, 0) as previous_price,
+            COALESCE(dlyp.price, dcp.price, 0) as last_year_price,
+            
+            -- Price adjustment date: earliest date of current price
+            COALESCE(dcp.earliest_price_date, CURRENT_DATE) as price_adjustment_date,
             
             -- Aggregated material data: all materials for this dish with material number
             COALESCE(
@@ -613,7 +708,7 @@ class ReportDataProvider:
                             m.material_number || ' - ' || m.name || ' - ' || ROUND(dm.standard_quantity * COALESCE(dms.sale_amount, 0), 2)::text
                         ELSE NULL
                     END, 
-                    E'\n' 
+                    E'\n'
                     ORDER BY m.material_number
                 ), 
                 ''
@@ -637,19 +732,12 @@ class ReportDataProvider:
             0 as material_price_per_kg,
             0 as current_material_usage,
             
-            -- Combo data (placeholder)
-            0 as combo_usage,
-            0 as combo_sales,
+            -- Combo data from theoretical usage calculation
+            COALESCE(dcs.combo_sales_amount, 0) as combo_sales,
             
-            -- Additional fields
-            '' as price_adjustment_date,
-            0 as click_rate,
-            0 as actual_gross_margin,
-            '' as dish_category,
-            
-            -- Loss analysis (placeholder)
-            0 as theoretical_usage_loss,
-            0 as actual_usage_loss,
+            -- Loss analysis: theoretical vs actual usage
+            COALESCE(dtu.regular_theoretical_usage, 0) as theoretical_usage_loss,
+            COALESCE(dau.actual_material_usage, 0) as actual_usage_loss,
             0 as current_month_loss_cost,
             0 as previous_month_loss_cost,
             0 as comparable_period_loss_cost
@@ -660,21 +748,11 @@ class ReportDataProvider:
             AND s.id = dms.store_id
             AND dms.year = %s
             AND dms.month = %s
-        LEFT JOIN dish_price_history dph_current ON d.id = dph_current.dish_id
-            AND s.id = dph_current.store_id
-            AND dph_current.is_active = true
-            AND EXTRACT(YEAR FROM dph_current.effective_date) = %s
-            AND EXTRACT(MONTH FROM dph_current.effective_date) = %s
-        LEFT JOIN dish_price_history dph_prev ON d.id = dph_prev.dish_id
-            AND s.id = dph_prev.store_id
-            AND dph_prev.is_active = true
-            AND EXTRACT(YEAR FROM dph_prev.effective_date) = %s
-            AND EXTRACT(MONTH FROM dph_prev.effective_date) = %s
-        LEFT JOIN dish_price_history dph_prev_year ON d.id = dph_prev_year.dish_id
-            AND s.id = dph_prev_year.store_id
-            AND dph_prev_year.is_active = true
-            AND EXTRACT(YEAR FROM dph_prev_year.effective_date) = %s
-            AND EXTRACT(MONTH FROM dph_prev_year.effective_date) = %s
+        LEFT JOIN dish_current_price dcp ON d.id = dcp.dish_id
+            AND s.id = dcp.store_id
+        LEFT JOIN dish_previous_price dpp ON d.id = dpp.dish_id
+            AND s.id = dpp.store_id
+        LEFT JOIN dish_last_year_price dlyp ON d.id = dlyp.dish_id
         LEFT JOIN dish_material dm ON d.id = dm.dish_id
         LEFT JOIN material m ON dm.material_id = m.id
         LEFT JOIN material_price_history mph ON m.id = mph.material_id
@@ -682,19 +760,32 @@ class ReportDataProvider:
             AND mph.is_active = true
             AND EXTRACT(YEAR FROM mph.effective_date) = %s
             AND EXTRACT(MONTH FROM mph.effective_date) = %s
+        LEFT JOIN dish_theoretical_usage dtu ON d.id = dtu.dish_id
+            AND s.id = dtu.store_id
+        LEFT JOIN dish_actual_usage dau ON d.id = dau.dish_id
+            AND s.id = dau.store_id
+        LEFT JOIN dish_combo_sales dcs ON d.id = dcs.dish_id
+            AND s.id = dcs.store_id
         WHERE s.id BETWEEN 1 AND 7
-            AND (dms.sale_amount > 0 OR dph_current.price > 0)
+            AND (dms.sale_amount > 0 OR dcp.price > 0)
         GROUP BY s.id, s.name, d.id, d.full_code, d.name, d.size, 
-                 dms.sale_amount, dph_current.price, dph_prev.price, dph_prev_year.price
+                 dms.sale_amount, dcp.price, dpp.price, dlyp.price, dcp.earliest_price_date,
+                 dtu.regular_theoretical_usage, dtu.combo_theoretical_usage, dau.actual_material_usage,
+                 dcs.combo_sales_amount
         ORDER BY s.id, d.full_code
         """
 
         try:
             results = self.db_manager.fetch_all(sql, (
-                current_year, current_month,  # mds current period
-                current_year, current_month,  # dph_current
-                prev_month_year, prev_month,  # dph_prev
-                prev_year, current_month,     # dph_prev_year
+                current_year, current_month,  # dish_current_price
+                prev_month_year, prev_month_year, prev_month,  # dish_previous_price
+                # dish_last_year_price (2024-06-30 for target 2025-06-30)
+                f"{prev_year}-{current_month:02d}-30",
+                current_year, current_month,  # dish_theoretical_usage regular
+                current_year, current_month,  # dish_theoretical_usage combo
+                current_year, current_month,  # dish_actual_usage
+                current_year, current_month,  # dish_combo_sales
+                current_year, current_month,  # dms current period
                 current_year, current_month   # mph current
             ))
 
@@ -730,6 +821,25 @@ class ReportDataProvider:
             prev_month_year = current_year
 
         sql = """
+        WITH material_current_price AS (
+            SELECT 
+                material_id, store_id, price
+            FROM material_price_history
+            WHERE is_active = true
+                AND EXTRACT(YEAR FROM effective_date) = %s
+                AND EXTRACT(MONTH FROM effective_date) = %s
+        ),
+        material_previous_price AS (
+            SELECT DISTINCT ON (material_id, store_id)
+                material_id, store_id, price
+            FROM material_price_history
+            WHERE is_active = true
+                AND (
+                    EXTRACT(YEAR FROM effective_date) < %s
+                    OR (EXTRACT(YEAR FROM effective_date) = %s AND EXTRACT(MONTH FROM effective_date) < %s)
+                )
+            ORDER BY material_id, store_id, effective_date DESC
+        )
         SELECT 
             s.id as store_id,
             s.name as store_name,
@@ -737,47 +847,41 @@ class ReportDataProvider:
             m.name as material_name,
             
             -- Current period price
-            COALESCE(mph_current.price, 0) as current_price,
+            COALESCE(mcp.price, 0) as current_price,
             
-            -- Previous period price
-            COALESCE(mph_prev.price, 0) as previous_price,
+            -- Previous period price: use current price as fallback
+            COALESCE(mpp.price, mcp.price, 0) as previous_price,
             
             -- Usage data from material_monthly_usage
             COALESCE(mmu.material_used, 0) as current_usage,
-            COALESCE(mph_current.price * mmu.material_used, 0) as current_cost,
+            COALESCE(mcp.price * mmu.material_used, 0) as current_cost,
             
-            -- Calculate cost impact
+            -- Calculate cost impact using fallback logic
             CASE 
-                WHEN mph_prev.price > 0 AND mmu.material_used > 0 THEN
-                    (mph_current.price - mph_prev.price) * mmu.material_used
+                WHEN COALESCE(mpp.price, mcp.price, 0) > 0 AND mmu.material_used > 0 THEN
+                    (mcp.price - COALESCE(mpp.price, mcp.price, 0)) * mmu.material_used
                 ELSE 0
             END as cost_impact
             
         FROM store s
         CROSS JOIN material m
-        LEFT JOIN material_price_history mph_current ON m.id = mph_current.material_id
-            AND s.id = mph_current.store_id
-            AND mph_current.is_active = true
-            AND EXTRACT(YEAR FROM mph_current.effective_date) = %s
-            AND EXTRACT(MONTH FROM mph_current.effective_date) = %s
-        LEFT JOIN material_price_history mph_prev ON m.id = mph_prev.material_id
-            AND s.id = mph_prev.store_id
-            AND mph_prev.is_active = true
-            AND EXTRACT(YEAR FROM mph_prev.effective_date) = %s
-            AND EXTRACT(MONTH FROM mph_prev.effective_date) = %s
+        LEFT JOIN material_current_price mcp ON m.id = mcp.material_id
+            AND s.id = mcp.store_id
+        LEFT JOIN material_previous_price mpp ON m.id = mpp.material_id
+            AND s.id = mpp.store_id
         LEFT JOIN material_monthly_usage mmu ON m.id = mmu.material_id
             AND s.id = mmu.store_id
             AND mmu.year = %s
             AND mmu.month = %s
         WHERE s.id BETWEEN 1 AND 7
-            AND (mph_current.price > 0 OR mmu.material_used > 0)
+            AND (mcp.price > 0 OR mmu.material_used > 0)
         ORDER BY s.id, m.material_number
         """
 
         try:
             results = self.db_manager.fetch_all(sql, (
-                current_year, current_month,  # mph_current
-                prev_month_year, prev_month,  # mph_prev
+                current_year, current_month,  # material_current_price
+                prev_month_year, prev_month_year, prev_month,  # material_previous_price
                 current_year, current_month   # mmu current
             ))
 
@@ -785,6 +889,109 @@ class ReportDataProvider:
 
         except Exception as e:
             print(f"❌ Error getting gross margin material cost data: {e}")
+            return []
+
+    def get_store_gross_profit_data(self, target_date: str):
+        """
+        Get store gross profit data for all stores comparison.
+
+        Args:
+            target_date: Target date in YYYY-MM-DD format
+
+        Returns:
+            List of store gross profit data dictionaries
+        """
+        from datetime import datetime
+
+        # Parse target date to get year and month
+        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
+        current_year = target_dt.year
+        current_month = target_dt.month
+
+        # Calculate previous month and year
+        if current_month == 1:
+            prev_month = 12
+            prev_month_year = current_year - 1
+        else:
+            prev_month = current_month - 1
+            prev_month_year = current_year
+
+        sql = """
+        SELECT 
+            s.id as store_id,
+            s.name as store_name,
+            COALESCE(cr.current_revenue, 0) as current_revenue,
+            COALESCE(cc.current_cost, 0) as current_cost,
+            COALESCE(pr.previous_revenue, 0) as previous_revenue,
+            COALESCE(pc.previous_cost, 0) as previous_cost
+        FROM store s
+        LEFT JOIN (
+            SELECT 
+                store_id,
+                SUM(sale_amount) as current_revenue
+            FROM dish_monthly_sale
+            WHERE year = %s AND month = %s
+            GROUP BY store_id
+        ) cr ON s.id = cr.store_id
+        LEFT JOIN (
+            SELECT 
+                mmu.store_id,
+                SUM(mmu.material_used * COALESCE(mph.price, 0)) as current_cost
+            FROM material_monthly_usage mmu
+            LEFT JOIN material_price_history mph ON mmu.material_id = mph.material_id
+                AND mmu.store_id = mph.store_id
+                AND mph.is_active = true
+            WHERE mmu.year = %s AND mmu.month = %s
+            GROUP BY mmu.store_id
+        ) cc ON s.id = cc.store_id
+        LEFT JOIN (
+            SELECT 
+                store_id,
+                SUM(sale_amount) as previous_revenue
+            FROM dish_monthly_sale
+            WHERE year = %s AND month = %s
+            GROUP BY store_id
+        ) pr ON s.id = pr.store_id
+        LEFT JOIN (
+            SELECT 
+                mmu.store_id,
+                SUM(mmu.material_used * COALESCE(mph.price, 0)) as previous_cost
+            FROM material_monthly_usage mmu
+            LEFT JOIN material_price_history mph ON mmu.material_id = mph.material_id
+                AND mmu.store_id = mph.store_id
+                AND mph.is_active = true
+            WHERE mmu.year = %s AND mmu.month = %s
+            GROUP BY mmu.store_id
+        ) pc ON s.id = pc.store_id
+        WHERE s.id BETWEEN 1 AND 7
+        ORDER BY s.id
+        """
+
+        try:
+            results = self.db_manager.fetch_all(sql, (
+                current_year, current_month,  # Current revenue
+                prev_month_year, prev_month,  # Previous revenue
+                current_year, current_month,  # Current cost
+                prev_month_year, prev_month   # Previous cost
+            ))
+
+            # Convert to list of dictionaries
+            data = []
+            for row in results:
+                data.append({
+                    'store_id': row['store_id'],
+                    'store_name': row['store_name'],
+                    'current_revenue': row['current_revenue'],
+                    'current_cost': row['current_cost'],
+                    'previous_revenue': row['previous_revenue'],
+                    'previous_cost': row['previous_cost']
+                })
+
+            print(f"✅ Retrieved {len(data)} store gross profit records")
+            return data
+
+        except Exception as e:
+            print(f"❌ Error getting store gross profit data: {e}")
             return []
 
     def get_gross_margin_discount_data(self, target_date: str):
