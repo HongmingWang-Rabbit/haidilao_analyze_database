@@ -420,7 +420,7 @@ def generate_sql_file(dish_sales: List[Dict], output_file: str) -> bool:
                 f.write(
                     f"-- Dish: {sale['dish_name']} ({sale['dish_code']}) - Store {sale['store_id']} - {sale['year']}-{sale['month']:02d}\n")
 
-                sql = f"""INSERT INTO dish_monthly_sale (dish_id, store_id, month, year, sale_amount, return_amount, free_meal_amount, gift_amount)
+                sql = f"""INSERT INTO dish_monthly_sale (dish_id, store_id, month, year, sale_amount, return_amount, free_meal_amount, gift_amount, sales_mode)
 SELECT 
     d.id as dish_id,
     {sale['store_id']},
@@ -429,11 +429,12 @@ SELECT
     {sale['sale_amount']},
     {sale['return_amount']},
     {sale['free_meal_amount']},
-    {sale['gift_amount']}
+    {sale['gift_amount']},
+    'dine-in'
 FROM dish d
 WHERE d.full_code = '{dish_code}'
   AND (d.size = '{size}' OR (d.size IS NULL AND '{size}' = 'NULL'))
-ON CONFLICT (dish_id, store_id, month, year)
+ON CONFLICT (dish_id, store_id, month, year, sales_mode)
 DO UPDATE SET
     sale_amount = EXCLUDED.sale_amount,
     return_amount = EXCLUDED.return_amount,
@@ -456,7 +457,7 @@ DO UPDATE SET
 
 
 def insert_to_database(dish_sales: List[Dict], is_test: bool = False) -> bool:
-    """Insert dish monthly sales directly to database"""
+    """Insert dish monthly sales directly to database with proper aggregation"""
 
     try:
         if get_database_manager is None:
@@ -468,16 +469,48 @@ def insert_to_database(dish_sales: List[Dict], is_test: bool = False) -> bool:
 
         db_manager = get_database_manager(is_test=is_test)
 
+        # CRITICAL FIX: Pre-aggregate dish sales to handle multiple Excel rows for same dish
+        print("🔄 Pre-aggregating dish sales data to handle multiple rows for same dish...")
+
+        import pandas as pd
+
+        # Convert to DataFrame for easier aggregation
+        df = pd.DataFrame(dish_sales)
+
+        print(f"📊 Original data: {len(df)} records")
+
+        # Group by dish+store+month+year and sum the quantities
+        aggregation_keys = ['dish_code', 'size', 'store_id', 'month', 'year']
+        sum_columns = ['sale_amount', 'return_amount',
+                       'free_meal_amount', 'gift_amount']
+
+        # Keep the first dish_name for each group
+        df_other = df.groupby(aggregation_keys, as_index=False)[
+            'dish_name'].first()
+
+        # Sum the quantities
+        df_aggregated = df.groupby(aggregation_keys, as_index=False)[
+            sum_columns].sum()
+
+        # Merge back together
+        df_final = df_other.merge(df_aggregated, on=aggregation_keys)
+
+        print(
+            f"📊 After aggregation: {len(df_final)} unique dish records (was {len(df)} rows)")
+
+        # Convert back to list of dictionaries
+        dish_sales_aggregated = df_final.to_dict('records')
+
         with db_manager.get_connection() as conn:
             with conn.cursor() as cursor:
 
                 print(
-                    f"📊 Inserting {len(dish_sales)} dish monthly sales records...")
+                    f"📊 Inserting {len(dish_sales_aggregated)} aggregated dish monthly sales records...")
                 inserted = 0
                 updated = 0
                 errors = 0
 
-                for sale in dish_sales:
+                for sale in dish_sales_aggregated:
                     try:
                         # Get dish ID
                         if sale['size']:
@@ -500,11 +533,11 @@ def insert_to_database(dish_sales: List[Dict], is_test: bool = False) -> bool:
 
                         dish_id = dish_result['id']
 
-                        # Insert/update dish monthly sales
+                        # Insert/update aggregated dish monthly sales
                         query = """
-                        INSERT INTO dish_monthly_sale (dish_id, store_id, month, year, sale_amount, return_amount, free_meal_amount, gift_amount)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (dish_id, store_id, month, year)
+                        INSERT INTO dish_monthly_sale (dish_id, store_id, month, year, sale_amount, return_amount, free_meal_amount, gift_amount, sales_mode)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (dish_id, store_id, month, year, sales_mode)
                         DO UPDATE SET
                             sale_amount = EXCLUDED.sale_amount,
                             return_amount = EXCLUDED.return_amount,
@@ -522,7 +555,8 @@ def insert_to_database(dish_sales: List[Dict], is_test: bool = False) -> bool:
                             sale['sale_amount'],
                             sale['return_amount'],
                             sale['free_meal_amount'],
-                            sale['gift_amount']
+                            sale['gift_amount'],
+                            'dine-in'
                         ))
 
                         result = cursor.fetchone()
@@ -532,30 +566,23 @@ def insert_to_database(dish_sales: List[Dict], is_test: bool = False) -> bool:
                             updated += 1
 
                     except Exception as e:
-                        print(
-                            f"❌ Error processing dish {sale['dish_code']}: {e}")
+                        print(f"❌ Error inserting dish sale: {e}")
                         errors += 1
                         continue
 
-                # Commit transaction
                 conn.commit()
 
-                print(f"✅ Database insertion completed:")
-                print(f"   📊 Inserted: {inserted} new records")
-                print(f"   🔄 Updated: {updated} existing records")
-                if errors > 0:
-                    print(f"   ❌ Errors: {errors} records failed")
+                print(
+                    f"✅ Database insertion completed: {inserted} inserted, {updated} updated, {errors} errors")
 
-                # Consider it successful if we processed most data successfully
-                total_processed = inserted + updated + errors
-                success_rate = (inserted + updated) / \
-                    total_processed if total_processed > 0 else 0
-                return success_rate >= 0.8  # 80% success rate threshold
+                if errors > 0:
+                    print(
+                        f"⚠️  {errors} records had errors but most data was processed successfully")
+
+                return errors == 0  # Return True only if no errors
 
     except Exception as e:
         print(f"❌ Database insertion failed: {e}")
-        import traceback
-        traceback.print_exc()
         return False
 
 

@@ -298,19 +298,29 @@ class BeverageVarianceGenerator:
                     AND mt.name = '成本-酒水类'
                 ),
                 
+                -- Aggregate dish sales across all sales modes first
+                aggregated_dish_sales AS (
+                    SELECT 
+                        dish_id,
+                        store_id,
+                        SUM(COALESCE(sale_amount, 0)) as total_sale_amount,
+                        SUM(COALESCE(return_amount, 0)) as total_return_amount
+                    FROM dish_monthly_sale
+                    WHERE year = %s AND month = %s
+                    GROUP BY dish_id, store_id
+                ),
                 -- Get theoretical usage from dish sales (only for materials with dish relationships)
                 theoretical_usage AS (
                     SELECT 
                         m.id as material_id,
-                        dms.store_id,
-                        SUM((COALESCE(dms.sale_amount, 0) - COALESCE(dms.return_amount, 0)) * 
+                        ads.store_id,
+                        SUM((COALESCE(ads.total_sale_amount, 0) - COALESCE(ads.total_return_amount, 0)) * 
                             COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as theoretical_total
                     FROM material m
                     JOIN beverage_materials bm ON m.id = bm.material_id
                     JOIN dish_material dm ON m.id = dm.material_id
-                    JOIN dish_monthly_sale dms ON dm.dish_id = dms.dish_id 
-                        AND dms.year = %s AND dms.month = %s
-                    GROUP BY m.id, dms.store_id
+                    JOIN aggregated_dish_sales ads ON dm.dish_id = ads.dish_id
+                    GROUP BY m.id, ads.store_id
                 ),
                 
                 -- Get combo usage from combo dish sales (only for materials with dish relationships)
@@ -379,7 +389,7 @@ class BeverageVarianceGenerator:
                 ORDER BY bd.store_name, bd.material_name
                 """
 
-                cursor.execute(query, (year, month, year,
+                cursor.execute(query, (year, month, year, month, year,
                                month, year, month, year, month))
                 results = cursor.fetchall()
 

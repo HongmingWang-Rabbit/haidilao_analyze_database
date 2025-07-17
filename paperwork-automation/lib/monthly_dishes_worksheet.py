@@ -454,18 +454,27 @@ class MonthlyDishesWorksheetGenerator:
 
                 # Get regular theoretical usage (dish sales * standard_quantity * loss_rate)
                 regular_theoretical_sql = """
-                WITH dish_sales AS (
+                WITH aggregated_dish_sales AS (
+                    SELECT 
+                        dish_id,
+                        store_id,
+                        SUM(COALESCE(sale_amount, 0)) as total_sale_amount,
+                        SUM(COALESCE(return_amount, 0)) as total_return_amount
+                    FROM dish_monthly_sale
+                    WHERE year = %s AND month = %s
+                    GROUP BY dish_id, store_id
+                ),
+                dish_sales AS (
                     SELECT 
                         d.id as dish_id,
                         d.name as dish_name,
-                        dms.store_id,
+                        ads.store_id,
                         s.name as store_name,
-                        COALESCE(dms.sale_amount, 0) - COALESCE(dms.return_amount, 0) as net_sales
+                        COALESCE(ads.total_sale_amount, 0) - COALESCE(ads.total_return_amount, 0) as net_sales
                     FROM dish d
-                    LEFT JOIN dish_monthly_sale dms ON d.id = dms.dish_id 
-                        AND dms.year = %s AND dms.month = %s
-                    LEFT JOIN store s ON dms.store_id = s.id
-                    WHERE d.is_active = TRUE AND dms.store_id IS NOT NULL
+                    LEFT JOIN aggregated_dish_sales ads ON d.id = ads.dish_id
+                    LEFT JOIN store s ON ads.store_id = s.id
+                    WHERE d.is_active = TRUE AND ads.store_id IS NOT NULL
                 ),
                 regular_theoretical_usage AS (
                     SELECT 
@@ -570,10 +579,12 @@ class MonthlyDishesWorksheetGenerator:
                 LEFT JOIN store s ON ic.store_id = s.id
                 WHERE m.is_active = TRUE AND ic.store_id IS NOT NULL
                     AND m.id = ANY(%s)
+                    AND EXTRACT(year FROM ic.count_date) = %s 
+                    AND EXTRACT(month FROM ic.count_date) = %s
                 ORDER BY s.name, m.id
                 """
 
-                cursor.execute(inventory_sql, (material_ids,))
+                cursor.execute(inventory_sql, (material_ids, year, month))
                 inventory_data = cursor.fetchall()
 
                 # Combine all data

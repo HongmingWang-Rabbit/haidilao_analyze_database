@@ -137,7 +137,7 @@ class HistoricalDataExtractor:
         return code_str if code_str and code_str != '-' else None
 
     def find_excel_files(self, folder: Path, pattern: str = "*.xlsx") -> List[Path]:
-        """Find Excel files in folder."""
+        """Find Excel files in folder, excluding temporary files."""
         if not folder.exists():
             return []
 
@@ -145,6 +145,10 @@ class HistoricalDataExtractor:
         files = []
         for pat in patterns:
             files.extend(folder.glob(pat))
+
+        # Filter out temporary Excel files (starting with ~$)
+        files = [f for f in files if not f.name.startswith("~$")]
+
         return files
 
     def is_folder_empty_or_nonexistent(self, folder: Path) -> bool:
@@ -564,19 +568,76 @@ class HistoricalDataExtractor:
             return 0
 
     def process_monthly_sales_batch(self, df: pd.DataFrame, dish_name_col: str, dish_code_col: str, target_date: str, store_mapping: dict) -> int:
-        """Process monthly sales data in batches with proper transaction handling."""
+        """Process monthly sales data in batches with proper transaction handling and aggregation."""
         try:
-            total_count = 0
-            batch_size = 20  # Smaller batches for better error isolation
+            logger.info(
+                "🔄 Pre-aggregating monthly sales data to handle multiple Excel rows...")
 
             # Extract year and month from target date
             year = int(target_date.split('-')[0])
             month = int(target_date.split('-')[1])
 
-            for i in range(0, len(df), batch_size):
-                batch = df.iloc[i:i + batch_size]
+            # CRITICAL FIX: Pre-aggregate data by dish + store before database insertion
+            # This handles cases like SMIRNOFF ICE having multiple rows (24 units + 1 unit = 25 total)
 
-                # Process each batch in its own transaction
+            # Clean and prepare data for aggregation
+            df_clean = df.copy()
+
+            # Clean dish codes
+            df_clean['full_code_clean'] = df_clean[dish_code_col].apply(
+                self.clean_dish_code)
+            df_clean = df_clean.dropna(subset=['full_code_clean'])
+
+            # Clean size column
+            df_clean['size_clean'] = df_clean['规格'].fillna(
+                '') if '规格' in df_clean.columns else ''
+
+            # Find and clean quantity columns
+            quantity_cols = ['数量', '实收数量', '出品数量', '销售数量', '销售份数']
+            quantity_col = None
+            for qty_col in quantity_cols:
+                if qty_col in df_clean.columns:
+                    quantity_col = qty_col
+                    break
+
+            if not quantity_col:
+                logger.warning("No quantity column found for monthly sales")
+                return 0
+
+            # Clean numeric values
+            df_clean[quantity_col] = pd.to_numeric(
+                df_clean[quantity_col], errors='coerce').fillna(0)
+
+            # Clean store names and filter for known stores
+            df_clean = df_clean[df_clean['门店名称'].notna()]
+            df_clean['store_name_clean'] = df_clean['门店名称'].astype(
+                str).str.strip()
+            df_clean = df_clean[df_clean['store_name_clean'].isin(
+                store_mapping.keys())]
+
+            if len(df_clean) == 0:
+                logger.warning(
+                    "No valid data found after cleaning for monthly sales")
+                return 0
+
+            # Pre-aggregate by dish code, size, store
+            logger.info(
+                f"📊 Aggregating {len(df_clean)} rows by dish+store+month...")
+            aggregation_columns = ['full_code_clean',
+                                   'size_clean', 'store_name_clean']
+            df_aggregated = df_clean.groupby(aggregation_columns, as_index=False)[
+                quantity_col].sum()
+
+            logger.info(
+                f"📊 After aggregation: {len(df_aggregated)} unique dish-store combinations (was {len(df_clean)} rows)")
+
+            # Process aggregated data in batches
+            total_count = 0
+            batch_size = 20
+
+            for i in range(0, len(df_aggregated), batch_size):
+                batch = df_aggregated.iloc[i:i + batch_size]
+
                 try:
                     with self.db_manager.get_connection() as conn:
                         cursor = conn.cursor()
@@ -584,52 +645,16 @@ class HistoricalDataExtractor:
 
                         for _, row in batch.iterrows():
                             try:
-                                # Clean dish code
-                                full_code = self.clean_dish_code(
-                                    row[dish_code_col])
-                                if not full_code:
+                                full_code = row['full_code_clean']
+                                size = row['size_clean']
+                                quantity = row[quantity_col]
+                                store_name = row['store_name_clean']
+
+                                # Skip if no meaningful quantity
+                                if quantity <= 0:
                                     continue
 
-                                size = row['规格'] if '规格' in row and pd.notna(
-                                    row['规格']) else ''
-
-                                # Find quantity column with flexible mapping
-                                quantity = 0
-                                quantity_cols = ['数量', '实收数量',
-                                                 '出品数量', '销售数量', '销售份数']
-                                for qty_col in quantity_cols:
-                                    if qty_col in row and pd.notna(row[qty_col]):
-                                        try:
-                                            quantity = float(row[qty_col])
-                                            break
-                                        except (ValueError, TypeError):
-                                            continue
-
-                                # Find revenue column with flexible mapping
-                                revenue = 0
-                                revenue_cols = ['菜品销售额', '实收金额',
-                                                '销售产品净收入', '净额', '销售金额', '收入']
-                                for rev_col in revenue_cols:
-                                    if rev_col in row and pd.notna(row[rev_col]):
-                                        try:
-                                            revenue = float(row[rev_col])
-                                            break
-                                        except (ValueError, TypeError):
-                                            continue
-
-                                # Skip if no meaningful data
-                                if quantity <= 0 and revenue <= 0:
-                                    continue
-
-                                # Find store
-                                store_id = None
-                                if '门店名称' in row and pd.notna(row['门店名称']):
-                                    store_name = str(row['门店名称']).strip()
-                                    if store_name in store_mapping:
-                                        store_id = store_mapping[store_name]
-
-                                if not store_id:
-                                    continue
+                                store_id = store_mapping[store_name]
 
                                 # Get dish ID
                                 cursor.execute("SELECT id FROM dish WHERE full_code = %s AND size = %s",
@@ -640,16 +665,17 @@ class HistoricalDataExtractor:
 
                                 dish_id = result['id']
 
-                                # Insert monthly sales data
+                                # Insert aggregated monthly sales data
+                                # Use default sales_mode for historical data
                                 cursor.execute("""
                                     INSERT INTO dish_monthly_sale (
-                                        dish_id, store_id, year, month, sale_amount
+                                        dish_id, store_id, year, month, sale_amount, sales_mode
                                     )
-                                    VALUES (%s, %s, %s, %s, %s)
-                                    ON CONFLICT (dish_id, store_id, year, month) DO UPDATE SET
+                                    VALUES (%s, %s, %s, %s, %s, %s)
+                                    ON CONFLICT (dish_id, store_id, year, month, sales_mode) DO UPDATE SET
                                         sale_amount = EXCLUDED.sale_amount,
                                         updated_at = CURRENT_TIMESTAMP
-                                """, (dish_id, store_id, year, month, quantity))
+                                """, (dish_id, store_id, year, month, quantity, 'dine-in'))
 
                                 if cursor.rowcount > 0:
                                     batch_count += 1
@@ -671,6 +697,8 @@ class HistoricalDataExtractor:
                         f"Error processing monthly sales batch {i//batch_size + 1}: {e}")
                     continue
 
+            logger.info(
+                f"✅ Monthly sales aggregation completed: {total_count} records processed")
             return total_count
 
         except Exception as e:

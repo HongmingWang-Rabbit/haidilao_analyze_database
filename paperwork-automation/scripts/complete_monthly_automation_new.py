@@ -87,9 +87,10 @@ class MonthlyAutomationProcessor:
         logger.info(f"DISH: Extracting dish data from: {file_path.name}")
 
         try:
-            # Read the Excel file
-            df = pd.read_excel(file_path)
-            logger.info(f"Loaded {len(df)} rows from dish sales file")
+            # Read the Excel file - use the summary sheet which contains monthly aggregated data
+            df = pd.read_excel(file_path, sheet_name='菜品销售汇总表')
+            logger.info(
+                f"Loaded {len(df)} rows from dish sales file (菜品销售汇总表 sheet)")
 
             # Get store mapping
             store_mapping = self.get_store_mapping()
@@ -121,24 +122,67 @@ class MonthlyAutomationProcessor:
                     """, (row['子类名称'], row['大类名称']))
                     child_type_count += cursor.rowcount
 
-                self.log_result('dish_child_types',
-                                child_type_count, "Inserted dish child types")
+                self.log_result('dish_child_types', child_type_count,
+                                "Inserted dish child types")
 
-                # Extract dishes with size information
+                # CRITICAL FIX: Pre-aggregate data by dish + store + month to handle multiple Excel rows
+                logger.info(
+                    "🔄 Pre-aggregating dish sales data to handle multiple Excel rows...")
+
+                # Clean dish codes first
+                def clean_dish_code(code):
+                    if pd.isna(code):
+                        return None
+                    code_str = str(code).strip()
+                    # Remove .0 suffix from float conversion
+                    if code_str.endswith('.0'):
+                        code_str = code_str[:-2]
+                    return code_str if code_str else None
+
+                df['full_code_clean'] = df['菜品编码'].apply(clean_dish_code)
+                df = df.dropna(subset=['full_code_clean'])
+
+                # Clean numeric columns
+                numeric_columns = ['出品数量', '退菜数量', '免单数量', '赠菜数量']
+                for col in numeric_columns:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(
+                            df[col], errors='coerce').fillna(0)
+
+                # Pre-aggregate by dish code, size, store, month, and sales mode
+                aggregation_columns = [
+                    'full_code_clean', '规格', '门店名称', '月份', '大类名称', '销售模式']
+                sales_columns = ['出品数量', '退菜数量', '免单数量', '赠菜数量']
+
+                # Group and sum the sales data
+                df_aggregated = df.groupby(aggregation_columns, as_index=False)[
+                    sales_columns].sum()
+
+                # Keep the first row's other data for each group
+                df_other = df.groupby(
+                    aggregation_columns, as_index=False).first()
+
+                # Merge aggregated sales with other columns
+                df_final = df_other.copy()
+                for col in sales_columns:
+                    df_final[col] = df_aggregated[col]
+
+                logger.info(
+                    f"📊 After aggregation: {len(df_final)} unique dish records (was {len(df)} rows)")
+
+                # Now process the aggregated data
                 dish_count = 0
                 price_history_count = 0
                 monthly_sales_count = 0
 
-                for _, row in df.iterrows():
+                for _, row in df_final.iterrows():
                     try:
-                        # Clean dish code (remove .0 suffix from floats)
-                        full_code = str(int(row['菜品编码'])) if pd.notna(
-                            row['菜品编码']) else None
-                        short_code = str(int(row['菜品短编码'])) if pd.notna(
-                            row['菜品短编码']) else None
-
+                        full_code = row['full_code_clean']
                         if not full_code:
                             continue
+
+                        short_code = full_code[:8] if len(
+                            full_code) > 8 else full_code
 
                         # Insert or update dish
                         cursor.execute("""
@@ -157,7 +201,7 @@ class MonthlyAutomationProcessor:
                                 unit = EXCLUDED.unit,
                                 updated_at = CURRENT_TIMESTAMP
                         """, (
-                            row['菜品名称'], full_code, short_code, row['规格'],
+                            row['菜品名称(门店pad显示名称)'], full_code, short_code, row['规格'],
                             row['规格'], row['菜品单位'], row['大类名称'], row['子类名称']
                         ))
                         dish_count += cursor.rowcount
@@ -190,36 +234,52 @@ class MonthlyAutomationProcessor:
                             """, (store_id, price, self.target_date, full_code, row['规格']))
                             price_history_count += cursor.rowcount
 
-                        # Extract monthly sales data
+                        # Extract monthly sales data (now properly aggregated)
                         if store_name in store_mapping:
                             store_id = store_mapping[store_name]
-                            # Extract year and month from date string
-                            # e.g., "2025-06-01--2025-06-30"
-                            date_str = row['日期']
-                            if '--' in date_str:
-                                start_date = date_str.split('--')[0]
-                                year, month = start_date.split('-')[:2]
+                            # Extract year and month from month string
+                            # e.g., "202505" -> year=2025, month=5
+                            month_str = str(row['月份'])
+                            if len(month_str) == 6 and month_str.isdigit():
+                                year = int(month_str[:4])
+                                month = int(month_str[4:])
 
-                                cursor.execute("""
-                                    INSERT INTO dish_monthly_sale (
-                                        dish_id, store_id, year, month,
-                                        sale_amount, return_amount, free_meal_amount, gift_amount
-                                    )
-                                    SELECT d.id, %s, %s, %s, %s, %s, %s, %s
-                                    FROM dish d
-                                    WHERE d.full_code = %s AND d.size = %s
-                                    ON CONFLICT (dish_id, store_id, year, month) DO UPDATE SET
-                                        sale_amount = EXCLUDED.sale_amount,
-                                        return_amount = EXCLUDED.return_amount,
-                                        free_meal_amount = EXCLUDED.free_meal_amount,
-                                        gift_amount = EXCLUDED.gift_amount,
-                                        updated_at = CURRENT_TIMESTAMP
-                                """, (
-                                    store_id, int(year), int(month),
-                                    row['出品数量'], row['退菜数量'],
-                                    row.get('免单数量', 0), row.get('赠菜数量', 0),
-                                    full_code, row['规格']
-                                ))
+                                # Check if this is a combo dish (套餐 category)
+                                if row['大类名称'] == '套餐':
+                                    # Process as combo sales
+                                    self.process_combo_sales(
+                                        cursor, full_code, row, store_id, year, month)
+                                else:
+                                    # Process as regular dish sales - now with aggregated quantities
+                                    # Map Chinese sales mode to English
+                                    sales_mode_mapping = {
+                                        '堂食': 'dine-in',
+                                        '外卖': 'takeout'
+                                    }
+                                    sales_mode = sales_mode_mapping.get(
+                                        row['销售模式'], 'dine-in')
+
+                                    cursor.execute("""
+                                        INSERT INTO dish_monthly_sale (
+                                            dish_id, store_id, year, month,
+                                            sale_amount, return_amount, free_meal_amount, gift_amount, sales_mode
+                                        )
+                                        SELECT d.id, %s, %s, %s, %s, %s, %s, %s, %s
+                                        FROM dish d
+                                        WHERE d.full_code = %s AND d.size = %s
+                                        ON CONFLICT (dish_id, store_id, year, month, sales_mode) DO UPDATE SET
+                                            sale_amount = EXCLUDED.sale_amount,
+                                            return_amount = EXCLUDED.return_amount,
+                                            free_meal_amount = EXCLUDED.free_meal_amount,
+                                            gift_amount = EXCLUDED.gift_amount,
+                                            updated_at = CURRENT_TIMESTAMP
+                                    """, (
+                                        store_id, year, month,
+                                        row['出品数量'], row['退菜数量'],
+                                        row.get('免单数量', 0), row.get(
+                                            '赠菜数量', 0), sales_mode,
+                                        full_code, row['规格']
+                                    ))
                                 monthly_sales_count += cursor.rowcount
 
                     except Exception as e:
@@ -234,14 +294,54 @@ class MonthlyAutomationProcessor:
                 self.log_result(
                     'dish_price_history', price_history_count, "Processed dish price history")
                 self.log_result(
-                    'dish_monthly_sales', monthly_sales_count, "Processed dish monthly sales")
+                    'monthly_sales', monthly_sales_count, "Processed monthly sales")
 
+                logger.info("✅ Dish extraction completed successfully")
                 return True
 
         except Exception as e:
-            logger.error(f"Failed to extract dish data: {e}")
-            self.results['errors'].append(f"Dish data extraction failed: {e}")
+            logger.error(f"Error extracting dishes: {e}")
+            self.results['errors'].append(f"Dish extraction failed: {e}")
             return False
+
+    def process_combo_sales(self, cursor, full_code: str, row, store_id: int, year: int, month: int):
+        """Process combo sales data for dishes in the 套餐 category."""
+        try:
+            combo_code = full_code  # Use dish code as combo code
+            combo_name = row['菜品名称(门店pad显示名称)']
+
+            # Insert/update combo
+            cursor.execute("""
+                INSERT INTO combo (combo_code, name)
+                VALUES (%s, %s)
+                ON CONFLICT (combo_code) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    updated_at = CURRENT_TIMESTAMP
+            """, (combo_code, combo_name))
+
+            # Calculate net sales (出品数量 - 退菜数量)
+            sale_amount = float(row['出品数量']) - float(row['退菜数量'])
+
+            if sale_amount > 0:
+                # Insert combo dish sales - combo dish sales itself as a dish
+                cursor.execute("""
+                    INSERT INTO monthly_combo_dish_sale (
+                        combo_id, dish_id, store_id, year, month, sale_amount
+                    )
+                    SELECT c.id, d.id, %s, %s, %s, %s
+                    FROM combo c
+                    CROSS JOIN dish d
+                    WHERE c.combo_code = %s AND d.full_code = %s AND d.size = %s
+                    ON CONFLICT (combo_id, dish_id, store_id, year, month) DO UPDATE SET
+                        sale_amount = EXCLUDED.sale_amount,
+                        updated_at = CURRENT_TIMESTAMP
+                """, (store_id, year, month, sale_amount, combo_code, full_code, row['规格']))
+
+                logger.info(
+                    f"Processed combo sales: {combo_name} ({combo_code}) - {sale_amount} units")
+
+        except Exception as e:
+            logger.error(f"Error processing combo sales for {full_code}: {e}")
 
     def extract_material_detail_with_types(self, file_path: Path) -> bool:
         """Extract materials with type classifications from material detail."""
@@ -325,7 +425,7 @@ class MonthlyAutomationProcessor:
             return False
 
     def extract_material_master_data(self, material_folder: Path) -> bool:
-        """Extract material master data (materials, types) from first available store Excel file."""
+        """Extract material types and basic material data from first available store."""
         logger.info(
             f"MATERIAL MASTER: Extracting material types and materials from: {material_folder}")
 
@@ -340,6 +440,10 @@ class MonthlyAutomationProcessor:
                 excel_files = list(store_folder.glob("*.xlsx")) + list(store_folder.glob("*.XLSX")) + \
                     list(store_folder.glob("*.xls")) + \
                     list(store_folder.glob("*.XLS"))
+
+                # Filter out temporary Excel files (starting with ~$)
+                excel_files = [
+                    f for f in excel_files if not f.name.startswith("~$")]
 
                 if excel_files:
                     excel_file = excel_files[0]
@@ -381,46 +485,50 @@ class MonthlyAutomationProcessor:
             result = subprocess.run(
                 cmd, capture_output=True, text=True, cwd=Path.cwd(), env=env, encoding='utf-8', errors='replace')
 
-            if result.returncode == 0:
-                logger.info(
-                    "SUCCESS: Material master data extraction completed")
-
-                # Parse output for counts if available
-                output = result.stdout + result.stderr
-                import re
-
-                # Look for material counts in output
-                types_match = re.search(r'Material types: (\d+)', output)
-                child_types_match = re.search(
-                    r'Material child types: (\d+)', output)
-                materials_match = re.search(
-                    r'Total materials processed: (\d+)', output)
-
-                types_count = int(types_match.group(1)) if types_match else 0
-                child_types_count = int(child_types_match.group(
-                    1)) if child_types_match else 0
-                materials_count = int(materials_match.group(
-                    1)) if materials_match else 0
-
-                self.log_result('material_types', types_count,
-                                "Extracted material types")
-                self.log_result(
-                    'material_child_types', child_types_count, "Extracted material child types")
-                self.log_result('materials', materials_count,
-                                "Extracted materials with type associations")
-
-                return True
-            else:
+            if result.returncode != 0:
                 logger.error(
-                    f"ERROR: Material master data extraction failed: {result.stderr}")
+                    f"Material master extraction failed: {result.stderr}")
                 self.results['errors'].append(
-                    f"Material master data extraction failed: {result.stderr}")
+                    f"Material master extraction failed: {result.stderr}")
                 return False
+
+            # Parse output for counts
+            output_lines = result.stdout.split('\n')
+            extracted_types = 0
+            extracted_child_types = 0
+            extracted_materials = 0
+
+            for line in output_lines:
+                if "material types processed" in line.lower():
+                    try:
+                        extracted_types = int(line.split()[-2])
+                    except (ValueError, IndexError):
+                        pass
+                elif "material child types processed" in line.lower():
+                    try:
+                        extracted_child_types = int(line.split()[-2])
+                    except (ValueError, IndexError):
+                        pass
+                elif "materials with type associations processed" in line.lower():
+                    try:
+                        extracted_materials = int(line.split()[-2])
+                    except (ValueError, IndexError):
+                        pass
+
+            logger.info("SUCCESS: Material master data extraction completed")
+            self.log_result('material_types', extracted_types,
+                            "Extracted material types")
+            self.log_result('material_child_types', extracted_child_types,
+                            "Extracted material child types")
+            self.log_result('materials', extracted_materials,
+                            "Extracted materials with type associations")
+
+            return True
 
         except Exception as e:
             logger.error(f"Failed to extract material master data: {e}")
             self.results['errors'].append(
-                f"Material master data extraction error: {e}")
+                f"Material master extraction error: {e}")
             return False
 
     def extract_material_detail_batch(self, material_folder: Path) -> bool:
@@ -545,6 +653,11 @@ class MonthlyAutomationProcessor:
                     # Find Excel files in store folder
                     excel_files = list(store_folder.glob(
                         "*.xls*")) + list(store_folder.glob("*.XLS*"))
+
+                    # Filter out temporary Excel files (starting with ~$)
+                    excel_files = [
+                        f for f in excel_files if not f.name.startswith("~$")]
+
                     if not excel_files:
                         logger.warning(
                             f"No Excel files found in store {store_id} folder")
@@ -706,6 +819,13 @@ class MonthlyAutomationProcessor:
                         if not full_code or not material_number:
                             continue
 
+                        # CRITICAL FIX: Get size from 规格 column for proper dish matching
+                        dish_size = row.get('规格', None)
+                        if pd.notna(dish_size):
+                            dish_size = str(dish_size).strip()
+                        else:
+                            dish_size = None
+
                         # Get standard quantity from column N (出品分量(kg))
                         standard_qty = float(row['出品分量(kg)']) if pd.notna(
                             row['出品分量(kg)']) else 0
@@ -727,25 +847,31 @@ class MonthlyAutomationProcessor:
                                     loss_rate = float(row[col_name])
                                     break
 
-                        # Try to match dish by both full and short code if short exists
-                        if short_code:
+                        # CRITICAL FIX: Match dish by full_code AND size to handle different specifications
+                        # Use BOTH full_code and size for precise matching
+                        if dish_size:
+                            # Match by full_code AND size
                             cursor.execute("""
                                 INSERT INTO dish_material (dish_id, material_id, standard_quantity, loss_rate)
                                 SELECT d.id, m.id, %s, %s
                                 FROM dish d, material m
-                                WHERE (d.full_code = %s OR d.short_code = %s)
+                                WHERE d.full_code = %s 
+                                AND d.size = %s
                                 AND m.material_number = %s
                                 ON CONFLICT (dish_id, material_id) DO UPDATE SET
                                     standard_quantity = EXCLUDED.standard_quantity,
                                     loss_rate = EXCLUDED.loss_rate,
                                     updated_at = CURRENT_TIMESTAMP
-                            """, (standard_qty, loss_rate, full_code, short_code, material_number))
+                            """, (standard_qty, loss_rate, full_code, dish_size, material_number))
                         else:
+                            # Fallback: Match by full_code only when no size specified
                             cursor.execute("""
                                 INSERT INTO dish_material (dish_id, material_id, standard_quantity, loss_rate)
                                 SELECT d.id, m.id, %s, %s
                                 FROM dish d, material m
-                                WHERE d.full_code = %s AND m.material_number = %s
+                                WHERE d.full_code = %s 
+                                AND d.size IS NULL
+                                AND m.material_number = %s
                                 ON CONFLICT (dish_id, material_id) DO UPDATE SET
                                     standard_quantity = EXCLUDED.standard_quantity,
                                     loss_rate = EXCLUDED.loss_rate,
@@ -754,18 +880,20 @@ class MonthlyAutomationProcessor:
 
                         dish_material_count += cursor.rowcount
 
+                        # Debug logging for dish 1060062 and material 1500882
+                        if full_code == '1060062' and material_number == '1500882':
+                            logger.info(
+                                f"DISH-MATERIAL DEBUG: Dish {full_code} ({dish_size}) -> Material {material_number}, Standard Qty: {standard_qty}")
+
                     except Exception as e:
                         logger.error(
-                            f"Error processing dish-material row: {e}")
-                        self.results['errors'].append(
-                            f"Dish-material extraction error: {e}")
+                            f"Error processing dish-material relationship: {e}")
                         continue
-
-                conn.commit()
 
                 self.log_result('dish_materials', dish_material_count,
                                 "Processed dish-material relationships")
-                return True
+
+            return True
 
         except Exception as e:
             logger.error(f"Failed to extract dish-material relationships: {e}")
@@ -940,11 +1068,16 @@ class MonthlyAutomationProcessor:
             import subprocess
             import sys
 
-            # Look for MB5B files
+            # Find mb5b files
             mb5b_files = list(mb5b_folder.glob("*.xls*")) + \
                 list(mb5b_folder.glob("*.XLS*"))
+
+            # Filter out temporary Excel files (starting with ~$)
+            mb5b_files = [f for f in mb5b_files if not f.name.startswith("~$")]
+
             if not mb5b_files:
-                logger.error("No MB5B file found for material monthly usage")
+                logger.error("No mb5b files found")
+                self.results['errors'].append("No mb5b files found")
                 return False
 
             mb5b_file = mb5b_files[0]
@@ -1002,6 +1135,10 @@ class MonthlyAutomationProcessor:
         dish_sale_folder = self.input_folder / "monthly_dish_sale"
         dish_files = list(dish_sale_folder.glob("*.xlsx")) + \
             list(dish_sale_folder.glob("*.XLSX"))
+
+        # Filter out temporary Excel files (starting with ~$)
+        dish_files = [f for f in dish_files if not f.name.startswith("~$")]
+
         if dish_files:
             success &= self.extract_dish_types_and_dishes(dish_files[0])
         else:
@@ -1028,6 +1165,10 @@ class MonthlyAutomationProcessor:
         calc_folder = self.input_folder / "calculated_dish_material_usage"
         calc_files = list(calc_folder.glob("*.xls*")) + \
             list(calc_folder.glob("*.XLS*"))
+
+        # Filter out temporary Excel files (starting with ~$)
+        calc_files = [f for f in calc_files if not f.name.startswith("~$")]
+
         if calc_files:
             success &= self.extract_dish_materials(calc_files[0])
         else:

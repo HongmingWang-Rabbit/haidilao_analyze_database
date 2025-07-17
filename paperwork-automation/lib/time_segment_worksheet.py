@@ -4,8 +4,8 @@ Time segment report worksheet generator (分时段-上报).
 Only handles worksheet creation - receives data from main report generator.
 """
 
-from datetime import datetime
-from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+from datetime import datetime as dt
+from openpyxl.styles import PatternFill, Font, Alignment, Border, Side, Color
 from openpyxl.utils import get_column_letter
 
 
@@ -42,24 +42,24 @@ class TimeSegmentWorksheetGenerator:
         test_data = {
             # Store 1 (加拿大一店)
             1: {
-                '08:00-13:59': {'turnover_current': 0.72, 'turnover_prev': 0.82, 'target': 0.85, 'tables': 32.6, 'customers': 382.9, 'customers_prev_year': 433.0},
-                '14:00-16:59': {'turnover_current': 0.46, 'turnover_prev': 0.57, 'target': 0.60, 'tables': 26.3, 'customers': 245.5, 'customers_prev_year': 304.0},
-                '17:00-21:59': {'turnover_current': 1.85, 'turnover_prev': 2.14, 'target': 1.97, 'tables': 86.1, 'customers': 980.8, 'customers_prev_year': 1135.0},
-                '22:00-(次)07:59': {'turnover_current': 0.76, 'turnover_prev': 0.96, 'target': 0.78, 'tables': 43.8, 'customers': 400.7, 'customers_prev_year': 510.0}
+                '08:00-13:59': {'turnover_current': 0.72, 'turnover_prev': 0.82, 'target': 0.85, 'tables': 32.6, 'customers': 382.9, 'customers_prev_year': 433.0, 'turnover_prev_weekday': 0.79, 'tables_prev_weekday': 30.5},
+                '14:00-16:59': {'turnover_current': 0.46, 'turnover_prev': 0.57, 'target': 0.60, 'tables': 26.3, 'customers': 245.5, 'customers_prev_year': 304.0, 'turnover_prev_weekday': 0.52, 'tables_prev_weekday': 24.8},
+                '17:00-21:59': {'turnover_current': 1.85, 'turnover_prev': 2.14, 'target': 1.97, 'tables': 86.1, 'customers': 980.8, 'customers_prev_year': 1135.0, 'turnover_prev_weekday': 2.01, 'tables_prev_weekday': 82.4},
+                '22:00-(次)07:59': {'turnover_current': 0.76, 'turnover_prev': 0.96, 'target': 0.78, 'tables': 43.8, 'customers': 400.7, 'customers_prev_year': 510.0, 'turnover_prev_weekday': 0.89, 'tables_prev_weekday': 41.2}
             },
             # Store 2 (加拿大二店)
             2: {
-                '08:00-13:59': {'turnover_current': 0.52, 'turnover_prev': 0.69, 'target': 0.50, 'tables': 11.8, 'customers': 185.7, 'customers_prev_year': 250.0},
-                '14:00-16:59': {'turnover_current': 0.41, 'turnover_prev': 0.45, 'target': 0.50, 'tables': 16.4, 'customers': 147.1, 'customers_prev_year': 162.0},
-                '17:00-21:59': {'turnover_current': 1.58, 'turnover_prev': 1.87, 'target': 1.80, 'tables': 44.2, 'customers': 551.3, 'customers_prev_year': 673.0},
-                '22:00-(次)07:59': {'turnover_current': 0.41, 'turnover_prev': 0.39, 'target': 0.70, 'tables': 3.6, 'customers': 148.6, 'customers_prev_year': 139.0}
+                '08:00-13:59': {'turnover_current': 0.52, 'turnover_prev': 0.69, 'target': 0.50, 'tables': 11.8, 'customers': 185.7, 'customers_prev_year': 250.0, 'turnover_prev_weekday': 0.61, 'tables_prev_weekday': 10.2},
+                '14:00-16:59': {'turnover_current': 0.41, 'turnover_prev': 0.45, 'target': 0.50, 'tables': 16.4, 'customers': 147.1, 'customers_prev_year': 162.0, 'turnover_prev_weekday': 0.43, 'tables_prev_weekday': 15.8},
+                '17:00-21:59': {'turnover_current': 1.58, 'turnover_prev': 1.87, 'target': 1.80, 'tables': 44.2, 'customers': 551.3, 'customers_prev_year': 673.0, 'turnover_prev_weekday': 1.72, 'tables_prev_weekday': 42.1},
+                '22:00-(次)07:59': {'turnover_current': 0.41, 'turnover_prev': 0.39, 'target': 0.70, 'tables': 3.6, 'customers': 148.6, 'customers_prev_year': 139.0, 'turnover_prev_weekday': 0.40, 'tables_prev_weekday': 3.8}
             },
             # Store 3 (加拿大三店)
             3: {
-                '08:00-13:59': {'turnover_current': 1.06, 'turnover_prev': 1.59, 'target': 1.20, 'tables': 36.7, 'customers': 506.7, 'customers_prev_year': 761.0},
-                '14:00-16:59': {'turnover_current': 0.80, 'turnover_prev': 1.28, 'target': 1.00, 'tables': 31.8, 'customers': 385.4, 'customers_prev_year': 615.0},
-                '17:00-21:59': {'turnover_current': 2.21, 'turnover_prev': 2.45, 'target': 2.20, 'tables': 99.4, 'customers': 1060.9, 'customers_prev_year': 1175.0},
-                '22:00-(次)07:59': {'turnover_current': 0.80, 'turnover_prev': 0.64, 'target': 0.80, 'tables': 22.9, 'customers': 386, 'customers_prev_year': 305.0}
+                '08:00-13:59': {'turnover_current': 1.06, 'turnover_prev': 1.59, 'target': 1.20, 'tables': 36.7, 'customers': 506.7, 'customers_prev_year': 761.0, 'turnover_prev_weekday': 1.42, 'tables_prev_weekday': 35.2},
+                '14:00-16:59': {'turnover_current': 0.80, 'turnover_prev': 1.28, 'target': 1.00, 'tables': 31.8, 'customers': 385.4, 'customers_prev_year': 615.0, 'turnover_prev_weekday': 1.15, 'tables_prev_weekday': 30.5},
+                '17:00-21:59': {'turnover_current': 2.21, 'turnover_prev': 2.45, 'target': 2.20, 'tables': 99.4, 'customers': 1060.9, 'customers_prev_year': 1175.0, 'turnover_prev_weekday': 2.33, 'tables_prev_weekday': 95.8},
+                '22:00-(次)07:59': {'turnover_current': 0.80, 'turnover_prev': 0.64, 'target': 0.80, 'tables': 22.9, 'customers': 386, 'customers_prev_year': 305.0, 'turnover_prev_weekday': 0.72, 'tables_prev_weekday': 24.1}
             },
             # Store 4 (加拿大四店)
             4: {
@@ -105,7 +105,7 @@ class TimeSegmentWorksheetGenerator:
         ws = wb.create_sheet("分时段-上报")
 
         # Parse target date for title
-        target_dt = datetime.strptime(self.target_date, '%Y-%m-%d')
+        target_dt = dt.strptime(self.target_date, '%Y-%m-%d')
         year, month, day = target_dt.year, target_dt.month, target_dt.day
 
         # Get weekday in Chinese
@@ -115,17 +115,38 @@ class TimeSegmentWorksheetGenerator:
         # Title - Use actual target date
         prev_year = year - 1
         title = f"门店分时段营业数据{year}年{month}月vs{prev_year}年{month}月截至{day}日-{weekday}（考核）"
-        ws.merge_cells('A1:L1')
+        ws.merge_cells('A1:O1')
         ws['A1'] = title
         ws['A1'].font = Font(bold=True, size=12)
         ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
         ws['A1'].fill = PatternFill(
             start_color="FFD700", end_color="FFD700", fill_type="solid")
 
+        # Get the weekday comparison date for headers
+        from datetime import timedelta
+        target_dt = dt.strptime(self.target_date, '%Y-%m-%d')
+        prev_year = target_dt.year - 1
+
+        # Find same weekday from previous year
+        same_date_prev_year = target_dt.replace(year=prev_year)
+        target_weekday = target_dt.weekday()
+        prev_year_weekday = same_date_prev_year.weekday()
+
+        if target_weekday == prev_year_weekday:
+            weekday_compare_date = same_date_prev_year
+        else:
+            days_to_add = (target_weekday - prev_year_weekday) % 7
+            if days_to_add == 0:
+                days_to_add = 7
+            weekday_compare_date = same_date_prev_year + \
+                timedelta(days=days_to_add)
+
+        weekday_compare_header = f"{weekday_compare_date.day:02d}/{weekday_compare_date.month:02d}/{weekday_compare_date.year}"
+
         # Headers row 1 - Use actual target date
         date_header = f"{day:02d}/{month:02d}/{year}"
         headers_row1 = ["门店名称", "分时段", "翻台率（考核）", "", "", "",
-                        "", date_header, date_header, "桌数（考核）", "", "同比差异"]
+                        "", date_header, "", "去年同周同日", "", "同比差异", "本月截止目前桌数", "", "同比差异"]
         for col, header in enumerate(headers_row1, 1):
             cell = ws.cell(row=2, column=col, value=header)
             cell.font = Font(bold=True)
@@ -135,7 +156,8 @@ class TimeSegmentWorksheetGenerator:
 
         # Headers row 2
         headers_row2 = ["", "", "今年", "去年", "本月目标", "目标差异",
-                        "同比差异", "翻台率（考核）", "桌数（考核）", "今年", "去年", "同比差异"]
+                        "同比差异", "翻台率（考核）", "桌数（考核）", "翻台率", "桌数", "翻台率同比差异",
+                        "今年", "去年", "同比差异"]
         for col, header in enumerate(headers_row2, 1):
             cell = ws.cell(row=3, column=col, value=header)
             cell.font = Font(bold=True)
@@ -148,8 +170,8 @@ class TimeSegmentWorksheetGenerator:
         ws.merge_cells('B2:B3')  # 分时段
         ws.merge_cells('C2:G2')  # 翻台率（考核）
         ws.merge_cells('H2:I2')  # 10/06/2025
-        ws.merge_cells('J2:K2')  # 桌数（考核）
-        ws.merge_cells('L2:L3')  # 同比差异
+        ws.merge_cells('J2:L2')  # 去年同周同日（考核）
+        ws.merge_cells('M2:O2')  # 桌数（考核）
 
         # Get time segment data from database
         # Use the proper method that handles None data_provider
@@ -232,29 +254,45 @@ class TimeSegmentWorksheetGenerator:
                 ws.cell(row=current_row, column=9,
                         value=round(segment_data['tables'], 1))
 
-                # MTD totals for columns J and K
+                # Column J: 翻台率（Previous year same weekday）
+                weekday_turnover = segment_data.get('turnover_prev_weekday', 0)
+                ws.cell(row=current_row, column=10,
+                        value=round(weekday_turnover, 5))
+
+                # Column K: 桌数（Previous year same weekday）
+                weekday_tables = segment_data.get('tables_prev_weekday', 0)
+                ws.cell(row=current_row, column=11,
+                        value=round(weekday_tables, 1))
+
+                # Column L: 同比差异 (Current turnover vs weekday comparison)
+                weekday_turnover_diff = segment_data['turnover_current'] - \
+                    weekday_turnover
+                ws.cell(row=current_row, column=12,
+                        value=round(weekday_turnover_diff, 5))
+
+                # MTD totals for columns M and N
                 mtd_tables = segment_data.get(
                     'mtd_total_tables', segment_data['customers'])
                 mtd_tables_prev = segment_data.get(
                     'customers_prev_year', 0)  # This should be MTD prev year
-                ws.cell(row=current_row, column=10, value=round(mtd_tables, 1))
-                ws.cell(row=current_row, column=11,
+                ws.cell(row=current_row, column=13, value=round(mtd_tables, 1))
+                ws.cell(row=current_row, column=14,
                         value=round(mtd_tables_prev, 0))
 
-                # Column L: 同比差异 (Year-over-year difference for MTD table count)
+                # Column O: 同比差异 (Year-over-year difference for MTD table count)
                 yoy_table_diff = mtd_tables - mtd_tables_prev
-                ws.cell(row=current_row, column=12,
+                ws.cell(row=current_row, column=15,
                         value=round(yoy_table_diff, 1))
 
                 # Apply background colors
-                for col in range(1, 13):
+                for col in range(1, 16):
                     cell = ws.cell(row=current_row, column=col)
                     cell.fill = PatternFill(
                         start_color=color, end_color=color, fill_type="solid")
 
                     # Special formatting for difference columns
-                    # Difference columns (including new column L)
-                    if col in [6, 7, 12]:
+                    # Difference columns (including new columns L and O)
+                    if col in [6, 7, 12, 15]:
                         value = cell.value
                         if isinstance(value, (int, float)):
                             if value < 0:
@@ -284,11 +322,18 @@ class TimeSegmentWorksheetGenerator:
                             column=10).value or 0 for i in range(len(self.time_segments)))
             col11_sum = sum(ws.cell(row=store_total_row_start + i,
                             column=11).value or 0 for i in range(len(self.time_segments)))
+            col12_sum = sum(ws.cell(row=store_total_row_start + i,
+                            column=12).value or 0 for i in range(len(self.time_segments)))
+            col13_sum = sum(ws.cell(row=store_total_row_start + i,
+                            column=13).value or 0 for i in range(len(self.time_segments)))
+            col14_sum = sum(ws.cell(row=store_total_row_start + i,
+                            column=14).value or 0 for i in range(len(self.time_segments)))
 
             # Calculate differences based on the summed values
             col6_diff = col3_sum - col5_sum  # current - target
             col7_diff = col3_sum - col4_sum  # current - prev
-            col12_diff = col10_sum - col11_sum  # YoY difference
+            col12_diff = col8_sum - col10_sum  # current daily vs weekday comparison
+            col15_diff = col13_sum - col14_sum  # YoY difference
 
             ws.cell(row=current_row, column=2, value=f"{store_name}汇总")
             ws.cell(row=current_row, column=3, value=round(col3_sum, 5))
@@ -298,14 +343,18 @@ class TimeSegmentWorksheetGenerator:
             ws.cell(row=current_row, column=7, value=round(col7_diff, 5))
             ws.cell(row=current_row, column=8, value=round(col8_sum, 5))
             ws.cell(row=current_row, column=9, value=round(col9_sum, 1))
-            ws.cell(row=current_row, column=10, value=round(col10_sum, 1))
-            ws.cell(row=current_row, column=11, value=round(col11_sum, 0))
-            ws.cell(row=current_row, column=12, value=round(col12_diff, 1))
+            ws.cell(row=current_row, column=10, value=round(col10_sum, 5))
+            ws.cell(row=current_row, column=11, value=round(col11_sum, 1))
+            ws.cell(row=current_row, column=12, value=round(col12_diff, 5))
+            ws.cell(row=current_row, column=13, value=round(col13_sum, 1))
+            ws.cell(row=current_row, column=14, value=round(col14_sum, 0))
+            ws.cell(row=current_row, column=15, value=round(col15_diff, 1))
 
             # Apply bold formatting and different color for totals
-            for col in range(1, 13):
+            for col in range(1, 16):
                 cell = ws.cell(row=current_row, column=col)
                 cell.font = Font(bold=True)
+                # Apply gray background to all columns including ranking columns
                 cell.fill = PatternFill(
                     start_color="D0D0D0", end_color="D0D0D0", fill_type="solid")
 
@@ -408,15 +457,26 @@ class TimeSegmentWorksheetGenerator:
                             for r in store_total_rows)
             col11_sum = sum(safe_float(ws.cell(row=r, column=11).value)
                             for r in store_total_rows)
+            col13_sum = sum(safe_float(ws.cell(row=r, column=13).value)
+                            for r in store_total_rows)
+            col14_sum = sum(safe_float(ws.cell(row=r, column=14).value)
+                            for r in store_total_rows)
+
+            # Calculate weighted average for weekday comparison (column 10)
+            col10_values = [safe_float(ws.cell(row=r, column=10).value) for r in store_total_rows if safe_float(
+                ws.cell(row=r, column=10).value) > 0]
+            col10_avg = calculate_weighted_average(
+                col10_values, active_store_ids_filtered)
 
             # Calculate differences (now all operands are guaranteed to be float)
             col6_diff = col3_avg - col5_avg
             col7_diff = col3_avg - col4_avg
-            col12_diff = col10_sum - col11_sum
+            col12_diff = col8_avg - col10_avg  # current daily vs weekday comparison
+            col15_diff = col13_sum - col14_sum  # YoY difference
         else:
-            col3_avg = col4_avg = col5_avg = col8_avg = 0
-            col9_sum = col10_sum = col11_sum = 0
-            col6_diff = col7_diff = col12_diff = 0
+            col3_avg = col4_avg = col5_avg = col8_avg = col10_avg = 0
+            col9_sum = col10_sum = col11_sum = col13_sum = col14_sum = 0
+            col6_diff = col7_diff = col12_diff = col15_diff = 0
 
         ws.cell(row=current_row, column=1, value="区域整体")
         ws.cell(row=current_row, column=3, value=round(col3_avg, 5))
@@ -426,19 +486,25 @@ class TimeSegmentWorksheetGenerator:
         ws.cell(row=current_row, column=7, value=round(col7_diff, 5))
         ws.cell(row=current_row, column=8, value=round(col8_avg, 5))
         ws.cell(row=current_row, column=9, value=round(col9_sum, 1))
-        ws.cell(row=current_row, column=10, value=round(col10_sum, 1))
-        ws.cell(row=current_row, column=11, value=round(col11_sum, 0))
-        ws.cell(row=current_row, column=12, value=round(col12_diff, 1))
+        ws.cell(row=current_row, column=10, value=round(col10_avg, 5))
+        ws.cell(row=current_row, column=11, value=round(col11_sum, 1))
+        ws.cell(row=current_row, column=12, value=round(col12_diff, 5))
+        ws.cell(row=current_row, column=13, value=round(col13_sum, 1))
+        ws.cell(row=current_row, column=14, value=round(col14_sum, 0))
+        ws.cell(row=current_row, column=15, value=round(col15_diff, 1))
 
         # Apply bold formatting and special color for overall totals
-        for col in range(1, 13):
+        for col in range(1, 16):
             cell = ws.cell(row=current_row, column=col)
             cell.font = Font(bold=True, color="FFFFFF")
             cell.fill = PatternFill(
                 start_color="000080", end_color="000080", fill_type="solid")
 
-        # Apply common formatting
+        # Apply common formatting first
         self.apply_common_formatting(ws, current_row + 1)
+
+        # Apply ranking color formatting for "同比差异" columns AFTER common formatting
+        self.apply_ranking_colors(ws, current_row)
 
         return ws
 
@@ -519,6 +585,54 @@ class TimeSegmentWorksheetGenerator:
             'overall_yoy_diff': overall_yoy_diff
         }
 
+    def apply_ranking_colors(self, ws, total_row):
+        """Apply green color to rank 1 and red color to last rank in 同比差异 columns"""
+        # Find all store summary rows (rows that contain "汇总")
+        store_summary_rows = []
+        for row in range(4, total_row):
+            cell_value = ws.cell(row=row, column=2).value
+            if cell_value and "汇总" in str(cell_value):
+                store_summary_rows.append(row)
+
+        if len(store_summary_rows) < 2:
+            return  # Need at least 2 stores to rank
+
+        # For each "翻台率同比差异" column, find the best and worst performers
+        # Only apply ranking colors to column 12 (去年同周同日 section)
+        ranking_columns = [12]  # Only Column L (去年同周同日)
+
+        for col in ranking_columns:
+            # Get values and row numbers for ranking
+            values_and_rows = []
+            for row in store_summary_rows:
+                value = ws.cell(row=row, column=col).value
+                if isinstance(value, (int, float)) or hasattr(value, '__float__'):
+                    values_and_rows.append((value, row))
+
+            if len(values_and_rows) < 2:
+                continue  # Need at least 2 values to rank
+
+            # Sort by value (highest first for positive differences)
+            values_and_rows.sort(key=lambda x: x[0], reverse=True)
+
+            # Apply bright green color to best performer (rank 1)
+            best_row = values_and_rows[0][1]
+            best_cell = ws.cell(row=best_row, column=col)
+            # Use Excel-compatible green color
+            best_cell.fill = PatternFill(
+                start_color="92D050", end_color="92D050", fill_type="solid")
+            # Keep the bold font for store totals
+            best_cell.font = Font(bold=True)
+
+            # Apply bright red color to worst performer (last rank)
+            worst_row = values_and_rows[-1][1]
+            worst_cell = ws.cell(row=worst_row, column=col)
+            # Use Excel-compatible red color
+            worst_cell.fill = PatternFill(
+                start_color="C5504B", end_color="C5504B", fill_type="solid")
+            # Keep the bold font for store totals
+            worst_cell.font = Font(bold=True)
+
     def apply_common_formatting(self, ws, max_row):
         """Apply common formatting to worksheet"""
         # Apply borders
@@ -528,19 +642,19 @@ class TimeSegmentWorksheetGenerator:
         )
 
         for row in range(1, max_row):
-            for col in range(1, 13):
+            for col in range(1, 16):  # Updated to 16 columns
                 cell = ws.cell(row=row, column=col)
                 cell.border = thin_border
 
                 # Apply number formatting for numeric values
                 if isinstance(cell.value, (int, float)) and row > 3:
-                    if col in [3, 4, 5, 6, 7, 8]:  # Turnover columns
-                        cell.number_format = '0.00000'
-                    elif col in [9, 10, 11, 12]:  # Count columns including new column L
-                        cell.number_format = '0.0'
+                    # All numeric columns formatted to 2 decimal places
+                    if col in [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]:
+                        cell.number_format = '0.00'
 
         # Set column widths
-        column_widths = [15, 15, 10, 10, 10, 10, 10, 12, 12, 12, 12, 12]
+        column_widths = [15, 15, 10, 10, 10, 10, 10, 12, 12,
+                         12, 12, 12, 12, 12, 12]  # Added 3 new columns
         for i, width in enumerate(column_widths, 1):
             ws.column_dimensions[get_column_letter(i)].width = width
 

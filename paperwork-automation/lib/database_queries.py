@@ -340,7 +340,7 @@ class ReportDataProvider:
 
     def get_time_segment_data(self, target_date: str):
         """Get time segment data from store_time_report table"""
-        from datetime import datetime
+        from datetime import datetime, timedelta
 
         # Parse target date to get current and previous year/month
         target_dt = datetime.strptime(target_date, '%Y-%m-%d')
@@ -349,6 +349,35 @@ class ReportDataProvider:
         target_day = target_dt.day
 
         prev_year = current_year - 1
+
+        # Helper function to find same weekday from previous year
+        def find_same_weekday_previous_year(target_dt):
+            """Find the nearest future date with same weekday in previous year"""
+            # Get the same date in previous year
+            same_date_prev_year = target_dt.replace(year=prev_year)
+
+            # Get weekday of target date (0=Monday, 6=Sunday)
+            target_weekday = target_dt.weekday()
+
+            # Get weekday of same date in previous year
+            prev_year_weekday = same_date_prev_year.weekday()
+
+            # If weekdays are the same, use the same date
+            if target_weekday == prev_year_weekday:
+                return same_date_prev_year
+
+            # Otherwise, find the nearest future date with same weekday
+            days_to_add = (target_weekday - prev_year_weekday) % 7
+            if days_to_add == 0:
+                days_to_add = 7  # If same weekday, go to next week
+
+            return same_date_prev_year + timedelta(days=days_to_add)
+
+        # Calculate previous year dates
+        prev_year_target_date = f"{prev_year}-{current_month:02d}-{target_day:02d}"
+        prev_year_same_weekday_dt = find_same_weekday_previous_year(target_dt)
+        prev_year_same_weekday_date = prev_year_same_weekday_dt.strftime(
+            '%Y-%m-%d')
 
         # Use separate queries to avoid Cartesian products
         sql_base = """
@@ -363,6 +392,9 @@ class ReportDataProvider:
             -- Previous year same date data
             str_prev.tables_served_validated as prev_year_tables,
             str_prev.turnover_rate as prev_year_turnover,
+            -- Previous year same weekday data
+            str_prev_weekday.tables_served_validated as prev_year_weekday_tables,
+            str_prev_weekday.turnover_rate as prev_year_weekday_turnover,
             -- Time segment target data
             smtt.turnover_rate as target_turnover
         FROM store s
@@ -373,6 +405,9 @@ class ReportDataProvider:
         LEFT JOIN store_time_report str_prev ON s.id = str_prev.store_id 
             AND ts.id = str_prev.time_segment_id
             AND str_prev.date = %s
+        LEFT JOIN store_time_report str_prev_weekday ON s.id = str_prev_weekday.store_id 
+            AND ts.id = str_prev_weekday.time_segment_id
+            AND str_prev_weekday.date = %s
         LEFT JOIN store_monthly_time_target smtt ON s.id = smtt.store_id 
             AND ts.id = smtt.time_segment_id
             AND EXTRACT(YEAR FROM smtt.month) = %s 
@@ -381,14 +416,12 @@ class ReportDataProvider:
         ORDER BY s.id, ts.id
         """
 
-        # Calculate previous year target date
-        prev_year_target_date = f"{prev_year}-{current_month:02d}-{target_day:02d}"
-
         try:
             # Get base data
             base_results = self.db_manager.fetch_all(sql_base, (
                 target_date,  # Current year target date
                 prev_year_target_date,  # Previous year same date
+                prev_year_same_weekday_date,  # Previous year same weekday date
                 current_year, current_month  # Target data
             ))
 
@@ -442,7 +475,7 @@ class ReportDataProvider:
                 prev_mtd_sql, (prev_year, current_month, target_day))
 
             # Create lookup dictionaries for aggregated data
-            mtd_lookup = {(row['store_id'], row['time_segment_id'])                          : row for row in mtd_results}
+            mtd_lookup = {(row['store_id'], row['time_segment_id']): row for row in mtd_results}
             prev_full_lookup = {
                 (row['store_id'], row['time_segment_id']): row for row in prev_full_results}
             prev_mtd_lookup = {
@@ -494,6 +527,10 @@ class ReportDataProvider:
                     'turnover_prev': row['prev_year_turnover'] or 0,
                     'prev_full_month_avg_turnover': row['prev_full_month_avg_turnover'] or 0,
 
+                    # Previous year same weekday data
+                    'turnover_prev_weekday': row['prev_year_weekday_turnover'] or 0,
+                    'tables_prev_weekday': row['prev_year_weekday_tables'] or 0,
+
                     # Target data
                     'target': row['target_turnover'] or 0,
 
@@ -503,7 +540,10 @@ class ReportDataProvider:
 
                     # MTD data for previous year
                     'prev_mtd_total_tables': row['prev_mtd_total_tables'] or 0,
-                    'customers_prev_year': row['prev_mtd_total_tables'] or 0
+                    'customers_prev_year': row['prev_mtd_total_tables'] or 0,
+
+                    # Store the weekday comparison date for reference
+                    'prev_year_weekday_date': prev_year_same_weekday_date
                 }
 
             return time_segment_data
@@ -655,14 +695,27 @@ class ReportDataProvider:
                 AND effective_date <= %s
             ORDER BY dish_id, effective_date DESC
         ),
+        -- Aggregate dish sales across all sales modes first
+        aggregated_dish_sales AS (
+            SELECT 
+                dish_id,
+                store_id,
+                SUM(COALESCE(sale_amount, 0)) as total_sale_amount,
+                SUM(COALESCE(return_amount, 0)) as total_return_amount,
+                SUM(COALESCE(free_meal_amount, 0)) as total_free_meal_amount,
+                SUM(COALESCE(gift_amount, 0)) as total_gift_amount
+            FROM dish_monthly_sale
+            WHERE year = %s AND month = %s
+            GROUP BY dish_id, store_id
+        ),
         -- Calculate theoretical usage (dish_sales * standard_quantity * loss_rate)
         dish_theoretical_usage AS (
             SELECT 
                 d.id as dish_id,
                 s.id as store_id,
-                -- Regular dish sales theoretical usage
+                -- Regular dish sales theoretical usage (now aggregated across all sales modes)
                 COALESCE(
-                    SUM((COALESCE(dms.sale_amount, 0) - COALESCE(dms.return_amount, 0)) * 
+                    SUM((COALESCE(ads.total_sale_amount, 0) - COALESCE(ads.total_return_amount, 0)) * 
                         COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)), 
                     0
                 ) as regular_theoretical_usage,
@@ -674,9 +727,8 @@ class ReportDataProvider:
                 ) as combo_theoretical_usage
             FROM dish d
             CROSS JOIN store s
-            LEFT JOIN dish_monthly_sale dms ON d.id = dms.dish_id 
-                AND s.id = dms.store_id
-                AND dms.year = %s AND dms.month = %s
+            LEFT JOIN aggregated_dish_sales ads ON d.id = ads.dish_id 
+                AND s.id = ads.store_id
             LEFT JOIN monthly_combo_dish_sale mcds ON d.id = mcds.dish_id 
                 AND s.id = mcds.store_id
                 AND mcds.year = %s AND mcds.month = %s
@@ -726,8 +778,8 @@ class ReportDataProvider:
             0 as dish_weight_kg,
             '' as dish_unit,
             
-            -- Current period sales data (from dish_monthly_sale)
-            COALESCE(dms.sale_amount, 0) as current_period_sales,
+            -- Current period sales data (aggregated across all sales modes)
+            COALESCE(ads.total_sale_amount, 0) as current_period_sales,
             
             -- Use corrected theoretical usage calculation
             COALESCE(dtu.regular_theoretical_usage, 0) as theoretical_usage,
@@ -746,7 +798,7 @@ class ReportDataProvider:
                 STRING_AGG(
                     CASE 
                         WHEN m.name IS NOT NULL AND dm.standard_quantity IS NOT NULL THEN
-                            m.material_number || ' - ' || m.name || ' - ' || ROUND(dm.standard_quantity * COALESCE(dms.sale_amount, 0), 2)::text
+                            m.material_number || ' - ' || m.name || ' - ' || ROUND(dm.standard_quantity * COALESCE(ads.total_sale_amount, 0), 2)::text
                         ELSE NULL
                     END, 
                     E'\n'
@@ -785,10 +837,8 @@ class ReportDataProvider:
             
         FROM store s
         CROSS JOIN dish d
-        LEFT JOIN dish_monthly_sale dms ON d.id = dms.dish_id 
-            AND s.id = dms.store_id
-            AND dms.year = %s
-            AND dms.month = %s
+        LEFT JOIN aggregated_dish_sales ads ON d.id = ads.dish_id 
+            AND s.id = ads.store_id
         LEFT JOIN dish_current_price dcp ON d.id = dcp.dish_id
             AND s.id = dcp.store_id
         LEFT JOIN dish_previous_price dpp ON d.id = dpp.dish_id
@@ -808,9 +858,9 @@ class ReportDataProvider:
         LEFT JOIN dish_combo_sales dcs ON d.id = dcs.dish_id
             AND s.id = dcs.store_id
         WHERE s.id BETWEEN 1 AND 7
-            AND (dms.sale_amount > 0 OR dcp.price > 0)
+            AND (ads.total_sale_amount > 0 OR dcp.price > 0)
         GROUP BY s.id, s.name, d.id, d.full_code, d.name, d.size, 
-                 dms.sale_amount, dcp.price, dpp.price, dlyp.price, dcp.earliest_price_date,
+                 ads.total_sale_amount, dcp.price, dpp.price, dlyp.price, dcp.earliest_price_date,
                  dtu.regular_theoretical_usage, dtu.combo_theoretical_usage, dau.actual_material_usage,
                  dcs.combo_sales_amount
         ORDER BY s.id, d.full_code
@@ -822,11 +872,11 @@ class ReportDataProvider:
                 prev_month_year, prev_month_year, prev_month,  # dish_previous_price
                 # dish_last_year_price (2024-06-30 for target 2025-06-30)
                 f"{prev_year}-{current_month:02d}-30",
+                current_year, current_month,  # aggregated_dish_sales
                 current_year, current_month,  # dish_theoretical_usage regular
                 current_year, current_month,  # dish_theoretical_usage combo
                 current_year, current_month,  # dish_actual_usage
                 current_year, current_month,  # dish_combo_sales
-                current_year, current_month,  # dms current period
                 current_year, current_month   # mph current
             ))
 
