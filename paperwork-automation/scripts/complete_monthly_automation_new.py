@@ -12,6 +12,7 @@ Workflow:
 """
 
 from utils.database import DatabaseManager, DatabaseConfig
+from scripts.extract_combo_monthly_sales import extract_combo_data_from_excel, insert_to_database as insert_combo_to_database
 import sys
 import os
 import logging
@@ -21,6 +22,17 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 import argparse
 from openpyxl import Workbook
+import re
+
+
+def safe_log(logger_func, message):
+    """Log message safely, handling Unicode encoding errors on Windows"""
+    try:
+        logger_func(message)
+    except UnicodeEncodeError:
+        # Remove emojis and special Unicode characters for Windows console
+        clean_message = re.sub(r'[^\x00-\x7F]+', '', message)
+        logger_func(clean_message)
 
 
 # Add project root to path
@@ -296,7 +308,8 @@ class MonthlyAutomationProcessor:
                 self.log_result(
                     'monthly_sales', monthly_sales_count, "Processed monthly sales")
 
-                logger.info("✅ Dish extraction completed successfully")
+                safe_log(
+                    logger.info, "SUCCESS: Dish extraction completed successfully")
                 return True
 
         except Exception as e:
@@ -305,43 +318,16 @@ class MonthlyAutomationProcessor:
             return False
 
     def process_combo_sales(self, cursor, full_code: str, row, store_id: int, year: int, month: int):
-        """Process combo sales data for dishes in the 套餐 category."""
-        try:
-            combo_code = full_code  # Use dish code as combo code
-            combo_name = row['菜品名称(门店pad显示名称)']
+        """Process combo sales data for dishes in the 套餐 category - SKIPPED.
 
-            # Insert/update combo
-            cursor.execute("""
-                INSERT INTO combo (combo_code, name)
-                VALUES (%s, %s)
-                ON CONFLICT (combo_code) DO UPDATE SET
-                    name = EXCLUDED.name,
-                    updated_at = CURRENT_TIMESTAMP
-            """, (combo_code, combo_name))
-
-            # Calculate net sales (出品数量 - 退菜数量)
-            sale_amount = float(row['出品数量']) - float(row['退菜数量'])
-
-            if sale_amount > 0:
-                # Insert combo dish sales - combo dish sales itself as a dish
-                cursor.execute("""
-                    INSERT INTO monthly_combo_dish_sale (
-                        combo_id, dish_id, store_id, year, month, sale_amount
-                    )
-                    SELECT c.id, d.id, %s, %s, %s, %s
-                    FROM combo c
-                    CROSS JOIN dish d
-                    WHERE c.combo_code = %s AND d.full_code = %s AND d.size = %s
-                    ON CONFLICT (combo_id, dish_id, store_id, year, month) DO UPDATE SET
-                        sale_amount = EXCLUDED.sale_amount,
-                        updated_at = CURRENT_TIMESTAMP
-                """, (store_id, year, month, sale_amount, combo_code, full_code, row['规格']))
-
-                logger.info(
-                    f"Processed combo sales: {combo_name} ({combo_code}) - {sale_amount} units")
-
-        except Exception as e:
-            logger.error(f"Error processing combo sales for {full_code}: {e}")
+        Note: Combo processing is now handled separately by extract_combo_from_monthly_report()
+        This method is kept for compatibility but does nothing to avoid circular references.
+        """
+        # Skip combo processing here to avoid circular references
+        # Combo extraction is handled separately from 套餐销售汇总 sheet
+        logger.info(
+            f"Skipping combo processing for {full_code} - handled separately")
+        pass
 
     def extract_material_detail_with_types(self, file_path: Path) -> bool:
         """Extract materials with type classifications from material detail."""
@@ -422,6 +408,48 @@ class MonthlyAutomationProcessor:
             logger.error(f"Failed to extract material detail with types: {e}")
             self.results['errors'].append(
                 f"Material detail extraction error: {e}")
+            return False
+
+    def extract_combo_from_monthly_report(self) -> bool:
+        """Extract combo data from monthly combo sales file using correct 套餐销售汇总 sheet"""
+        logger.info("COMBO: Extracting combo data from monthly combo sales")
+
+        try:
+            # Find combo sales file
+            combo_folder = self.input_folder / "monthly_combo_sale"
+            combo_files = list(combo_folder.glob("*.xlsx")) + \
+                list(combo_folder.glob("*.XLSX"))
+            combo_files = [
+                f for f in combo_files if not f.name.startswith("~$")]
+
+            if not combo_files:
+                logger.warning("No combo sales file found")
+                return False
+
+            combo_file = combo_files[0]
+            logger.info(f"Processing combo file: {combo_file.name}")
+
+            # Extract combo data using the correct extraction logic
+            combo_data = extract_combo_data_from_excel(
+                str(combo_file), quiet=True)
+
+            if not combo_data["combos"] and not combo_data["combo_dish_sales"]:
+                logger.warning("No combo data extracted")
+                return False
+
+            # Insert to database
+            success = insert_combo_to_database(
+                combo_data, is_test=self.config.is_test)
+
+            self.log_result('combos', len(
+                combo_data["combos"]), "Extracted combos")
+            self.log_result('combo_dish_sales', len(
+                combo_data["combo_dish_sales"]), "Extracted combo dish sales")
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Error extracting combo data: {e}")
             return False
 
     def extract_material_master_data(self, material_folder: Path) -> bool:
@@ -847,13 +875,29 @@ class MonthlyAutomationProcessor:
                                     loss_rate = float(row[col_name])
                                     break
 
+                        # Get unit conversion rate from "物料单位" field (NEW REQUIREMENT)
+                        unit_conversion_rate = 1.0  # Default conversion rate
+
+                        # Look for unit conversion rate in "物料单位" column
+                        for col_name in df.columns:
+                            if '物料单位' in str(col_name):
+                                if pd.notna(row[col_name]):
+                                    try:
+                                        unit_conversion_rate = float(
+                                            row[col_name])
+                                        if unit_conversion_rate <= 0:
+                                            unit_conversion_rate = 1.0  # Default if invalid
+                                        break
+                                    except (ValueError, TypeError):
+                                        unit_conversion_rate = 1.0  # Default if conversion fails
+
                         # CRITICAL FIX: Match dish by full_code AND size to handle different specifications
                         # Use BOTH full_code and size for precise matching
                         if dish_size:
                             # Match by full_code AND size
                             cursor.execute("""
-                                INSERT INTO dish_material (dish_id, material_id, standard_quantity, loss_rate)
-                                SELECT d.id, m.id, %s, %s
+                                INSERT INTO dish_material (dish_id, material_id, standard_quantity, loss_rate, unit_conversion_rate)
+                                SELECT d.id, m.id, %s, %s, %s
                                 FROM dish d, material m
                                 WHERE d.full_code = %s 
                                 AND d.size = %s
@@ -861,13 +905,14 @@ class MonthlyAutomationProcessor:
                                 ON CONFLICT (dish_id, material_id) DO UPDATE SET
                                     standard_quantity = EXCLUDED.standard_quantity,
                                     loss_rate = EXCLUDED.loss_rate,
+                                    unit_conversion_rate = EXCLUDED.unit_conversion_rate,
                                     updated_at = CURRENT_TIMESTAMP
-                            """, (standard_qty, loss_rate, full_code, dish_size, material_number))
+                            """, (standard_qty, loss_rate, unit_conversion_rate, full_code, dish_size, material_number))
                         else:
                             # Fallback: Match by full_code only when no size specified
                             cursor.execute("""
-                                INSERT INTO dish_material (dish_id, material_id, standard_quantity, loss_rate)
-                                SELECT d.id, m.id, %s, %s
+                                INSERT INTO dish_material (dish_id, material_id, standard_quantity, loss_rate, unit_conversion_rate)
+                                SELECT d.id, m.id, %s, %s, %s
                                 FROM dish d, material m
                                 WHERE d.full_code = %s 
                                 AND d.size IS NULL
@@ -875,15 +920,16 @@ class MonthlyAutomationProcessor:
                                 ON CONFLICT (dish_id, material_id) DO UPDATE SET
                                     standard_quantity = EXCLUDED.standard_quantity,
                                     loss_rate = EXCLUDED.loss_rate,
+                                    unit_conversion_rate = EXCLUDED.unit_conversion_rate,
                                     updated_at = CURRENT_TIMESTAMP
-                            """, (standard_qty, loss_rate, full_code, material_number))
+                            """, (standard_qty, loss_rate, unit_conversion_rate, full_code, material_number))
 
                         dish_material_count += cursor.rowcount
 
                         # Debug logging for dish 1060062 and material 1500882
                         if full_code == '1060062' and material_number == '1500882':
                             logger.info(
-                                f"DISH-MATERIAL DEBUG: Dish {full_code} ({dish_size}) -> Material {material_number}, Standard Qty: {standard_qty}")
+                                f"DISH-MATERIAL DEBUG: Dish {full_code} ({dish_size}) -> Material {material_number}, Standard Qty: {standard_qty}, Unit Conversion Rate: {unit_conversion_rate}")
 
                     except Exception as e:
                         logger.error(
@@ -1145,6 +1191,9 @@ class MonthlyAutomationProcessor:
             logger.error("No monthly dish sale file found")
             success = False
 
+        # Step 1.5: Extract combo data from monthly combo sales
+        success &= self.extract_combo_from_monthly_report()
+
         # Step 2: Extract material master data (materials, types) from first available store
         material_folder = self.input_folder / "material_detail"
         success &= self.extract_material_master_data(material_folder)
@@ -1214,12 +1263,12 @@ class MonthlyAutomationProcessor:
         material_report_count = self.results.get('monthly_material_report', 0)
         beverage_report_count = self.results.get('monthly_beverage_report', 0)
         gross_margin_report_count = self.results.get('gross_margin_report', 0)
-        logger.info(
-            f"SUCCESS: Material variance report: {'✅ Generated' if material_report_count > 0 else '❌ Failed'}")
-        logger.info(
-            f"SUCCESS: Beverage variance report: {'✅ Generated' if beverage_report_count > 0 else '❌ Failed'}")
-        logger.info(
-            f"SUCCESS: Gross margin analysis report: {'✅ Generated' if gross_margin_report_count > 0 else '❌ Failed'}")
+        safe_log(logger.info,
+                 f"SUCCESS: Material variance report: {'Generated' if material_report_count > 0 else 'Failed'}")
+        safe_log(logger.info,
+                 f"SUCCESS: Beverage variance report: {'Generated' if beverage_report_count > 0 else 'Failed'}")
+        safe_log(logger.info,
+                 f"SUCCESS: Gross margin analysis report: {'Generated' if gross_margin_report_count > 0 else 'Failed'}")
 
         if self.results['errors']:
             logger.warning(

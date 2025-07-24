@@ -250,27 +250,39 @@ def extract_dish_materials(df: pd.DataFrame) -> List[Dict]:
             skipped_count += 1
             continue
 
-        # Extract standard quantity
-        standard_quantity = row['物料单位'] if pd.notna(row['物料单位']) else None
-        if standard_quantity is None or standard_quantity == 0:
-            print(
-                f"⚠️  Row {index + 1}: Missing or zero quantity for dish {dish_code}, material {material_number}")
-            skipped_count += 1
-            continue
+        # Extract standard quantity (物料单位 will now be unit_conversion_rate)
+        # For backward compatibility, if 物料单位 exists, use it as unit_conversion_rate
+        # Look for standard_quantity in other potential columns like "标准用量" or "出品分量"
+        standard_quantity = None
+        unit_conversion_rate = 1.0  # Default conversion rate
 
-        # Convert to float and validate
-        try:
-            standard_quantity = float(standard_quantity)
-            if standard_quantity <= 0:
-                print(
-                    f"⚠️  Row {index + 1}: Invalid quantity {standard_quantity} for dish {dish_code}, material {material_number}")
-                skipped_count += 1
-                continue
-        except (ValueError, TypeError):
+        # Try to get standard quantity from various possible columns
+        for col_name in ['标准用量', '出品分量(kg)', '出品分量', '菜品用量', '物料用量']:
+            if col_name in df.columns and pd.notna(row[col_name]):
+                try:
+                    standard_quantity = float(row[col_name])
+                    break
+                except (ValueError, TypeError):
+                    continue
+
+        # If no standard quantity found in above columns, use a default value of 1.0
+        if standard_quantity is None:
+            standard_quantity = 1.0
+
+        # Extract unit conversion rate from 物料单位 (this is the new requirement)
+        if '物料单位' in df.columns and pd.notna(row['物料单位']):
+            try:
+                unit_conversion_rate = float(row['物料单位'])
+                if unit_conversion_rate <= 0:
+                    unit_conversion_rate = 1.0  # Default if invalid
+            except (ValueError, TypeError):
+                unit_conversion_rate = 1.0  # Default if conversion fails
+
+        # Validate standard quantity
+        if standard_quantity <= 0:
             print(
-                f"⚠️  Row {index + 1}: Cannot convert quantity '{standard_quantity}' to number")
-            skipped_count += 1
-            continue
+                f"⚠️  Row {index + 1}: Invalid standard quantity {standard_quantity} for dish {dish_code}, material {material_number}, using default 1.0")
+            standard_quantity = 1.0
 
         # Extract loss rate from column O "损耗" or use default 1.0
         loss_rate = 1.0  # Default loss rate (no loss)
@@ -293,6 +305,7 @@ def extract_dish_materials(df: pd.DataFrame) -> List[Dict]:
             'material_number': material_number,
             'standard_quantity': standard_quantity,
             'loss_rate': loss_rate,
+            'unit_conversion_rate': unit_conversion_rate,
             'dish_name': row['菜品名称'] if pd.notna(row['菜品名称']) else '',
             'material_description': row['物料描述'] if pd.notna(row['物料描述']) else ''
         })
@@ -333,14 +346,15 @@ def generate_sql_file(dish_materials: List[Dict], output_file: str) -> bool:
 
                 # Create comment with readable info
                 f.write(
-                    f"-- Dish: {dm['dish_name']} ({dm['dish_code']}) -> Material: {dm['material_description']} ({dm['material_number']}) -> Loss Rate: {dm['loss_rate']}\n")
+                    f"-- Dish: {dm['dish_name']} ({dm['dish_code']}) -> Material: {dm['material_description']} ({dm['material_number']}) -> Loss Rate: {dm['loss_rate']} -> Unit Conversion Rate: {dm['unit_conversion_rate']}\n")
 
-                sql = f"""INSERT INTO dish_material (dish_id, material_id, standard_quantity, loss_rate)
+                sql = f"""INSERT INTO dish_material (dish_id, material_id, standard_quantity, loss_rate, unit_conversion_rate)
 SELECT 
     d.id as dish_id,
     m.id as material_id,
     {standard_quantity},
-    {dm['loss_rate']}
+    {dm['loss_rate']},
+    {dm['unit_conversion_rate']}
 FROM dish d
 CROSS JOIN material m
 WHERE d.full_code = {dish_code}
@@ -350,6 +364,7 @@ ON CONFLICT (dish_id, material_id)
 DO UPDATE SET
     standard_quantity = EXCLUDED.standard_quantity,
     loss_rate = EXCLUDED.loss_rate,
+    unit_conversion_rate = EXCLUDED.unit_conversion_rate,
     updated_at = CURRENT_TIMESTAMP;
 
 """
@@ -431,12 +446,13 @@ def insert_to_database(dish_materials: List[Dict], is_test: bool = False) -> boo
 
                         # Insert dish-material relationship
                         query = """
-                        INSERT INTO dish_material (dish_id, material_id, standard_quantity, loss_rate)
-                        VALUES (%s, %s, %s, %s)
+                        INSERT INTO dish_material (dish_id, material_id, standard_quantity, loss_rate, unit_conversion_rate)
+                        VALUES (%s, %s, %s, %s, %s)
                         ON CONFLICT (dish_id, material_id)
                         DO UPDATE SET
                             standard_quantity = EXCLUDED.standard_quantity,
                             loss_rate = EXCLUDED.loss_rate,
+                            unit_conversion_rate = EXCLUDED.unit_conversion_rate,
                             updated_at = CURRENT_TIMESTAMP
                         RETURNING (xmax = 0) AS inserted;
                         """
@@ -445,7 +461,8 @@ def insert_to_database(dish_materials: List[Dict], is_test: bool = False) -> boo
                             dish_id,
                             material_id,
                             dm['standard_quantity'],
-                            dm['loss_rate']
+                            dm['loss_rate'],
+                            dm['unit_conversion_rate']
                         ))
 
                         result = cursor.fetchone()

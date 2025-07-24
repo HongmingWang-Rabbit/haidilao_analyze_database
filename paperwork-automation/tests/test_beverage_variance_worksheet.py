@@ -389,7 +389,7 @@ class TestBeverageVarianceGenerator(unittest.TestCase):
 
             # Check variance rate formula (Column L)
             rate_formula = worksheet.cell(row=data_row, column=12).value
-            expected_rate_formula = f"=IF((G{data_row}+H{data_row})=0,IF(K{data_row}=0,0,100),ABS(K{data_row}/(G{data_row}+H{data_row}))*100)"
+            expected_rate_formula = f"=IF(I{data_row}=0,IF(K{data_row}=0,0,100),ABS(K{data_row}/I{data_row})*100)"
             self.assertEqual(rate_formula, expected_rate_formula)
 
             # Check net difference formula (Column P)

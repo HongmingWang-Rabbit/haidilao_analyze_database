@@ -716,13 +716,13 @@ class ReportDataProvider:
                 -- Regular dish sales theoretical usage (now aggregated across all sales modes)
                 COALESCE(
                     SUM((COALESCE(ads.total_sale_amount, 0) - COALESCE(ads.total_return_amount, 0)) * 
-                        COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)), 
+                        COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0) / COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1.0)), 
                     0
                 ) as regular_theoretical_usage,
                 -- Combo dish sales theoretical usage
                 COALESCE(
                     SUM(COALESCE(mcds.sale_amount, 0) * 
-                        COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)), 
+                        COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0) / COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1.0)), 
                     0
                 ) as combo_theoretical_usage
             FROM dish d

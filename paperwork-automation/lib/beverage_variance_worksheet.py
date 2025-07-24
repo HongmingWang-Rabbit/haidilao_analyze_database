@@ -125,8 +125,9 @@ class BeverageVarianceGenerator:
             variance_cell.number_format = '#,##0.0000'
             variance_cell.border = border
 
-            # L: 差异率 (Variance Rate) - Excel formula: = ABS(K/(G+H))*100 with error handling
-            rate_formula = f"=IF((G{current_row}+H{current_row})=0,IF(K{current_row}=0,0,100),ABS(K{current_row}/(G{current_row}+H{current_row}))*100)"
+            # L: 差异率 (Variance Rate) - Excel formula: = ABS(K/I)*100 with error handling
+            # Use system record (I) for percentage calculation
+            rate_formula = f"=IF(I{current_row}=0,IF(K{current_row}=0,0,100),ABS(K{current_row}/I{current_row})*100)"
             rate_cell = worksheet.cell(
                 row=current_row, column=12, value=rate_formula)
             rate_cell.number_format = '0.00"%"'
@@ -282,14 +283,48 @@ class BeverageVarianceGenerator:
         current_row += 4
         return current_row + 1
 
-    def get_beverage_variance_data(self, year: int, month: int):
-        """Get detailed beverage variance data matching material variance analysis structure"""
+    def check_unit_conversion_rate_column_exists(self):
+        """Check if unit_conversion_rate column exists in dish_material table"""
         try:
             with self.db_manager.get_connection() as conn:
                 cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'dish_material' 
+                    AND column_name = 'unit_conversion_rate'
+                """)
+                result = cursor.fetchone()
+                return result is not None
+        except Exception as e:
+            print(f"Error checking unit_conversion_rate column: {e}")
+            return False
 
-                # Working query from the direct test
-                query = """
+    def get_beverage_variance_data(self, year: int, month: int):
+        """Get detailed beverage variance data matching material variance analysis structure"""
+        try:
+            # Check if unit_conversion_rate column exists
+            has_conversion_rate = self.check_unit_conversion_rate_column_exists()
+
+            if not has_conversion_rate:
+                print(
+                    "⚠️  unit_conversion_rate column not found in beverage analysis. Using fallback calculation without conversion.")
+                print(
+                    "💡 To enable unit conversion rates, run: Database Management → Option 7 (Migration)")
+
+            with self.db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # Choose calculation SQL based on whether unit_conversion_rate column exists
+                if has_conversion_rate:
+                    theoretical_calc = "SUM((COALESCE(ads.total_sale_amount, 0) - COALESCE(ads.total_return_amount, 0)) * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0) / COALESCE(dm.unit_conversion_rate, 1.0)) as theoretical_total"
+                    combo_calc = "SUM(COALESCE(mcds.sale_amount, 0) * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0) / COALESCE(dm.unit_conversion_rate, 1.0)) as combo_total"
+                else:
+                    theoretical_calc = "SUM((COALESCE(ads.total_sale_amount, 0) - COALESCE(ads.total_return_amount, 0)) * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as theoretical_total"
+                    combo_calc = "SUM(COALESCE(mcds.sale_amount, 0) * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as combo_total"
+
+                # Working query with dynamic calculation
+                query = f"""
                 WITH beverage_materials AS (
                     SELECT DISTINCT m.id as material_id
                     FROM material m
@@ -314,8 +349,7 @@ class BeverageVarianceGenerator:
                     SELECT 
                         m.id as material_id,
                         ads.store_id,
-                        SUM((COALESCE(ads.total_sale_amount, 0) - COALESCE(ads.total_return_amount, 0)) * 
-                            COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as theoretical_total
+                        {theoretical_calc}
                     FROM material m
                     JOIN beverage_materials bm ON m.id = bm.material_id
                     JOIN dish_material dm ON m.id = dm.material_id
@@ -328,8 +362,7 @@ class BeverageVarianceGenerator:
                     SELECT 
                         m.id as material_id,
                         mcds.store_id,
-                        SUM(COALESCE(mcds.sale_amount, 0) * 
-                            COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as combo_total
+                        {combo_calc}
                     FROM material m
                     JOIN beverage_materials bm ON m.id = bm.material_id
                     JOIN dish_material dm ON m.id = dm.material_id
@@ -414,11 +447,11 @@ class BeverageVarianceGenerator:
                     variance_amount = system_record - \
                         (theoretical_usage + combo_usage + inventory_count)
 
-                    # Calculate variance percentage
-                    combined_theoretical = theoretical_usage + combo_usage
-                    if combined_theoretical > 0:
+                    # Calculate variance percentage using system record as denominator
+                    # Formula: abs(variance_amount) / system_record * 100
+                    if system_record > 0:
                         variance_percent = abs(
-                            variance_amount) / combined_theoretical * 100
+                            variance_amount) / system_record * 100
                     elif variance_amount != 0:
                         variance_percent = 100.0
                     else:

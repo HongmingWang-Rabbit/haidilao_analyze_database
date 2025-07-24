@@ -171,6 +171,7 @@ class MonthlyDishesWorksheetGenerator:
                     m.unit as material_unit,
                     m.package_spec,
                     dm.standard_quantity,
+                    dm.unit_conversion_rate,
                     -- Get current price for first store (if available)
                     dph.price as current_price,
                     dph.currency,
@@ -416,9 +417,36 @@ class MonthlyDishesWorksheetGenerator:
         for row in range(data_start_row, max_row + 1):
             ws.row_dimensions[row].height = None  # Auto height
 
+    def check_unit_conversion_rate_column_exists(self, db_manager):
+        """Check if unit_conversion_rate column exists in dish_material table"""
+        try:
+            with db_manager.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'dish_material' 
+                    AND column_name = 'unit_conversion_rate'
+                """)
+                result = cursor.fetchone()
+                return result is not None
+        except Exception as e:
+            print(f"Error checking unit_conversion_rate column: {e}")
+            return False
+
     def get_material_variance_data(self, data_provider, year: int, month: int):
         """Calculate material usage variance between theoretical and system record"""
         try:
+            # Check if unit_conversion_rate column exists
+            has_conversion_rate = self.check_unit_conversion_rate_column_exists(
+                data_provider.db_manager)
+
+            if not has_conversion_rate:
+                print(
+                    "⚠️  unit_conversion_rate column not found. Using fallback calculation without conversion.")
+                print(
+                    "💡 To enable unit conversion rates, run: Database Management → Option 7 (Migration)")
+
             with data_provider.db_manager.get_connection() as conn:
                 cursor = conn.cursor()
 
@@ -452,8 +480,14 @@ class MonthlyDishesWorksheetGenerator:
                         'variance_status': '正常'
                     }]
 
-                # Get regular theoretical usage (dish sales * standard_quantity * loss_rate)
-                regular_theoretical_sql = """
+                # Choose SQL based on whether unit_conversion_rate column exists
+                if has_conversion_rate:
+                    calculation_sql = "SUM(ds.net_sales * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0) / COALESCE(dm.unit_conversion_rate, 1.0)) as theoretical_total"
+                else:
+                    calculation_sql = "SUM(ds.net_sales * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as theoretical_total"
+
+                # Get regular theoretical usage (dish sales * standard_quantity * loss_rate [/ unit_conversion_rate])
+                regular_theoretical_sql = f"""
                 WITH aggregated_dish_sales AS (
                     SELECT 
                         dish_id,
@@ -485,7 +519,7 @@ class MonthlyDishesWorksheetGenerator:
                         m.package_spec,
                         ds.store_id,
                         ds.store_name,
-                        SUM(ds.net_sales * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as theoretical_total
+                        {calculation_sql}
                     FROM material m
                     LEFT JOIN dish_material dm ON m.id = dm.material_id
                     LEFT JOIN dish_sales ds ON dm.dish_id = ds.dish_id
@@ -501,8 +535,14 @@ class MonthlyDishesWorksheetGenerator:
                                (year, month, material_ids))
                 regular_theoretical_data = cursor.fetchall()
 
-                # Get combo usage (combo dish sales * standard_quantity * loss_rate)
-                combo_usage_sql = """
+                # Choose combo calculation SQL based on whether unit_conversion_rate column exists
+                if has_conversion_rate:
+                    combo_calculation_sql = "SUM(cds.net_sales * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0) / COALESCE(dm.unit_conversion_rate, 1.0)) as combo_total"
+                else:
+                    combo_calculation_sql = "SUM(cds.net_sales * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as combo_total"
+
+                # Get combo usage (combo dish sales * standard_quantity * loss_rate [/ unit_conversion_rate])
+                combo_usage_sql = f"""
                 WITH combo_dish_sales AS (
                     SELECT 
                         d.id as dish_id,
@@ -525,7 +565,7 @@ class MonthlyDishesWorksheetGenerator:
                         m.package_spec,
                         cds.store_id,
                         cds.store_name,
-                        SUM(cds.net_sales * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as combo_total
+                        {combo_calculation_sql}
                     FROM material m
                     LEFT JOIN dish_material dm ON m.id = dm.material_id
                     LEFT JOIN combo_dish_sales cds ON dm.dish_id = cds.dish_id
@@ -642,10 +682,11 @@ class MonthlyDishesWorksheetGenerator:
                     variance_amount = system_record - \
                         (theoretical_usage + inventory_count)
 
-                    # Calculate variance percentage to match Excel formula logic
-                    if theoretical_usage > 0:
+                    # Calculate variance percentage using system record as denominator
+                    # Formula: abs(variance_amount) / system_record * 100
+                    if system_record > 0:
                         variance_percent = abs(
-                            variance_amount) / theoretical_usage * 100
+                            variance_amount) / system_record * 100
                     elif variance_amount != 0:
                         variance_percent = 100.0
                     else:
@@ -804,9 +845,9 @@ class MonthlyDishesWorksheetGenerator:
                 row=current_row, column=11, value=variance_formula)
             variance_cell.number_format = '#,##0.0000'
 
-            # L: 差异率 (Variance Rate) - Excel formula: = ABS(K/(G+H))*100 with error handling
-            # Use combined theoretical usage (G+H) for percentage calculation
-            rate_formula = f"=IF((G{current_row}+H{current_row})=0,IF(K{current_row}=0,0,100),ABS(K{current_row}/(G{current_row}+H{current_row}))*100)"
+            # L: 差异率 (Variance Rate) - Excel formula: = ABS(K/I)*100 with error handling
+            # Use system record (I) for percentage calculation
+            rate_formula = f"=IF(I{current_row}=0,IF(K{current_row}=0,0,100),ABS(K{current_row}/I{current_row})*100)"
             rate_cell = ws.cell(row=current_row, column=12, value=rate_formula)
             # Fixed percentage format with exactly 2 decimal places
             rate_cell.number_format = '0.00"%"'

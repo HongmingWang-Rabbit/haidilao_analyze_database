@@ -163,13 +163,14 @@ When multiple products share the same material number:
 - Test classes: `Test{ClassName}`
 - Test methods: `test_{functionality}_{scenario}`
 
-### Current Working Test Modules (62 tests total)
+### Current Working Test Modules (62+ tests total)
 
 - `test_business_insight_worksheet.py` (9 tests)
 - `test_yearly_comparison_worksheet.py` (21 tests)
 - `test_time_segment_worksheet.py` (9 tests)
 - `test_extract_all.py` (18 tests)
 - `test_validation_against_actual_data.py` (5 tests)
+- `test_unit_conversion_rate.py` (8 tests) **NEW**
 
 ### Implemented Features
 
@@ -238,6 +239,18 @@ When multiple products share the same material number:
   - MTD vs same period last year comparisons for accurate trending
   - Integrated with existing database queries and report generation workflow
   - Brings daily report to 6 comprehensive worksheets total
+
+- **Unit Conversion Rate System** (`dish_material.unit_conversion_rate`)
+  - **NEW**: Added `unit_conversion_rate` column to `dish_material` table
+  - Extracts conversion rate from "物料单位" field during monthly automation
+  - Defaults to 1.0 if "物料单位" is blank or invalid
+  - Applied to material report calculations: 理论用量 and 套餐用量 divided by conversion rate
+  - Example: dish 1060062 with material 1500882 has conversion rate 0.354
+  - Updated extraction scripts: `extract-dish-materials.py` and `complete_monthly_automation_new.py`
+  - Updated report generators: `monthly_dishes_worksheet.py`, `beverage_variance_worksheet.py`, `database_queries.py`
+  - Migration script: `add_unit_conversion_rate_column.sql`
+  - Comprehensive test coverage: `test_unit_conversion_rate.py`
+  - Integrated in automation menu as option 7 (Database Operations)
 
 ## 📋 MANDATORY UPDATE REQUIREMENTS
 

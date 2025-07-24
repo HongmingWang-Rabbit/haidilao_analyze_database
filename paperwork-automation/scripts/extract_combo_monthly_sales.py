@@ -10,9 +10,21 @@ import sys
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Optional
+import re
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+
+def safe_print(message):
+    """Print message safely, handling Unicode encoding errors on Windows"""
+    try:
+        print(message)
+    except UnicodeEncodeError:
+        # Remove emojis and special Unicode characters for Windows console
+        clean_message = re.sub(r'[^\x00-\x7F]+', '', message)
+        print(clean_message)
+
 
 # Try to import database utilities
 try:
@@ -20,7 +32,8 @@ try:
     def get_database_manager(is_test=False): return DatabaseManager(
         DatabaseConfig(is_test=is_test))
 except ImportError:
-    print("⚠️  Database utilities not available. SQL file generation only.")
+    safe_print(
+        "WARNING: Database utilities not available. SQL file generation only.")
     get_database_manager = None
 
 
@@ -28,7 +41,7 @@ def extract_combo_data_from_excel(file_path: str, quiet: bool = False) -> Dict[s
     """Extract combo and combo dish sales data from Excel file"""
 
     if not quiet:
-        print(f"📊 Extracting combo data from: {file_path}")
+        safe_print(f"Extracting combo data from: {file_path}")
 
     try:
         # Read Excel file and get sheet names
@@ -41,7 +54,7 @@ def extract_combo_data_from_excel(file_path: str, quiet: bool = False) -> Dict[s
         target_sheet = "套餐销售汇总"
 
         if target_sheet not in excel_file.sheet_names:
-            print(f"❌ Target sheet '{target_sheet}' not found!")
+            safe_print(f"ERROR: Target sheet '{target_sheet}' not found!")
             print(f"Available sheets: {excel_file.sheet_names}")
             return {"combos": [], "combo_dish_sales": []}
 
@@ -72,7 +85,7 @@ def extract_combo_data_from_excel(file_path: str, quiet: bool = False) -> Dict[s
 
         for col in required_columns:
             if col not in df.columns:
-                print(f"❌ Required column '{col}' not found")
+                safe_print(f"ERROR: Required column '{col}' not found")
                 return {"combos": [], "combo_dish_sales": []}
 
         # Extract unique combos
@@ -94,7 +107,7 @@ def extract_combo_data_from_excel(file_path: str, quiet: bool = False) -> Dict[s
                 })
 
         if not quiet:
-            print(f"✅ Extracted {len(combos)} unique combos")
+            safe_print(f"SUCCESS: Extracted {len(combos)} unique combos")
 
         # Extract combo dish sales
         combo_dish_sales = []
@@ -145,8 +158,8 @@ def extract_combo_data_from_excel(file_path: str, quiet: bool = False) -> Dict[s
             })
 
         if not quiet:
-            print(
-                f"✅ Extracted {len(combo_dish_sales)} combo dish sales records")
+            safe_print(
+                f"SUCCESS: Extracted {len(combo_dish_sales)} combo dish sales records")
 
         return {
             "combos": combos,
@@ -154,7 +167,7 @@ def extract_combo_data_from_excel(file_path: str, quiet: bool = False) -> Dict[s
         }
 
     except Exception as e:
-        print(f"❌ Error extracting combo data: {e}")
+        safe_print(f"ERROR: Error extracting combo data: {e}")
         import traceback
         traceback.print_exc()
         return {"combos": [], "combo_dish_sales": []}
@@ -232,11 +245,11 @@ DO UPDATE SET
             f.write(
                 f"-- {len(combos)} combos and {len(combo_dish_sales)} combo dish sales processed\n")
 
-        print(f"✅ SQL file generated successfully: {output_file}")
+        safe_print(f"SUCCESS: SQL file generated successfully: {output_file}")
         return True
 
     except Exception as e:
-        print(f"❌ Error generating SQL file: {e}")
+        safe_print(f"ERROR: Error generating SQL file: {e}")
         return False
 
 
@@ -245,11 +258,11 @@ def insert_to_database(data: Dict[str, List[Dict]], is_test: bool = False) -> bo
 
     try:
         if get_database_manager is None:
-            print("❌ Database connection module not available")
+            safe_print("ERROR: Database connection module not available")
             return False
 
-        print(
-            f"🗄️  Connecting to {'test' if is_test else 'production'} database...")
+        safe_print(
+            f"Connecting to {'test' if is_test else 'production'} database...")
 
         combos = data["combos"]
         combo_dish_sales = data["combo_dish_sales"]
@@ -260,7 +273,7 @@ def insert_to_database(data: Dict[str, List[Dict]], is_test: bool = False) -> bo
             with conn.cursor() as cursor:
 
                 # Insert combos
-                print(f"📊 Inserting {len(combos)} combos...")
+                safe_print(f"Inserting {len(combos)} combos...")
                 combo_inserted = 0
                 combo_updated = 0
 
@@ -286,12 +299,12 @@ def insert_to_database(data: Dict[str, List[Dict]], is_test: bool = False) -> bo
 
                     except Exception as e:
                         print(
-                            f"❌ Error processing combo {combo['combo_code']}: {e}")
+                            f"ERROR: Error processing combo {combo['combo_code']}: {e}")
                         continue
 
                 # Insert combo dish sales
-                print(
-                    f"📊 Inserting {len(combo_dish_sales)} combo dish sales...")
+                safe_print(
+                    f"Inserting {len(combo_dish_sales)} combo dish sales...")
                 sales_inserted = 0
                 sales_updated = 0
                 sales_errors = 0
@@ -303,8 +316,8 @@ def insert_to_database(data: Dict[str, List[Dict]], is_test: bool = False) -> bo
                             "SELECT id FROM combo WHERE combo_code = %s", (sale['combo_code'],))
                         combo_result = cursor.fetchone()
                         if not combo_result:
-                            print(
-                                f"⚠️  Warning: Combo not found - code: {sale['combo_code']}")
+                            safe_print(
+                                f"Warning: Combo not found - code: {sale['combo_code']}")
                             sales_errors += 1
                             continue
 
@@ -315,8 +328,8 @@ def insert_to_database(data: Dict[str, List[Dict]], is_test: bool = False) -> bo
                             "SELECT id FROM dish WHERE full_code = %s", (sale['dish_code'],))
                         dish_result = cursor.fetchone()
                         if not dish_result:
-                            print(
-                                f"⚠️  Warning: Dish not found - code: {sale['dish_code']}")
+                            safe_print(
+                                f"Warning: Dish not found - code: {sale['dish_code']}")
                             sales_errors += 1
                             continue
 
@@ -350,21 +363,21 @@ def insert_to_database(data: Dict[str, List[Dict]], is_test: bool = False) -> bo
 
                     except Exception as e:
                         print(
-                            f"❌ Error processing combo dish sale {sale['combo_code']}-{sale['dish_code']}: {e}")
+                            f"ERROR: Error processing combo dish sale {sale['combo_code']}-{sale['dish_code']}: {e}")
                         sales_errors += 1
                         continue
 
                 # Commit transaction
                 conn.commit()
 
-                print(f"✅ Database insertion completed:")
-                print(
-                    f"   📊 Combos - Inserted: {combo_inserted}, Updated: {combo_updated}")
-                print(
-                    f"   📊 Combo dish sales - Inserted: {sales_inserted}, Updated: {sales_updated}")
+                safe_print(f"SUCCESS: Database insertion completed:")
+                safe_print(
+                    f"   Combos - Inserted: {combo_inserted}, Updated: {combo_updated}")
+                safe_print(
+                    f"   Combo dish sales - Inserted: {sales_inserted}, Updated: {sales_updated}")
                 if sales_errors > 0:
-                    print(
-                        f"   ❌ Errors: {sales_errors} combo dish sales failed")
+                    safe_print(
+                        f"   Errors: {sales_errors} combo dish sales failed")
 
                 # Consider it successful if we processed most data successfully
                 total_processed = sales_inserted + sales_updated + sales_errors
@@ -373,7 +386,7 @@ def insert_to_database(data: Dict[str, List[Dict]], is_test: bool = False) -> bo
                 return success_rate >= 0.8  # 80% success rate threshold
 
     except Exception as e:
-        print(f"❌ Database insertion failed: {e}")
+        safe_print(f"ERROR: Database insertion failed: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -398,14 +411,14 @@ def main():
 
     # Validate input file
     if not Path(args.excel_file).exists():
-        print(f"❌ File not found: {args.excel_file}")
+        safe_print(f"ERROR: File not found: {args.excel_file}")
         sys.exit(1)
 
     # Extract combo data
     data = extract_combo_data_from_excel(args.excel_file, quiet=args.quiet)
 
     if not data["combos"] and not data["combo_dish_sales"]:
-        print("❌ No combo data extracted")
+        safe_print("ERROR: No combo data extracted")
         sys.exit(1)
 
     success = True
@@ -420,10 +433,11 @@ def main():
         success = insert_to_database(data, is_test=args.test_db)
 
     if success:
-        print("🎉 Combo monthly sales extraction completed successfully!")
+        safe_print("Combo monthly sales extraction completed successfully!")
         sys.exit(0)
     else:
-        print("⚠️  Extraction completed with some errors but most data processed")
+        safe_print(
+            "Extraction completed with some errors but most data processed")
         sys.exit(0)  # Don't fail completely for partial success
 
 

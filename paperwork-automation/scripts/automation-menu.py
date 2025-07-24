@@ -901,9 +901,11 @@ class AutomationMenu:
                 ("4", "Migrate: Add Loss Rate Column", "migrate_loss_rate"),
                 ("5", "Migrate: Add Material Type Tables", "migrate_material_types"),
                 ("6", "Migrate: Add Combo Tables", "migrate_combo_tables"),
-                ("7", "Insert Constant Data", "insert_const"),
-                ("8", "Insert Monthly Targets", "insert_targets"),
-                ("9", "Verify Database Structure", "verify_structure"),
+                ("7", "Migrate: Add Unit Conversion Rate Column",
+                 "migrate_unit_conversion_rate"),
+                ("8", "Insert Constant Data", "insert_const"),
+                ("9", "Insert Monthly Targets", "insert_targets"),
+                ("a", "Verify Database Structure", "verify_structure"),
                 ("0", "Show Database Status", "show_status"),
                 ("b", "← Back to Main Menu", "back")
             ]
@@ -927,10 +929,12 @@ class AutomationMenu:
             elif choice == '6':
                 self.run_combo_tables_migration()
             elif choice == '7':
-                self.insert_constant_data()
+                self.run_unit_conversion_rate_migration()
             elif choice == '8':
-                self.insert_monthly_targets()
+                self.insert_constant_data()
             elif choice == '9':
+                self.insert_monthly_targets()
+            elif choice == 'a':
                 self.verify_database_structure()
             elif choice == '0':
                 self.show_database_status()
@@ -1830,6 +1834,62 @@ except Exception as e:
 
         command = f'{self.python_cmd} -m scripts.migrate_add_combo_tables'
         self.run_command(command, "Add Combo Tables Migration")
+
+    def run_unit_conversion_rate_migration(self):
+        """Run database migration to add unit_conversion_rate column to dish_material table"""
+        print("🔧 DATABASE MIGRATION: Add Unit Conversion Rate Column")
+        print("=" * 60)
+        print("This will add unit conversion rate support to the dish_material table:")
+        print("✅ Add unit_conversion_rate column to dish_material table")
+        print("✅ Set default value of 1.0 for existing records")
+        print("✅ Update extraction scripts to capture unit conversion from '物料单位' field")
+        print("✅ Update material report calculations to apply conversion")
+        print()
+        print("📋 Example usage:")
+        print("   - Dish 1060062 with material 1500882 has conversion rate 0.354")
+        print("   - 理论用量 and 套餐用量 will be divided by conversion rate")
+        print("   - If '物料单位' is blank, defaults to 1.0 (no conversion)")
+        print()
+        print("⚠️  This migration is safe and will not affect existing data.")
+        print("    Existing records will get default conversion rate of 1.0.")
+        print()
+
+        confirm = input("Run migration? (y/N): ").lower()
+        if confirm != 'y':
+            return
+
+        # Run the migration SQL script directly
+        migration_file = self.project_root / "haidilao-database-querys" / \
+            "add_unit_conversion_rate_column.sql"
+
+        if not migration_file.exists():
+            print(f"❌ Migration file not found: {migration_file}")
+            input("Press Enter to continue...")
+            return
+
+        # Use psql command to run the migration
+        db_host = os.getenv('DB_HOST', 'localhost')
+        db_user = os.getenv('DB_USER', 'hongming')
+        db_password = os.getenv('DB_PASSWORD', '8894')
+        db_name = os.getenv('DB_NAME', 'haidilao-paperwork')
+
+        command = f'PGPASSWORD={db_password} psql -h {db_host} -U {db_user} -d {db_name} -f "{migration_file}"'
+
+        success = self.run_command(
+            command, "Add Unit Conversion Rate Column Migration")
+
+        if success:
+            print()
+            print("✅ Migration completed successfully!")
+            print("💡 Next steps:")
+            print("   1. Run dish-material extraction to populate unit conversion rates")
+            print("   2. Generate material reports to see conversion applied")
+            print(
+                "   3. Run tests to verify functionality: python3 -m unittest tests.test_unit_conversion_rate")
+        else:
+            print("❌ Migration failed. Please check the error output above.")
+
+        input("Press Enter to continue...")
 
     def insert_constant_data(self):
         """Insert constant data"""

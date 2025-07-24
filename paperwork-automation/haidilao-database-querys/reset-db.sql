@@ -224,6 +224,7 @@ CREATE TABLE dish_material (
     material_id INTEGER REFERENCES material(id), -- 外键：物料
     standard_quantity NUMERIC(12, 6) NOT NULL, -- 标准用量
     loss_rate NUMERIC(5, 2) DEFAULT 1.0, -- 损耗率 (默认1.0 = 无损耗)
+    unit_conversion_rate NUMERIC(12, 6) DEFAULT 1.0 NOT NULL, -- 单位转换率 (从物料单位字段提取，默认1.0)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(dish_id, material_id)       -- 同一菜品同一物料只能有一个配方

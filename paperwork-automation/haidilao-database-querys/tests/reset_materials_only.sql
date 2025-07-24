@@ -95,6 +95,7 @@ CREATE TABLE dish_material (
     material_id INTEGER NOT NULL REFERENCES material(id),
     standard_quantity DECIMAL(10,4) NOT NULL DEFAULT 1.0,
     loss_rate DECIMAL(5,4) DEFAULT 1.0,
+    unit_conversion_rate DECIMAL(12,6) DEFAULT 1.0 NOT NULL,
     unit VARCHAR(50),
     notes TEXT,
     is_active BOOLEAN DEFAULT TRUE,
