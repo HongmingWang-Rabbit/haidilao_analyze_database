@@ -38,6 +38,8 @@ data/**
 output/**
 history/**/*
 history/**
+input/**/*
+input/**
 
 # === DEVELOPMENT ===
 .DS_Store                 # macOS system files

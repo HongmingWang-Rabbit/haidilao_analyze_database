@@ -327,6 +327,57 @@ class AutomationMenu:
         print("✅ All required input files found!")
         return True
 
+    def run_bank_processing(self):
+        """Run daily bank transaction processing"""
+        print("🏦 DAILY BANK TRANSACTION PROCESSING")
+        print("=" * 50)
+        print("This will process all bank files and classify transactions")
+        print("according to our 28 transaction types.")
+        print()
+
+        # Get target date from user
+        print("📅 Enter target date for processing:")
+        print("Format: YYYY-MM-DD (e.g., 2025-07-23)")
+        print("Press Enter for today's date")
+
+        date_input = input("\nTarget date: ").strip()
+
+        if not date_input:
+            from datetime import datetime
+            target_date = datetime.now().strftime('%Y-%m-%d')
+        else:
+            try:
+                from datetime import datetime
+                datetime.strptime(date_input, '%Y-%m-%d')
+                target_date = date_input
+            except ValueError:
+                print("❌ Invalid date format. Please use YYYY-MM-DD format.")
+                input("Press Enter to continue...")
+                return
+
+        print(f"📅 Processing bank transactions for: {target_date}")
+
+        # Confirm before processing
+        confirm = input("\nStart bank transaction processing? (y/N): ").lower()
+        if confirm != 'y':
+            print("❌ Processing cancelled.")
+            input("Press Enter to continue...")
+            return
+
+        # Run the bank processing command
+        command = f'python -m scripts.process_bank_transactions --target-date {target_date}'
+        print(f"🚀 Running: {command}")
+
+        result = self.run_command(command, "Bank Transaction Processing")
+
+        if result:
+            print("✅ Bank transaction processing completed successfully!")
+            print("📁 Check the output folder for processed results.")
+        else:
+            print("❌ Bank transaction processing failed.")
+
+        input("Press Enter to continue...")
+
     def run_complete_daily_automation(self):
         """Run complete daily automation workflow"""
         from datetime import datetime
@@ -662,6 +713,7 @@ class AutomationMenu:
                  "batch_material_prices"),
                 ("h", "Historical Data Extraction (All Months)",
                  "historical_data"),
+                ("t", "🏦 Bank Transaction Processing (Daily)", "bank_transactions"),
                 ("b", "← Back to Main Menu", "back")
             ]
 
@@ -704,6 +756,8 @@ class AutomationMenu:
                 self.extract_material_prices_batch()
             elif choice == 'h':
                 self.extract_historical_data()
+            elif choice == 't':
+                self.process_bank_transactions()
             else:
                 print("❌ Invalid choice. Please try again.")
                 input("Press Enter to continue...")
@@ -1014,26 +1068,27 @@ class AutomationMenu:
 
             # Main workflow options
             workflow_options = [
-                ("1", "🌅 Complete Daily Automation", "daily_automation"),
-                ("2", "📅 Complete Monthly Automation", "monthly_automation"),
+                ("1", "🏦 Daily Bank Transaction Processing", "bank_processing"),
+                ("2", "🌅 Complete Daily Automation", "daily_automation"),
+                ("3", "📅 Complete Monthly Automation", "monthly_automation"),
             ]
             self.print_menu_section(
                 "🚀 COMPLETE AUTOMATION WORKFLOWS", workflow_options)
 
             # Single operation options
             single_options = [
-                ("3", "📤 Single Extraction", "single_extraction"),
-                ("4", "📊 Single Report Generation", "single_generate"),
-                ("5", "🔄 Single Conversion", "single_conversion"),
-                ("6", "🕷️  Single Web Scraping", "single_scraping"),
+                ("4", "📤 Single Extraction", "single_extraction"),
+                ("5", "📊 Single Report Generation", "single_generate"),
+                ("6", "🔄 Single Conversion", "single_conversion"),
+                ("7", "🕷️  Single Web Scraping", "single_scraping"),
             ]
             self.print_menu_section("🔧 SINGLE OPERATIONS", single_options)
 
             # System options
             system_options = [
-                ("7", "🧪 Testing", "testing"),
-                ("8", "🗄️  Database Management", "database"),
-                ("9", "⚙️  System", "system"),
+                ("8", "🧪 Testing", "testing"),
+                ("9", "🗄️  Database Management", "database"),
+                ("10", "⚙️  System", "system"),
                 ("q", "🚪 Quit", "quit")
             ]
             self.print_menu_section("🛠️  SYSTEM & MAINTENANCE", system_options)
@@ -1041,22 +1096,24 @@ class AutomationMenu:
             choice = input("Enter your choice: ").lower().strip()
 
             if choice == '1':
-                self.run_complete_daily_automation()
+                self.run_bank_processing()
             elif choice == '2':
-                self.run_complete_monthly_automation()
+                self.run_complete_daily_automation()
             elif choice == '3':
-                self.show_single_extraction_menu()
+                self.run_complete_monthly_automation()
             elif choice == '4':
-                self.show_single_generate_menu()
+                self.show_single_extraction_menu()
             elif choice == '5':
-                self.show_single_conversion_menu()
+                self.show_single_generate_menu()
             elif choice == '6':
-                self.show_single_web_scraping_menu()
+                self.show_single_conversion_menu()
             elif choice == '7':
-                self.show_testing_menu()
+                self.show_single_web_scraping_menu()
             elif choice == '8':
-                self.show_database_management_menu()
+                self.show_testing_menu()
             elif choice == '9':
+                self.show_database_management_menu()
+            elif choice == '10':
                 self.show_system_menu()
             elif choice == 'q':
                 print("👋 Goodbye!")
@@ -2066,6 +2123,95 @@ except Exception as e:
             print("📊 Check the output summary for detailed statistics.")
         else:
             print("❌ Historical data extraction failed. Please check the logs.")
+
+        input("Press Enter to continue...")
+
+    def process_bank_transactions(self):
+        """Process daily bank transactions from multiple banks"""
+        print("🏦 BANK TRANSACTION PROCESSING")
+        print("=" * 40)
+        print("📋 This will process bank transaction files from:")
+        print("   Input/daily_report/bank_transactions_reports/")
+        print("   • RBC Business Bank Account files (.xlsx)")
+        print("   • BMO ReconciliationReport files (.xls)")
+        print("   • CIBC TransactionDetail files (.csv)")
+        print()
+        print("🎯 Features:")
+        print("   • Automatic transaction classification")
+        print("   • Filters by target month/year")
+        print("   • Checks for duplicates")
+        print("   • Consolidates into CA全部7家店明细.xlsx")
+        print()
+
+        # Get target date from user
+        print("📅 Enter target date (filters transactions by month/year):")
+        print("   Format: YYYY-MM-DD (e.g., 2025-07-23)")
+        print("   Note: Day doesn't matter - processes entire month")
+        print()
+
+        date_input = input("Target date: ").strip()
+        if not date_input:
+            from datetime import datetime
+            target_date = datetime.now().strftime('%Y-%m-%d')
+            print(f"Using today's date: {target_date}")
+        else:
+            try:
+                from datetime import datetime
+                datetime.strptime(date_input, '%Y-%m-%d')
+                target_date = date_input
+            except ValueError:
+                print("❌ Invalid date format. Please use YYYY-MM-DD format.")
+                input("Press Enter to continue...")
+                return
+
+        print(f"\n📅 Processing transactions for: {target_date}")
+
+        # Check if input directory exists
+        input_dir = Path("Input/daily_report/bank_transactions_reports")
+        if not input_dir.exists():
+            print(f"❌ Input directory not found: {input_dir}")
+            print("Please ensure bank files are placed in the correct directory.")
+            input("Press Enter to continue...")
+            return
+
+        # List available files
+        bank_files = list(input_dir.glob("*"))
+        if not bank_files:
+            print(f"❌ No files found in {input_dir}")
+            input("Press Enter to continue...")
+            return
+
+        print(f"\n📁 Found {len(bank_files)} files in input directory:")
+        for file in bank_files:
+            print(f"   • {file.name}")
+
+        print()
+
+        # Confirm processing
+        confirm = input("🚀 Process bank transactions? (y/n): ").lower()
+        if confirm != 'y':
+            print("Operation cancelled.")
+            return
+
+        # Ask if user wants debug output
+        debug_flag = ""
+        if input("Enable debug output? (y/n): ").lower() == 'y':
+            debug_flag = " --debug"
+
+        # Build command
+        command = f'{self.python_cmd} -m scripts.process_bank_transactions --target-date {target_date}{debug_flag}'
+
+        print()
+        print("🔄 Starting bank transaction processing...")
+        print("⏱️  This may take a few minutes depending on file sizes.")
+        print()
+
+        success = self.run_command(command, "Bank Transaction Processing")
+        if success:
+            print("🎉 Bank transaction processing completed successfully!")
+            print("📄 Check CA全部7家店明细.xlsx for consolidated results.")
+        else:
+            print("❌ Bank transaction processing failed. Please check the logs.")
 
         input("Press Enter to continue...")
 
