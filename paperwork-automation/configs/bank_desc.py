@@ -40,11 +40,27 @@ class TransactionType(Enum):
 class BankDescriptionConfig:
     """Configuration for bank transaction description mapping"""
 
-    # Enhanced mapping structure based on actual data analysis
-    # NOTE: True/False values indicate whether cell content needs manual review for color marking
+    # Enhanced mapping structure based on actual data analysis from example file
+    # NOTE: Coloring patterns extracted from data\CA全部7家店明细.xlsx
     desc_map: dict[str, dict] = {
 
         # ===== SERVICE FEES =====
+        "$$$": {
+            "品名": TransactionType.SERVICE_FEE.value,
+            "付款详情": "银行服务费",
+            "单据号": False,
+            "附件": False,
+            "是否登记线下付款表": True,
+            "是否登记支票使用表": False,
+        },
+        "BR.": {
+            "品名": TransactionType.INCOME_RECEIVED.value,
+            "付款详情": "现金收入",
+            "单据号": True,
+            "附件": False,
+            "是否登记线下付款表": False,
+            "是否登记支票使用表": False,
+        },
         "PAY-FILE FEES": {
             "品名": TransactionType.PROCESSING_FEE.value,
             "付款详情": "银行手续费",
@@ -93,6 +109,116 @@ class BankDescriptionConfig:
             "是否登记线下付款表": True,
             "是否登记支票使用表": False,
         },
+        "DISCOUNT": {
+            "品名": TransactionType.SERVICE_FEE.value,
+            "付款详情": "银行折扣费",
+            "单据号": False,
+            "附件": False,
+            "是否登记线下付款表": True,
+            "是否登记支票使用表": False,
+        },
+        "EXCESS ITEMS": {
+            "品名": TransactionType.SERVICE_FEE.value,
+            "付款详情": "超额项目费",
+            "单据号": False,
+            "附件": False,
+            "是否登记线下付款表": True,
+            "是否登记支票使用表": False,
+        },
+
+        # ===== MERCHANT FEES (MSP/DIV patterns) =====
+        "MON FEE": {
+            "品名": TransactionType.PROCESSING_FEE.value,
+            "付款详情": "Moneris刷卡手续费",
+            "单据号": False,
+            "附件": True,
+            "是否登记线下付款表": True,
+            "是否登记支票使用表": False,
+        },
+        "VSA FEE": {
+            "品名": TransactionType.PROCESSING_FEE.value,
+            "付款详情": "Visa处理费",
+            "单据号": False,
+            "附件": True,
+            "是否登记线下付款表": True,
+            "是否登记支票使用表": False,
+        },
+        "MC FEE": {
+            "品名": TransactionType.PROCESSING_FEE.value,
+            "付款详情": "MasterCard处理费",
+            "单据号": False,
+            "附件": True,
+            "是否登记线下付款表": True,
+            "是否登记支票使用表": False,
+        },
+        "AMX FEE": {
+            "品名": TransactionType.PROCESSING_FEE.value,
+            "付款详情": "American Express费",
+            "单据号": False,
+            "附件": True,
+            "是否登记线下付款表": True,
+            "是否登记支票使用表": False,
+        },
+        "INT FEE": {
+            "品名": TransactionType.PROCESSING_FEE.value,
+            "付款详情": "国际交易费",
+            "单据号": False,
+            "附件": True,
+            "是否登记线下付款表": True,
+            "是否登记支票使用表": False,
+        },
+        "MRCH": {
+            "品名": TransactionType.PROCESSING_FEE.value,
+            "付款详情": "Clover刷卡手续费",
+            "单据号": False,
+            "附件": True,
+            "是否登记线下付款表": True,
+            "是否登记支票使用表": False,
+        },
+
+        # ===== INSURANCE =====
+        "ICBC": {
+            "品名": TransactionType.INSURANCE_FEE.value,
+            "付款详情": "ICBC保险费",
+            "单据号": True,
+            "附件": False,
+            "是否登记线下付款表": True,
+            "是否登记支票使用表": False,
+        },
+        "COOPERATORS CSI": {
+            "品名": TransactionType.INSURANCE_FEE.value,
+            "付款详情": "Cooperators保险费",
+            "单据号": False,
+            "附件": True,
+            "是否登记线下付款表": True,
+            "是否登记支票使用表": False,
+        },
+
+        # ===== UTILITIES =====
+        "ALECTRA UTIL": {
+            "品名": TransactionType.ELECTRICITY_FEE.value,
+            "付款详情": "Alectra电费",
+            "单据号": True,
+            "附件": False,
+            "是否登记线下付款表": False,
+            "是否登记支票使用表": False,
+        },
+        "ENBRIDGE GAS": {
+            "品名": TransactionType.GAS_FEE.value,
+            "付款详情": "Enbridge燃气费",
+            "单据号": True,
+            "附件": False,
+            "是否登记线下付款表": False,
+            "是否登记支票使用表": False,
+        },
+        "FORTISBC ENERGY": {
+            "品名": TransactionType.GAS_FEE.value,
+            "付款详情": "FortisBC燃气费",
+            "单据号": True,
+            "附件": False,
+            "是否登记线下付款表": False,
+            "是否登记支票使用表": False,
+        },
 
         # ===== BILL PAYMENTS =====
         "BILL PAYMENT": {
@@ -116,7 +242,7 @@ class BankDescriptionConfig:
             "付款详情": "BC省电费",
             "单据号": False,
             "附件": False,
-            "是否登记线下付款表": False,
+            "是否登记线下付款表": True,
             "是否登记支票使用表": False,
         },
         "TORONTO HYDRO": {
@@ -124,7 +250,7 @@ class BankDescriptionConfig:
             "付款详情": "多伦多电费",
             "单据号": False,
             "附件": False,
-            "是否登记线下付款表": False,
+            "是否登记线下付款表": True,
             "是否登记支票使用表": False,
         },
 
@@ -217,7 +343,16 @@ class BankDescriptionConfig:
             "是否登记线下付款表": False,
             "是否登记支票使用表": False,
         },
-        "SNAPPY": {
+        # SNAPPY transactions - specific patterns
+        "SNAPPYDEBIT": {
+            "品名": TransactionType.PLATFORM_FEE.value,
+            "付款详情": "Snappy平台费",
+            "单据号": True,
+            "附件": False,
+            "是否登记线下付款表": False,
+            "是否登记支票使用表": False,
+        },
+        "SNAPPYON": {
             "品名": TransactionType.INCOME_RECEIVED.value,
             "付款详情": "Snappy第三方进账",
             "单据号": False,
@@ -243,7 +378,7 @@ class BankDescriptionConfig:
         },
         "DP": {  # First Data Canada deposits
             "品名": TransactionType.INCOME_RECEIVED.value,
-            "付款详情": "POS机刷卡收入",
+            "付款详情": "Clover刷卡进账",
             "单据号": False,
             "附件": False,
             "是否登记线下付款表": False,
@@ -259,7 +394,7 @@ class BankDescriptionConfig:
         },
         "IOT PAY TECHNOLOGIES INC": {
             "品名": TransactionType.INCOME_RECEIVED.value,
-            "付款详情": "移动支付收入",
+            "付款详情": "微信支付宝进账",
             "单据号": False,
             "附件": False,
             "是否登记线下付款表": False,
@@ -353,16 +488,8 @@ class BankDescriptionConfig:
             "品名": TransactionType.WAGES.value,
             "付款详情": "工资发放",
             "单据号": False,
-            "附件": False,
-            "是否登记线下付款表": False,
-            "是否登记支票使用表": False,
-        },
-        "SNAPPYDEBIT": {
-            "品名": TransactionType.PLATFORM_FEE.value,
-            "付款详情": "Snappy平台费",
-            "单据号": False,
-            "附件": False,
-            "是否登记线下付款表": False,
+            "附件": True,
+            "是否登记线下付款表": True,
             "是否登记支票使用表": False,
         },
 
@@ -411,6 +538,34 @@ class BankDescriptionConfig:
             "是否登记线下付款表": False,
             "是否登记支票使用表": False,
         },
+
+        # ===== CHEMICAL/SUPPLY COMPANIES =====
+        "ALOCHEM": {
+            "品名": TransactionType.EXPENSE_REIMBURSEMENT.value,
+            "付款详情": "洗碗机租赁费",
+            "单据号": False,
+            "附件": True,
+            "是否登记线下付款表": True,
+            "是否登记支票使用表": False,
+        },
+
+        # ===== CHINESE LANGUAGE BANK DESCRIPTIONS =====
+        "银行手续费": {
+            "品名": TransactionType.PROCESSING_FEE.value,
+            "付款详情": "银行手续费",
+            "单据号": True,
+            "附件": False,
+            "是否登记线下付款表": False,
+            "是否登记支票使用表": False,
+        },
+        "银行服务费": {
+            "品名": TransactionType.SERVICE_FEE.value,
+            "付款详情": "银行服务费",
+            "单据号": True,
+            "附件": False,
+            "是否登记线下付款表": False,
+            "是否登记支票使用表": False,
+        },
     }
 
     @classmethod
@@ -430,15 +585,24 @@ class BankDescriptionConfig:
         # Convert to uppercase for case-insensitive matching
         details_upper = details.upper()
 
-        # Check for exact matches first
+        # Priority 1: Check for SNAPPY patterns first (most specific)
+        snappy_priority_patterns = {
+            'SNAPPYDEBIT': cls.desc_map.get('SNAPPYDEBIT', {}),
+            'SNAPPYON': cls.desc_map.get('SNAPPYON', {}),
+        }
+
+        for pattern, mapping in snappy_priority_patterns.items():
+            if pattern in details_upper and mapping:
+                return mapping
+
+        # Priority 2: Check for exact matches in desc_map
         for key, mapping in cls.desc_map.items():
             if key.upper() in details_upper:
                 return mapping
 
-        # Check for partial matches with common patterns
-        partial_patterns = {
+        # Priority 3: Check for other partial matches
+        other_partial_patterns = {
             'UBER': cls.desc_map.get('UBER HOLDINGS', {}),
-            'SNAPPY': cls.desc_map.get('SNAPPY', {}),
             'CLOVER': cls.desc_map.get('CLOVER', {}),
             'MONERIS': cls.desc_map.get('MONERIS', {}),
             'IOT': cls.desc_map.get('IOT PAY', {}),
@@ -452,7 +616,7 @@ class BankDescriptionConfig:
             'BUSINESS PAD': cls.desc_map.get('BUSINESS PAD', {}),
         }
 
-        for pattern, mapping in partial_patterns.items():
+        for pattern, mapping in other_partial_patterns.items():
             if pattern in details_upper and mapping:
                 return mapping
 

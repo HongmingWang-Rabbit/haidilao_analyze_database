@@ -33,7 +33,12 @@ class BankTransactionProcessor:
         self.target_year = target_year
         self.target_month = target_month
         self.input_dir = Path("Input/daily_report/bank_transactions_reports")
-        self.output_file = self.input_dir / "CA全部7家店明细.xlsx"
+        self.template_file = self.input_dir / "CA全部7家店明细.xlsx"
+
+        # Always save to output folder with timestamp
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        self.output_file = Path("output") / \
+            f"Bank_Transactions_Report_{timestamp}.xlsx"
 
         # Account mapping: input account identifier -> output sheet name
         self.account_mapping = {
@@ -133,7 +138,7 @@ class BankTransactionProcessor:
                 if current_account and self.is_transaction_row(row):
                     transaction = self.parse_bmo_transaction_row(
                         row, current_account)
-                    if transaction and self.is_target_month(transaction['Date']):
+                    if transaction:  # Date filtering now done in parse method
                         sheet_name = self.account_mapping[current_account]
                         transactions_by_account[sheet_name].append(transaction)
 
@@ -163,25 +168,45 @@ class BankTransactionProcessor:
             # Parse date
             try:
                 date_obj = pd.to_datetime(date_str)
+                # Filter by target month/year immediately after parsing
+                if date_obj.year != self.target_year or date_obj.month != self.target_month:
+                    return None
             except:
                 return None
 
+            # BMO Column Structure:
+            # Column 0: Date
+            # Column 1: Flag (* or NaN)
+            # Column 2: Transaction Description
+            # Column 3: Customer Reference
+            # Column 4: Bank Reference
+            # Column 5: Debit
+            # Column 6: Credit
+            # Column 7: Balance
+            # Column 8: Details
+
             description = str(row.iloc[2]) if len(
                 row) > 2 and pd.notna(row.iloc[2]) else ""
-            details = str(row.iloc[-1]) if pd.notna(row.iloc[-1]) else ""
+            customer_ref = str(row.iloc[3]) if len(
+                row) > 3 and pd.notna(row.iloc[3]) else ""
+            bank_ref = str(row.iloc[4]) if len(
+                row) > 4 and pd.notna(row.iloc[4]) else ""
+            details = str(row.iloc[8]) if len(
+                row) > 8 and pd.notna(row.iloc[8]) else ""
 
-            # Look for debit/credit amounts
+            # Extract debit/credit from specific columns
             debit = ""
             credit = ""
 
-            for i in range(1, len(row)):
-                val = row.iloc[i]
-                if pd.notna(val) and isinstance(val, (int, float)):
-                    if val < 0:
-                        debit = abs(val)
-                    elif val > 0:
-                        credit = val
-                    break
+            if len(row) > 5 and pd.notna(row.iloc[5]):
+                debit_val = row.iloc[5]
+                if isinstance(debit_val, (int, float)) and debit_val != 0:
+                    debit = abs(debit_val)
+
+            if len(row) > 6 and pd.notna(row.iloc[6]):
+                credit_val = row.iloc[6]
+                if isinstance(credit_val, (int, float)) and credit_val != 0:
+                    credit = abs(credit_val)
 
             # Get classification
             classification = BankDescriptionConfig.get_transaction_info(
@@ -190,17 +215,17 @@ class BankTransactionProcessor:
             return {
                 'Date': date_obj.strftime('%Y-%m-%d'),
                 'Transaction Description': description,
-                'Customer Reference': "",
-                'Bank Reference': "",
+                'Customer Reference': customer_ref,
+                'Bank Reference': bank_ref,
                 'Debit': debit,
                 'Credit': credit,
                 'Details': details,
                 '品名': classification['品名'],
                 '付款详情': classification['付款详情'],
-                '单据号': "是" if classification['单据号'] else "",
-                '附件': "是" if classification['附件'] else "",
-                '是否登记线下付款表': "是" if classification['是否登记线下付款表'] else "",
-                '是否登记支票使用表': "是" if classification['是否登记支票使用表'] else "",
+                '单据号': "",
+                '附件': "",
+                '是否登记线下付款表': "",
+                '是否登记支票使用表': "",
                 '_account': account_num
             }
 
@@ -227,6 +252,7 @@ class BankTransactionProcessor:
                     continue
 
                 description = str(row.get('Description', ''))
+                additional_details = str(row.get('ADDITIONAL DETAILS', ''))
                 amount = row.get('Amount', 0)
                 transaction_type_col = str(row.get('Transaction type', ''))
 
@@ -241,8 +267,10 @@ class BankTransactionProcessor:
                     debit = abs(amount) if amount < 0 else ''
                     credit = amount if amount > 0 else ''
 
+                # Use ADDITIONAL DETAILS for classification if available, otherwise use Description
+                classification_text = additional_details if additional_details.strip() else description
                 classification = BankDescriptionConfig.get_transaction_info(
-                    description)
+                    classification_text)
                 transaction = {
                     'Date': date_value.strftime('%Y-%m-%d'),
                     'Transaction Description': description,
@@ -250,13 +278,13 @@ class BankTransactionProcessor:
                     'Bank Reference': str(row.get('Bank reference', '')),
                     'Debit': debit,
                     'Credit': credit,
-                    'Details': str(row.get('ADDITIONAL DETAILS', '')),
+                    'Details': classification_text,
                     '品名': classification['品名'],
                     '付款详情': classification['付款详情'],
-                    '单据号': "是" if classification['单据号'] else "",
-                    '附件': "是" if classification['附件'] else "",
-                    '是否登记线下付款表': "是" if classification['是否登记线下付款表'] else "",
-                    '是否登记支票使用表': "是" if classification['是否登记支票使用表'] else "",
+                    '单据号': "",
+                    '附件': "",
+                    '是否登记线下付款表': "",
+                    '是否登记支票使用表': "",
                     '_account': '0401'
                 }
                 transactions.append(transaction)
@@ -323,10 +351,10 @@ class BankTransactionProcessor:
                         'Details': description,  # Use description as details for RBC
                         '品名': classification['品名'],
                         '付款详情': classification['付款详情'],
-                        '单据号': "是" if classification['单据号'] else "",
-                        '附件': "是" if classification['附件'] else "",
-                        '是否登记线下付款表': "是" if classification['是否登记线下付款表'] else "",
-                        '是否登记支票使用表': "是" if classification['是否登记支票使用表'] else "",
+                        '单据号': "",
+                        '附件': "",
+                        '是否登记线下付款表': "",
+                        '是否登记支票使用表': "",
                         '_account': account_num
                     }
                     transactions.append(transaction)
@@ -351,11 +379,12 @@ class BankTransactionProcessor:
     def append_to_existing_workbook(self, all_transactions: Dict[str, List[Dict]]) -> None:
         """Append transactions to existing workbook sheets"""
         try:
-            if self.output_file.exists():
-                logger.info(f"Loading existing workbook: {self.output_file}")
-                wb = load_workbook(self.output_file)
+            if self.template_file.exists():
+                logger.info(f"Loading template workbook: {self.template_file}")
+                wb = load_workbook(self.template_file)
             else:
-                logger.error(f"Output file does not exist: {self.output_file}")
+                logger.error(
+                    f"Template file does not exist: {self.template_file}")
                 return
 
             total_added = 0
@@ -374,31 +403,76 @@ class BankTransactionProcessor:
                 logger.info(
                     f"Sheet '{sheet_name}': Added {added} new transactions (skipped {skipped} duplicates)")
 
-            # Save files
+            # Save to output folder only (never modify template)
+            self.output_file.parent.mkdir(exist_ok=True)
             try:
                 wb.save(self.output_file)
-                logger.info(f"Updated existing file: {self.output_file}")
-            except PermissionError as pe:
-                logger.warning(f"Original file locked: {pe}")
-
-            # Always create output copy
-            output_copy_path = Path(
-                "output") / f"Bank_Transactions_Report_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.xlsx"
-            output_copy_path.parent.mkdir(exist_ok=True)
-            try:
-                wb.save(output_copy_path)
-                logger.info(f"Created output copy: {output_copy_path}")
+                logger.info(f"Created output file: {self.output_file}")
                 print(
-                    f"SUCCESS: Bank report saved to output folder: {output_copy_path}")
+                    f"SUCCESS: Bank report saved to output folder: {self.output_file}")
                 print(
                     f"SUMMARY: Added {total_added} new transactions, skipped {total_skipped} duplicates")
             except Exception as e:
-                logger.error(f"Failed to create output copy: {e}")
-                print(f"Warning: Could not create output copy: {e}")
+                logger.error(f"Failed to save output file: {e}")
+                print(f"ERROR: Could not save output file: {e}")
 
         except Exception as e:
             logger.error(f"Error updating workbook: {e}")
             raise
+
+    def get_header_positions_for_sheet(self, sheet_name: str) -> Dict[str, int]:
+        """Get bank-specific header positions based on sheet name"""
+        if 'CIBC' in sheet_name:
+            # CIBC format: 11 columns
+            return {
+                'Date': 1,
+                'Transaction Description': 2,  # "Transaction details"
+                'Customer Reference': 2,       # Combined in Transaction details
+                'Bank Reference': 2,           # Combined in Transaction details
+                'Debit': 3,
+                'Credit': 4,
+                'Details': 2,                  # Use Transaction details
+                '品名': 6,
+                '付款详情': 7,
+                '单据号': 8,
+                '附件': 9,
+                '是否登记线下付款表': 10,
+                '是否登记支票使用表': 11
+            }
+        elif sheet_name.startswith('RBC'):
+            # RBC format: 12 columns
+            return {
+                'Date': 2,                     # "Effective Date"
+                'Transaction Description': 1,  # "Description"
+                'Customer Reference': 3,       # "Serial Number"
+                'Bank Reference': 3,           # "Serial Number"
+                'Debit': 4,                    # "Debits"
+                'Credit': 5,                   # "Credits"
+                'Details': 1,                  # Use Description
+                '品名': 7,
+                '付款详情': 8,
+                '单据号': 9,
+                '附件': 10,
+                '是否登记线下付款表': 11,
+                '是否登记支票使用表': 12
+            }
+        else:
+            # BMO format: 14 columns (default)
+            return {
+                'Date': 1,
+                'Transaction Description': 3,
+                'Customer Reference': 4,
+                'Bank Reference': 5,
+                'Debit': 6,
+                'Credit': 7,
+                'Details': 8,
+                '品名': 9,
+                '付款详情': 10,
+                '单据号': 11,
+                '附件': 12,
+                '是否登记线下付款表': 13,
+                '是否登记支票使用表': 14
+            }
 
     def append_to_worksheet(self, ws, transactions: List[Dict]) -> tuple:
         """Append transactions to existing worksheet"""
@@ -410,22 +484,8 @@ class BankTransactionProcessor:
             else:
                 break
 
-        # Header positions (matching target format)
-        header_positions = {
-            'Date': 1,
-            'Transaction Description': 3,
-            'Customer Reference': 4,
-            'Bank Reference': 5,
-            'Debit': 6,
-            'Credit': 7,
-            'Details': 8,
-            '品名': 9,
-            '付款详情': 10,
-            '单据号': 11,
-            '附件': 12,
-            '是否登记线下付款表': 13,
-            '是否登记支票使用表': 14
-        }
+        # Get bank-specific header positions
+        header_positions = self.get_header_positions_for_sheet(ws.title)
 
         added_count = 0
         skipped_count = 0
@@ -443,8 +503,23 @@ class BankTransactionProcessor:
 
             for field, col_idx in header_positions.items():
                 if field in transaction:
-                    ws.cell(row=new_row, column=col_idx,
-                            value=transaction[field])
+                    cell = ws.cell(row=new_row, column=col_idx,
+                                   value=transaction[field])
+
+                    # Apply green background color for coloring fields based on configuration
+                    if field in ['单据号', '附件', '是否登记线下付款表', '是否登记支票使用表']:
+                        # Get classification for this transaction's details
+                        details = transaction.get('Details', '')
+                        classification = BankDescriptionConfig.get_transaction_info(
+                            details)
+                        if classification.get(field, False):
+                            cell.fill = PatternFill(
+                                start_color='90EE90', end_color='90EE90', fill_type='solid')  # Light green
+
+                    # Apply red background color for uncategorized transactions (需要手动分类)
+                    elif field == '品名' and transaction.get(field) == '未分类交易':
+                        cell.fill = PatternFill(
+                            start_color='FFB6C1', end_color='FFB6C1', fill_type='solid')  # Light red
 
             added_count += 1
 
