@@ -731,6 +731,52 @@ def extract_time_segments(input_file, output_file=None, debug=False, direct_db=F
         return False
 
 
+def save_discount_details(data, db_manager):
+    """Save discount details to daily_discount_detail table"""
+    try:
+        with db_manager.get_connection() as conn:
+            with conn.cursor() as cursor:
+                # Get the ID for "其他优惠" (Other promotions) discount type
+                cursor.execute("SELECT id FROM discount_type WHERE name = '其他优惠'")
+                result = cursor.fetchone()
+                if not result:
+                    # Create the discount type if it doesn't exist
+                    cursor.execute(
+                        "INSERT INTO discount_type (name, description) VALUES (%s, %s) RETURNING id",
+                        ('其他优惠', 'Other promotions')
+                    )
+                    discount_type_id = cursor.fetchone()['id']
+                else:
+                    discount_type_id = result['id']
+                
+                # Insert discount details
+                inserted = 0
+                for record in data:
+                    if record.get('discount_total', 0) > 0:
+                        cursor.execute("""
+                            INSERT INTO daily_discount_detail 
+                            (store_id, date, discount_type_id, discount_amount, discount_count)
+                            VALUES (%s, %s, %s, %s, %s)
+                            ON CONFLICT (store_id, date, discount_type_id) DO UPDATE
+                            SET discount_amount = EXCLUDED.discount_amount,
+                                discount_count = EXCLUDED.discount_count,
+                                updated_at = CURRENT_TIMESTAMP
+                        """, (
+                            record['store_id'],
+                            record['date'],
+                            discount_type_id,
+                            record['discount_total'],
+                            1  # Default count as we don't have detailed info
+                        ))
+                        inserted += 1
+                
+                conn.commit()
+                print(f"   ✅ Saved {inserted} discount records")
+                
+    except Exception as e:
+        print(f"   ⚠️  Error saving discount details: {e}")
+
+
 def insert_daily_data_to_database(data, is_test=False):
     """Insert daily report data directly to database with override capability"""
     try:
@@ -798,6 +844,11 @@ def insert_daily_data_to_database(data, is_test=False):
                 print(f"✅ Daily report processing completed:")
                 print(f"   📈 New records inserted: {inserted_count}")
                 print(f"   🔄 Existing records updated: {updated_count}")
+                
+                # Save discount details
+                if any(record.get('discount_total', 0) > 0 for record in data):
+                    print("\n📊 Saving discount details...")
+                    save_discount_details(data, db_manager)
 
                 return True
 

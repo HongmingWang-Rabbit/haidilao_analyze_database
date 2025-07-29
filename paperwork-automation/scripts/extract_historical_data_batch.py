@@ -23,7 +23,6 @@ Features:
 - Respects existing extraction patterns
 """
 
-from utils.database import DatabaseManager, DatabaseConfig
 import sys
 import os
 import logging
@@ -43,6 +42,7 @@ warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Import after path setup
+from utils.database import DatabaseManager, DatabaseConfig
 
 # Set environment variables for database connection
 os.environ['PG_HOST'] = 'localhost'
@@ -297,7 +297,7 @@ class HistoricalDataExtractor:
 
                 # Process dishes in batches
                 dish_count = self.process_dishes_batch(
-                    df_clean, dish_name_col, dish_code_col)
+                    df_clean, dish_name_col, dish_code_col, store_mapping)
                 logger.info(f"Processed {dish_count} dishes")
 
                 # Process price history
@@ -390,8 +390,8 @@ class HistoricalDataExtractor:
             logger.error(f"Error processing dish child types: {e}")
             return 0
 
-    def process_dishes_batch(self, df: pd.DataFrame, dish_name_col: str, dish_code_col: str) -> int:
-        """Process dishes in batches with proper transaction handling."""
+    def process_dishes_batch(self, df: pd.DataFrame, dish_name_col: str, dish_code_col: str, store_mapping: dict) -> int:
+        """Process dishes in batches with proper transaction handling - Store-specific."""
         try:
             total_count = 0
             batch_size = 20  # Smaller batches for better error isolation
@@ -435,17 +435,31 @@ class HistoricalDataExtractor:
                                     if result:
                                         dish_child_type_id = result['id']
 
-                                # Insert dish (only dish_child_type_id, not dish_type_id)
-                                cursor.execute("""
-                                    INSERT INTO dish (
-                                        full_code, size, name, dish_child_type_id
-                                    )
-                                    VALUES (%s, %s, %s, %s)
-                                    ON CONFLICT (full_code, size) DO UPDATE SET
-                                        name = EXCLUDED.name,
-                                        dish_child_type_id = EXCLUDED.dish_child_type_id,
-                                        updated_at = CURRENT_TIMESTAMP
-                                """, (full_code, size, dish_name, dish_child_type_id))
+                                # Store-specific dish insertion - create dish for all stores that will use it
+                                stores_in_data = set()
+                                
+                                # Check which stores this dish appears in by looking at the store column
+                                if '门店名称' in row and pd.notna(row['门店名称']):
+                                    store_name = row['门店名称']
+                                    if store_name in store_mapping:
+                                        stores_in_data.add(store_mapping[store_name])
+                                
+                                # If no specific store info, create for all stores (fallback)
+                                if not stores_in_data:
+                                    stores_in_data = set(store_mapping.values())
+                                
+                                # Insert dish for each relevant store
+                                for store_id in stores_in_data:
+                                    cursor.execute("""
+                                        INSERT INTO dish (
+                                            full_code, size, name, dish_child_type_id, store_id
+                                        )
+                                        VALUES (%s, %s, %s, %s, %s)
+                                        ON CONFLICT (full_code, size, store_id) DO UPDATE SET
+                                            name = EXCLUDED.name,
+                                            dish_child_type_id = EXCLUDED.dish_child_type_id,
+                                            updated_at = CURRENT_TIMESTAMP
+                                    """, (full_code, size, dish_name, dish_child_type_id, store_id))
 
                                 batch_count += 1
 
@@ -522,9 +536,9 @@ class HistoricalDataExtractor:
                                 if not store_id:
                                     continue
 
-                                # Get dish ID
-                                cursor.execute("SELECT id FROM dish WHERE full_code = %s AND size = %s",
-                                               (full_code, size))
+                                # Get dish ID (store-specific)
+                                cursor.execute("SELECT id FROM dish WHERE full_code = %s AND size = %s AND store_id = %s",
+                                               (full_code, size, store_id))
                                 result = cursor.fetchone()
                                 if not result:
                                     continue
@@ -656,9 +670,9 @@ class HistoricalDataExtractor:
 
                                 store_id = store_mapping[store_name]
 
-                                # Get dish ID
-                                cursor.execute("SELECT id FROM dish WHERE full_code = %s AND size = %s",
-                                               (full_code, size))
+                                # Get dish ID (store-specific)
+                                cursor.execute("SELECT id FROM dish WHERE full_code = %s AND size = %s AND store_id = %s",
+                                               (full_code, size, store_id))
                                 result = cursor.fetchone()
                                 if not result:
                                     continue
@@ -733,16 +747,29 @@ class HistoricalDataExtractor:
         logger.info(f"📦 Extracting materials from: {file_path.name}")
 
         try:
-            # Handle both .xlsx and .xls files with multiple fallback engines
+            # Handle MB5B files correctly as UTF-16 tab-delimited text
             file_extension = file_path.suffix.lower()
             df = None
+            max_rows = 5000 if not self.debug else 10000  # Increase limit for MB5B files
 
-            # Add row limit to prevent hanging
-            max_rows = 500 if not self.debug else 1000  # Limit rows for safety
-
-            if file_extension == '.xls':
+            if file_extension == '.xls' and 'mb5b' in file_path.name.lower():
+                # MB5B files are UTF-16 tab-delimited text, not Excel
                 try:
-                    # Try xlrd engine first
+                    logger.info("Reading MB5B file as UTF-16 tab-delimited text")
+                    df = pd.read_csv(
+                        file_path, 
+                        sep='\t', 
+                        encoding='utf-16',
+                        dtype={'物料': str},  # Critical: keep material numbers as strings
+                        nrows=max_rows
+                    )
+                    logger.info(f"Successfully read MB5B file: {len(df)} rows, {len(df.columns)} columns")
+                except Exception as e:
+                    logger.error(f"Failed to read MB5B file as UTF-16: {e}")
+                    return 0, 0, 0
+            elif file_extension == '.xls':
+                try:
+                    # Try xlrd engine for regular Excel files
                     df = pd.read_excel(
                         file_path, engine='xlrd', nrows=max_rows)
                 except Exception as e:
@@ -767,14 +794,25 @@ class HistoricalDataExtractor:
             logger.info(
                 f"Loaded {len(df)} rows from material usage file (limited to {max_rows} for safety)")
 
-            # Check if required columns exist
-            required_columns = ['物料描述', '物料']
-            missing_columns = [
-                col for col in required_columns if col not in df.columns]
-            if missing_columns:
-                logger.error(f"Missing required columns: {missing_columns}")
-                logger.info(f"Available columns: {list(df.columns)}")
-                return 0, 0, 0
+            # Check if required columns exist for MB5B files
+            if 'mb5b' in file_path.name.lower():
+                # MB5B files have different structure
+                required_columns = ['物料', 'ValA']  # ValA contains store code
+                missing_columns = [
+                    col for col in required_columns if col not in df.columns]
+                if missing_columns:
+                    logger.error(f"Missing required columns for MB5B: {missing_columns}")
+                    logger.info(f"Available columns: {list(df.columns)}")
+                    return 0, 0, 0
+            else:
+                # Regular material files
+                required_columns = ['物料描述', '物料']
+                missing_columns = [
+                    col for col in required_columns if col not in df.columns]
+                if missing_columns:
+                    logger.error(f"Missing required columns: {missing_columns}")
+                    logger.info(f"Available columns: {list(df.columns)}")
+                    return 0, 0, 0
 
             # Filter valid material rows
             valid_materials = []
@@ -806,30 +844,73 @@ class HistoricalDataExtractor:
                     try:
                         for row in batch:
                             try:
-                                # Extract material information
-                                material_name = str(row['物料描述']).strip()
-                                material_number = str(row['物料']).strip()
+                                if 'mb5b' in file_path.name.lower():
+                                    # MB5B files - extract store-specific materials
+                                    material_number = str(row['物料']).strip() if pd.notna(row.get('物料')) else ''
+                                    store_code = str(row.get('ValA', '')).strip() if pd.notna(row.get('ValA')) else ''
+                                    
+                                    if not material_number or not store_code:
+                                        continue
+                                    
+                                    # Map store code to store ID
+                                    store_id = None
+                                    if store_code.upper() in ['CA01', 'CA1']:
+                                        store_id = 1
+                                    elif store_code.upper() in ['CA02', 'CA2']:
+                                        store_id = 2
+                                    elif store_code.upper() in ['CA03', 'CA3']:
+                                        store_id = 3
+                                    elif store_code.upper() in ['CA04', 'CA4']:
+                                        store_id = 4
+                                    elif store_code.upper() in ['CA05', 'CA5']:
+                                        store_id = 5
+                                    elif store_code.upper() in ['CA06', 'CA6']:
+                                        store_id = 6
+                                    elif store_code.upper() in ['CA07', 'CA7']:
+                                        store_id = 7
+                                    
+                                    if not store_id:
+                                        continue
+                                    
+                                    # Create basic material name
+                                    material_name = f"Material_{material_number}"
+                                    
+                                    # Insert store-specific material
+                                    cursor.execute("""
+                                        INSERT INTO material (
+                                            store_id, material_number, name, unit, is_active
+                                        )
+                                        VALUES (%s, %s, %s, %s, %s)
+                                        ON CONFLICT (store_id, material_number) DO UPDATE SET
+                                            name = EXCLUDED.name,
+                                            updated_at = CURRENT_TIMESTAMP
+                                    """, (store_id, material_number, material_name, 'KG', True))
+                                    
+                                else:
+                                    # Regular material files - extract material information
+                                    material_name = str(row['物料描述']).strip()
+                                    material_number = str(row['物料']).strip()
 
-                                # Clean material number - remove leading zeros
-                                material_number = material_number.lstrip(
-                                    '0') if material_number else ''
-                                if not material_number:
-                                    material_number = '0'
+                                    # Clean material number - remove leading zeros
+                                    material_number = material_number.lstrip(
+                                        '0') if material_number else ''
+                                    if not material_number:
+                                        material_number = '0'
 
-                                if not material_name or not material_number:
-                                    continue
+                                    if not material_name or not material_number:
+                                        continue
 
-                                # Insert material
-                                cursor.execute("""
-                                    INSERT INTO material (
-                                        name, material_number, unit
-                                    )
-                                    VALUES (%s, %s, %s)
-                                    ON CONFLICT (material_number) DO UPDATE SET
-                                        name = EXCLUDED.name,
-                                        unit = EXCLUDED.unit,
-                                        updated_at = CURRENT_TIMESTAMP
-                                """, (material_name, material_number, ''))
+                                    # For regular files, insert for all stores (1-7)
+                                    for store_id in range(1, 8):
+                                        cursor.execute("""
+                                            INSERT INTO material (
+                                                store_id, material_number, name, unit, is_active
+                                            )
+                                            VALUES (%s, %s, %s, %s, %s)
+                                            ON CONFLICT (store_id, material_number) DO UPDATE SET
+                                                name = EXCLUDED.name,
+                                                updated_at = CURRENT_TIMESTAMP
+                                        """, (store_id, material_number, material_name, '', True))
 
                                 if cursor.rowcount > 0:
                                     material_count += 1
@@ -1075,6 +1156,246 @@ class HistoricalDataExtractor:
         except Exception:
             return False
 
+    def extract_materials_from_detail_files(self, material_detail_folder: Path, target_date: str) -> int:
+        """Extract materials with proper names and descriptions from material detail files."""
+        logger.info(f"📦 Extracting materials from detail files: {material_detail_folder}")
+        
+        if not material_detail_folder.exists():
+            logger.warning(f"Material detail folder not found: {material_detail_folder}")
+            return 0
+        
+        # Find store folders (numbered 1-7)
+        store_folders = [f for f in material_detail_folder.iterdir()
+                         if f.is_dir() and f.name.isdigit()]
+        store_folders.sort(key=lambda x: int(x.name))
+        
+        if not store_folders:
+            logger.warning(f"No store folders found in: {material_detail_folder}")
+            return 0
+        
+        total_materials = 0
+        
+        for store_folder in store_folders:
+            store_id = int(store_folder.name)
+            logger.info(f"Processing materials for store {store_id}...")
+            
+            # Find Excel files in the store folder
+            excel_files = self.find_excel_files(store_folder, "*.xl*")
+            
+            for excel_file in excel_files:
+                try:
+                    logger.info(f"Reading material detail file: {excel_file.name}")
+                    df = pd.read_excel(excel_file, engine='openpyxl', dtype={'物料': str})
+                    
+                    # Based on analysis: Column 5 = material numbers, Column 6 = material names, Column 7 = units
+                    if df.shape[1] >= 7:
+                        material_numbers = df.iloc[:, 4]  # Column 5 (0-indexed)
+                        material_names = df.iloc[:, 5]    # Column 6 (0-indexed) 
+                        material_units = df.iloc[:, 6]    # Column 7 (0-indexed)
+                        
+                        materials_added = 0
+                        
+                        with self.db_manager.get_connection() as conn:
+                            cursor = conn.cursor()
+                            
+                            for i in range(len(df)):
+                                material_number = material_numbers.iloc[i]
+                                material_name = material_names.iloc[i]
+                                material_unit = material_units.iloc[i]
+                                
+                                # Skip if material number is invalid
+                                if pd.isna(material_number) or not str(material_number).strip():
+                                    continue
+                                    
+                                material_number = str(material_number).strip()
+                                
+                                # Remove leading zeros (material numbers have many leading zeros)
+                                material_number = material_number.lstrip('0')
+                                if not material_number:
+                                    material_number = '0'
+                                
+                                if not material_number.isdigit() or len(material_number) < 6:
+                                    continue
+                                
+                                # Use material name or fallback to generic name
+                                if pd.notna(material_name) and str(material_name).strip():
+                                    name = str(material_name).strip()
+                                else:
+                                    name = f"Material_{material_number}"
+                                
+                                # Use unit or default to empty
+                                if pd.notna(material_unit) and str(material_unit).strip():
+                                    unit = str(material_unit).strip()
+                                else:
+                                    unit = ''
+                                
+                                try:
+                                    # Insert material with store-specific data
+                                    cursor.execute("""
+                                        INSERT INTO material (
+                                            store_id, material_number, name, unit, is_active
+                                        )
+                                        VALUES (%s, %s, %s, %s, %s)
+                                        ON CONFLICT (store_id, material_number) DO UPDATE SET
+                                            name = EXCLUDED.name,
+                                            unit = EXCLUDED.unit,
+                                            updated_at = CURRENT_TIMESTAMP
+                                    """, (store_id, material_number, name, unit, True))
+                                    
+                                    materials_added += 1
+                                    
+                                    # Limit for safety
+                                    if materials_added >= 200:
+                                        logger.warning(f"⚠️ Limited to 200 materials for safety")
+                                        break
+                                        
+                                except Exception as e:
+                                    logger.debug(f"Error inserting material {material_number}: {e}")
+                                    continue
+                            
+                            conn.commit()
+                        
+                        logger.info(f"Added {materials_added} materials for store {store_id}")
+                        total_materials += materials_added
+                    
+                except Exception as e:
+                    logger.error(f"Error processing {excel_file}: {e}")
+                    continue
+        
+        logger.info(f"✅ Total materials extracted from detail files: {total_materials}")
+        return total_materials
+
+    def extract_dish_material_relationships_from_calculated_usage(self, calculated_folder: Path, target_date: str) -> int:
+        """Extract dish-material relationships from calculated_dish_material_usage files."""
+        logger.info(f"Extracting dish-material relationships from: {calculated_folder}")
+        
+        if not calculated_folder.exists():
+            logger.warning(f"Calculated folder not found: {calculated_folder}")
+            return 0
+        
+        # Find calculated usage files
+        usage_files = self.find_excel_files(calculated_folder, "*.xl*")
+        if not usage_files:
+            logger.warning(f"No usage files found in: {calculated_folder}")
+            return 0
+        
+        total_relationships = 0
+        
+        for usage_file in usage_files:
+            try:
+                logger.info(f"Processing calculated usage file: {usage_file.name}")
+                
+                # Read the Excel file
+                df = pd.read_excel(usage_file, engine='xlrd', nrows=200)  # Limit for safety
+                logger.info(f"Loaded {len(df)} rows from calculated usage file")
+                
+                # Look for dish code and material columns
+                dish_code_cols = [col for col in df.columns if any(keyword in str(col) 
+                                 for keyword in ['编码', 'code', '菜品'])]
+                material_cols = [col for col in df.columns if '物料' in str(col)]
+                quantity_cols = [col for col in df.columns if any(keyword in str(col) 
+                                for keyword in ['用量', '数量', 'quantity'])]
+                
+                if not dish_code_cols or not material_cols:
+                    logger.warning(f"Missing required columns in {usage_file.name}")
+                    logger.info(f"Dish columns: {dish_code_cols}, Material columns: {material_cols}")
+                    continue
+                
+                dish_code_col = dish_code_cols[0]
+                material_col = None
+                quantity_col = None
+                
+                # Find material number column
+                for col in material_cols:
+                    if any(keyword in str(col) for keyword in ['号', 'number']):
+                        material_col = col
+                        break
+                
+                # Find quantity column
+                if quantity_cols:
+                    quantity_col = quantity_cols[0]
+                
+                if not material_col:
+                    logger.warning(f"No material number column found in {usage_file.name}")
+                    continue
+                
+                logger.info(f"Using columns - Dish: {dish_code_col}, Material: {material_col}, Quantity: {quantity_col}")
+                
+                # Process relationships
+                relationships_added = 0
+                
+                with self.db_manager.get_connection() as conn:
+                    cursor = conn.cursor()
+                    
+                    for _, row in df.iterrows():
+                        try:
+                            # Extract dish code
+                            dish_code = str(row[dish_code_col]).strip() if pd.notna(row[dish_code_col]) else ''
+                            dish_code = dish_code.replace('.0', '')  # Remove pandas float suffix
+                            
+                            # Extract material number
+                            material_number = str(row[material_col]).strip() if pd.notna(row[material_col]) else ''
+                            material_number = material_number.replace('.0', '')
+                            
+                            # Extract quantity if available
+                            standard_quantity = 0.0
+                            if quantity_col and pd.notna(row[quantity_col]):
+                                try:
+                                    standard_quantity = float(row[quantity_col])
+                                except (ValueError, TypeError):
+                                    standard_quantity = 0.0
+                            
+                            if not dish_code or not material_number:
+                                continue
+                            
+                            # Find dish and material IDs in database
+                            cursor.execute("SELECT id FROM dish WHERE full_code = %s LIMIT 1", (dish_code,))
+                            dish_result = cursor.fetchone()
+                            if not dish_result:
+                                continue
+                            dish_id = dish_result['id']
+                            
+                            cursor.execute("SELECT id FROM material WHERE material_number = %s LIMIT 1", (material_number,))
+                            material_result = cursor.fetchone()
+                            if not material_result:
+                                continue
+                            material_id = material_result['id']
+                            
+                            # Insert dish-material relationship
+                            cursor.execute("""
+                                INSERT INTO dish_material (
+                                    dish_id, material_id, standard_quantity, 
+                                    loss_rate, unit_conversion_rate, is_active
+                                )
+                                VALUES (%s, %s, %s, %s, %s, %s)
+                                ON CONFLICT (dish_id, material_id) DO UPDATE SET
+                                    standard_quantity = EXCLUDED.standard_quantity,
+                                    updated_at = CURRENT_TIMESTAMP
+                            """, (dish_id, material_id, standard_quantity, 1.0, 1.0, True))
+                            
+                            if cursor.rowcount > 0:
+                                relationships_added += 1
+                                
+                            # Limit for safety
+                            if relationships_added >= 100:
+                                logger.warning(f"⚠️ Limited to 100 relationships for safety")
+                                break
+                                
+                        except Exception as e:
+                            logger.debug(f"Error processing relationship row: {e}")
+                            continue
+                    
+                    conn.commit()
+                    logger.info(f"✅ Added {relationships_added} dish-material relationships from {usage_file.name}")
+                    total_relationships += relationships_added
+                
+            except Exception as e:
+                logger.error(f"Error processing calculated usage file {usage_file}: {e}")
+                continue
+        
+        logger.info(f"✅ Total dish-material relationships extracted: {total_relationships}")
+        return total_relationships
+
     def process_month_folder(self, month_folder: Path) -> Dict[str, int]:
         """Process a single month folder."""
         month_name = month_folder.name
@@ -1093,6 +1414,7 @@ class HistoricalDataExtractor:
             'monthly_sales': 0,  # Fix the tracking name
             'materials': 0,
             'material_price_history': 0,
+            'dish_material_relationships': 0,
         }
 
         try:
@@ -1127,24 +1449,38 @@ class HistoricalDataExtractor:
                             f"Error extracting materials from {material_file}: {e}")
                         continue
 
-            # 3. Extract material prices from material_detail folders
+            # 3. Extract materials with proper names from material_detail folders
             material_detail_folder = month_folder / "material_detail"
             if material_detail_folder.exists():
                 try:
+                    proper_materials = self.extract_materials_from_detail_files(
+                        material_detail_folder, target_date
+                    )
+                    results['materials'] += proper_materials
+                    logger.info(f"Proper materials extracted: {proper_materials}")
+                    
+                    # Also extract material prices
                     material_prices = self.extract_material_prices_from_detail_folders(
                         material_detail_folder, target_date
                     )
                     results['material_price_history'] += material_prices
-                    logger.info(
-                        f"Material prices extracted: {material_prices}")
+                    logger.info(f"Material prices extracted: {material_prices}")
                 except Exception as e:
-                    logger.error(f"Error extracting material prices: {e}")
+                    logger.error(f"Error extracting from material detail: {e}")
 
-            # 4. Skip calculated_dish_material_usage if empty
+            # 4. Extract dish-material relationships from calculated_dish_material_usage
             calculated_folder = month_folder / "calculated_dish_material_usage"
-            if not self.is_folder_empty_or_nonexistent(calculated_folder):
-                logger.info(
-                    f"⚠️ Calculated dish material usage folder not empty, but skipping as requested")
+            if calculated_folder.exists() and not self.is_folder_empty_or_nonexistent(calculated_folder):
+                try:
+                    dish_material_relationships = self.extract_dish_material_relationships_from_calculated_usage(
+                        calculated_folder, target_date
+                    )
+                    results['dish_material_relationships'] += dish_material_relationships
+                    logger.info(f"Dish-material relationships extracted: {dish_material_relationships}")
+                except Exception as e:
+                    logger.error(f"Error extracting dish-material relationships: {e}")
+            else:
+                logger.info(f"📂 Calculated dish material usage folder empty or not found")
 
             # 5. Skip inventory_checking_result if empty
             inventory_folder = month_folder / "inventory_checking_result"
@@ -1230,6 +1566,8 @@ class HistoricalDataExtractor:
         total_materials = sum(r['materials'] for r in self.results.values())
         total_material_price_history = sum(
             r['material_price_history'] for r in self.results.values())
+        total_dish_material_relationships = sum(
+            r.get('dish_material_relationships', 0) for r in self.results.values())
 
         print("TOTALS:")
         print(f"  Dish types: {total_dish_types}")
@@ -1239,6 +1577,7 @@ class HistoricalDataExtractor:
         print(f"  Monthly sales: {total_monthly_sales}")
         print(f"  Materials: {total_materials}")
         print(f"  Material price history: {total_material_price_history}")
+        print(f"  Dish-material relationships: {total_dish_material_relationships}")
 
         # Show breakdown by month
         print("\nBY MONTH:")
@@ -1248,6 +1587,8 @@ class HistoricalDataExtractor:
                 f"    Dishes: {results['dishes']}, Dish prices: {results['dish_price_history']}, Monthly sales: {results['monthly_sales']}")
             print(
                 f"    Materials: {results['materials']}, Material prices: {results['material_price_history']}")
+            print(
+                f"    Dish-material relationships: {results.get('dish_material_relationships', 0)}")
 
         print("=" * 50)
 

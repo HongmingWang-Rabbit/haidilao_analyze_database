@@ -343,6 +343,70 @@ python3 scripts/generate_monthly_report.py --date 2025-06-01
 
 **Output:** `output/database_report_YYYY_MM_DD.xlsx`
 
+### **Gross Margin Reports (毛利报表)**
+
+Generate comprehensive gross margin analysis reports:
+
+#### Daily Gross Margin Report
+```bash
+# Via automation menu (recommended)
+python3 scripts/automation-menu.py
+# Select: 📊 Single Report Generation → g) Gross Margin Report (毛利报表)
+
+# Direct command
+python3 scripts/generate_gross_margin_report.py --target-date 2025-06-30
+```
+
+**Generated Sheets:**
+- **菜品价格变动及菜品损耗表**: Detailed revenue data with dish price changes
+- **原材料成本变动表**: Material cost analysis
+- **打折优惠表**: Discount analysis
+- **各店毛利率分析**: Store gross profit analysis
+
+**Output:** `output/gross_margin_report_YYYY_MM_DD.xlsx`
+
+### **Complete Monthly Automation (NEW ENHANCED)**
+
+The monthly automation workflow now includes comprehensive analysis reports:
+
+```bash
+# Via automation menu (recommended)
+python3 scripts/automation-menu.py
+# Select: 3) 📊 Complete Monthly Automation (NEW WORKFLOW)
+
+# Direct command
+python3 scripts/complete_monthly_automation_new.py --date 2025-06-30
+```
+
+**Workflow Steps:**
+1. Extract from monthly dish sales → dish types, dishes, price history, sales data
+2. Extract from material details → materials, material price history
+3. Extract from inventory checking results → inventory counts by store
+4. Extract from calculated dish-material usage → dish-material relationships
+5. **Generate comprehensive reports:**
+   - Material variance analysis report
+   - Beverage variance analysis report
+   - **Monthly gross margin analysis report (毛利相关分析指标)**
+
+#### Monthly Gross Margin Analysis Report
+As part of the monthly automation, a comprehensive gross margin analysis report is generated with:
+
+- **菜品价格变动及菜品损耗表**: Dish price changes and loss analysis for the month
+- **原材料成本变动表**: Material cost changes with MoM/YoY comparisons
+- **打折优惠表**: Detailed discount analysis by type and store (会员折扣, 生日优惠, 节日优惠, etc.)
+- **各店毛利率分析**: Store-by-store gross margin analysis
+- **月度毛利汇总**: Monthly summary with revenue, costs, and margins
+- **同比环比分析**: Year-over-year and month-over-month comprehensive analysis
+
+**Key Features:**
+- **📊 Matches Manual Report Structure**: Replicates the format of 附件3-毛利相关分析指标-YYMM.xlsx
+- **📈 Advanced Analytics**: MoM/YoY comparisons, trend analysis, cost breakdowns
+- **💰 Financial Insights**: Gross margin calculations, cost rates, revenue impacts
+- **🎯 Multi-dimensional Analysis**: By store, material type, time period
+- **📁 Professional Output**: Clean Excel format with proper formatting and Chinese support
+
+**Output:** `output/monthly_gross_margin/毛利相关分析指标-YYYYMM.xlsx`
+
 ## 📊 Usage Examples
 
 ### Example 1: Complete Workflow
@@ -468,6 +532,27 @@ Before any commit, ensure:
 ### Database Integration
 
 The system generates SQL files by default. For direct database insertion, modify the Python scripts to include database connection logic.
+
+### Discount Analysis Setup
+
+To enable detailed discount analysis in the monthly gross margin report:
+
+```bash
+# Setup discount analysis tables and migrate existing data
+python3 scripts/setup_discount_analysis.py
+
+# Verify the setup
+python3 scripts/verify_discount_analysis.py
+
+# Run migration for existing data
+python3 scripts/migrate_discount_data.py
+```
+
+The discount analysis feature tracks:
+- Multiple discount types (会员折扣, 生日优惠, 节日优惠, etc.)
+- Daily and monthly discount summaries
+- Discount percentage of revenue
+- Year-over-year and month-over-month comparisons
 
 ## 📈 Performance
 

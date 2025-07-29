@@ -7,10 +7,10 @@ Generates comprehensive gross margin analysis reports including:
 - Discount analysis (打折优惠表)
 """
 
-from lib.gross_margin_worksheet import GrossMarginWorksheetGenerator
-from lib.store_gross_profit_worksheet import StoreGrossProfitWorksheetGenerator
-from lib.database_queries import ReportDataProvider
 from utils.database import DatabaseManager, DatabaseConfig
+from lib.database_queries import ReportDataProvider
+from lib.store_gross_profit_worksheet import StoreGrossProfitWorksheetGenerator
+from lib.gross_margin_worksheet import GrossMarginWorksheetGenerator
 import argparse
 import sys
 import logging

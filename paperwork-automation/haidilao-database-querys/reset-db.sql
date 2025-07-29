@@ -1,4 +1,5 @@
 -- WARNING: This will delete all your reporting data. Use with caution.
+-- UPDATED SCHEMA: Store-specific dishes and materials
 
 -- Drop tables if they exist (in reverse dependency order)
 -- First drop all tables that depend on other tables
@@ -203,10 +204,12 @@ CREATE TABLE dish (
 );
 
 -- 物料主表
+-- 物料主表 (STORE-SPECIFIC)
 CREATE TABLE material (
     id SERIAL PRIMARY KEY,
+    store_id INTEGER REFERENCES store(id), -- 外键：门店 (NEW: Store-specific)
     name VARCHAR NOT NULL,              -- 物料名称/描述
-    material_number VARCHAR NOT NULL UNIQUE, -- 物料号 (e.g., "3000759")
+    material_number VARCHAR NOT NULL,   -- 物料号 (e.g., "3000759")
     description VARCHAR,                -- 详细描述
     unit VARCHAR NOT NULL,              -- 单位 (e.g., "kg", "g", "oz", "瓶", "包")
     package_spec VARCHAR,               -- 包装规格 (e.g., "300G*40包/件")
@@ -214,20 +217,23 @@ CREATE TABLE material (
     material_type_id INTEGER REFERENCES material_type(id), -- 外键：物料大类
     is_active BOOLEAN DEFAULT TRUE,    -- 是否活跃
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(store_id, material_number)  -- 同一门店同一物料号唯一
 );
 
 -- 菜品-物料关系表 (BOM - Bill of Materials)
+-- 菜品物料关系表 (STORE-SPECIFIC)
 CREATE TABLE dish_material (
     id SERIAL PRIMARY KEY,
     dish_id INTEGER REFERENCES dish(id), -- 外键：菜品
     material_id INTEGER REFERENCES material(id), -- 外键：物料
+    store_id INTEGER REFERENCES store(id), -- 确保一致性
     standard_quantity NUMERIC(12, 6) NOT NULL, -- 标准用量
     loss_rate NUMERIC(5, 2) DEFAULT 1.0, -- 损耗率 (默认1.0 = 无损耗)
     unit_conversion_rate NUMERIC(12, 6) DEFAULT 1.0 NOT NULL, -- 单位转换率 (从物料单位字段提取，默认1.0)
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(dish_id, material_id)       -- 同一菜品同一物料只能有一个配方
+    UNIQUE(dish_id, material_id, store_id) -- Store-specific composite key
 );
 
 -- 菜品价格历史表
@@ -347,15 +353,54 @@ CREATE INDEX idx_store_district ON store(district_id);
 CREATE INDEX idx_store_name ON store(name);
 CREATE INDEX idx_store_active ON store(is_active);
 
--- Dish indexes
-CREATE INDEX idx_dish_full_code ON dish(full_code);
+-- Dish indexes (store-specific)
+CREATE INDEX idx_dish_store_code ON dish(store_id, full_code);
+CREATE INDEX idx_dish_store_active ON dish(store_id, is_active);
 CREATE INDEX idx_dish_child_type ON dish(dish_child_type_id);
-CREATE INDEX idx_dish_active ON dish(is_active);
 
 -- Material type indexes
 CREATE INDEX idx_material_type_name ON material_type(name);
 CREATE INDEX idx_material_type_active ON material_type(is_active);
 CREATE INDEX idx_material_child_type_material_type ON material_child_type(material_type_id);
+
+-- Material indexes (store-specific)
+CREATE INDEX idx_material_store_number ON material(store_id, material_number);
+CREATE INDEX idx_material_store_active ON material(store_id, is_active);
+CREATE INDEX idx_material_type ON material(material_type_id);
+
+-- Dish-Material relationship indexes
+CREATE INDEX idx_dish_material_store ON dish_material(store_id);
+CREATE INDEX idx_dish_material_dish ON dish_material(dish_id);
+CREATE INDEX idx_dish_material_material ON dish_material(material_id);
+
+-- ========================================
+-- TRIGGERS FOR DATA INTEGRITY
+-- ========================================
+
+-- Function to validate dish_material store consistency
+CREATE OR REPLACE FUNCTION validate_dish_material_store_consistency()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Check if dish and material belong to the same store as the relationship
+    IF NOT EXISTS (
+        SELECT 1 FROM dish d, material m 
+        WHERE d.id = NEW.dish_id 
+        AND m.id = NEW.material_id 
+        AND d.store_id = NEW.store_id 
+        AND m.store_id = NEW.store_id
+    ) THEN
+        RAISE EXCEPTION 'dish_material store_id must match both dish and material store_id';
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger to enforce store consistency on dish_material
+CREATE TRIGGER trigger_dish_material_store_consistency
+    BEFORE INSERT OR UPDATE ON dish_material
+    FOR EACH ROW
+    EXECUTE FUNCTION validate_dish_material_store_consistency();
 CREATE INDEX idx_material_child_type_active ON material_child_type(is_active);
 
 -- Material indexes

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 Convert other source Excel format to Haidilao format.
 This script transforms transactional POS data into the standard Haidilao format
@@ -7,6 +8,17 @@ with daily reports (营业基础表) and time segment reports (分时段基础�
 ⚠️  LEGACY STATUS: Store 6 conversion is no longer needed in daily workflow.
 This script is kept for reference but has been removed from automation menu.
 """
+
+import sys
+import os
+
+# Fix encoding issues for Windows console
+if sys.platform.startswith('win'):
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8')
 
 from utils.database import get_database_manager
 import pandas as pd
@@ -211,10 +223,10 @@ def process_daily_sheet(sheet_name, df, store_info):
     if df.shape[0] <= 2:
         return None
 
-    # Find the header row (contains "时间", "订单编号", etc.)
+    # Find the header row (contains "开台时间", "订单编号", etc.)
     header_row = None
     for i in range(min(5, df.shape[0])):
-        if df.iloc[i, 0] and "时间" in str(df.iloc[i, 0]):
+        if df.iloc[i, 0] and ("时间" in str(df.iloc[i, 0]) or "开台时间" in str(df.iloc[i, 0])):
             header_row = i
             break
 
@@ -222,9 +234,9 @@ def process_daily_sheet(sheet_name, df, store_info):
         print(f"WARNING: Could not find header row in sheet {sheet_name}")
         return None
 
-    # Set proper column names based on the actual structure
-    columns = ['时间', '订单编号', '桌号', '就餐人数', '订单税前实收金额Totals', '订单税金Tax', 'GST', 'QST',
-               '折扣金额（合计）', '赠菜金额（合计）', '免单金额（合计）', '订单类型', '订单税前应收金额（不含税）', '小费', '舍入', '桌数', '退款订单', '订单折扣率']
+    # Set proper column names based on the actual structure from the debug output
+    columns = ['开台时间', '完结时间', '订单编号', '桌号', '就餐人数', '订单税前实收金额Totals', '订单税金Tax', 'GST', 'QST',
+               '折扣金额（合计）', '赠菜金额（合计）', '免单金额（合计）', '订单类型', '订单税前应收金额（不含税）', '小费', '舍入', '桌数', '退款订单', '原始单号', '订单折扣率']
     data_df = df.iloc[header_row+1:].copy()
 
     # Handle case where there might be fewer columns than expected
@@ -237,7 +249,7 @@ def process_daily_sheet(sheet_name, df, store_info):
             [f'col_{i}' for i in range(len(columns), data_df.shape[1])]
 
     # Clean and convert data
-    data_df = data_df.dropna(subset=['时间'])  # Remove rows without timestamp
+    data_df = data_df.dropna(subset=['开台时间'])  # Remove rows without timestamp
     data_df['订单税前实收金额_float'] = data_df['订单税前实收金额Totals'].apply(
         convert_currency_to_float)
     data_df['就餐人数'] = pd.to_numeric(data_df['就餐人数'], errors='coerce').fillna(0)
@@ -416,16 +428,16 @@ def process_time_segment_sheet(sheet_name, df, store_info):
     # Find the header row
     header_row = None
     for i in range(min(5, df.shape[0])):
-        if df.iloc[i, 0] and "时间" in str(df.iloc[i, 0]):
+        if df.iloc[i, 0] and ("时间" in str(df.iloc[i, 0]) or "开台时间" in str(df.iloc[i, 0])):
             header_row = i
             break
 
     if header_row is None:
         return []
 
-    # Set proper column names based on the actual structure
-    columns = ['时间', '订单编号', '桌号', '就餐人数', '订单税前实收金额Totals', '订单税金Tax', 'GST', 'QST',
-               '折扣金额（合计）', '赠菜金额（合计）', '免单金额（合计）', '订单类型', '订单税前应收金额（不含税）', '小费', '舍入', '桌数', '退款订单', '订单折扣率']
+    # Set proper column names based on the actual structure from the debug output
+    columns = ['开台时间', '完结时间', '订单编号', '桌号', '就餐人数', '订单税前实收金额Totals', '订单税金Tax', 'GST', 'QST',
+               '折扣金额（合计）', '赠菜金额（合计）', '免单金额（合计）', '订单类型', '订单税前应收金额（不含税）', '小费', '舍入', '桌数', '退款订单', '原始单号', '订单折扣率']
     data_df = df.iloc[header_row+1:].copy()
 
     # Handle case where there might be fewer columns than expected
@@ -437,11 +449,11 @@ def process_time_segment_sheet(sheet_name, df, store_info):
             [f'col_{i}' for i in range(len(columns), data_df.shape[1])]
 
     # Clean and convert data
-    data_df = data_df.dropna(subset=['时间'])
+    data_df = data_df.dropna(subset=['开台时间'])
     data_df['订单税前实收金额_float'] = data_df['订单税前实收金额Totals'].apply(
         convert_currency_to_float)
     data_df['就餐人数'] = pd.to_numeric(data_df['就餐人数'], errors='coerce').fillna(0)
-    data_df['分时段'] = data_df['时间'].apply(categorize_time_segment)
+    data_df['分时段'] = data_df['开台时间'].apply(categorize_time_segment)
 
     # Process additional columns if available
     if '桌数' in data_df.columns:

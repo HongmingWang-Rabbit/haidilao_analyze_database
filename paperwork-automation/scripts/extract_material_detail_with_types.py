@@ -83,6 +83,32 @@ def clean_material_number(material_number):
         return material_str
 
 
+def detect_store_id_from_path(file_path):
+    """
+    Detect store ID from file path.
+    Examples: 
+    - Input/monthly_report/material_detail/3/ca03-202505.XLSX -> 3
+    - ca03-202505.XLSX -> 3
+    """
+    file_path_str = str(file_path)
+    
+    # Try to extract from folder structure first
+    # Look for pattern like /material_detail/N/ where N is store number
+    import re
+    folder_match = re.search(r'/material_detail/(\d+)/', file_path_str.replace('\\', '/'))
+    if folder_match:
+        return int(folder_match.group(1))
+    
+    # Try to extract from filename pattern like ca03, CA03, etc.
+    filename = Path(file_path).name
+    filename_match = re.search(r'ca0?(\d+)', filename.lower())
+    if filename_match:
+        return int(filename_match.group(1))
+    
+    # Default to None if cannot detect
+    return None
+
+
 def extract_material_types_and_materials(input_file, debug=False, quiet=False):
     """
     Extract material types, child types, and materials from material_detail Excel file.
@@ -99,6 +125,13 @@ def extract_material_types_and_materials(input_file, debug=False, quiet=False):
     try:
         if not quiet:
             safe_print(f"📁 Reading material detail data from: {input_file}")
+
+        # Detect store ID from file path
+        store_id = detect_store_id_from_path(input_file)
+        if not quiet and store_id:
+            safe_print(f"🏪 Detected store ID: {store_id}")
+        elif not quiet:
+            safe_print("⚠️ Could not detect store ID from file path")
 
         # Read the Excel file with 物料 column as text to preserve leading zeros
         df = pd.read_excel(input_file, sheet_name='Sheet1', dtype={'物料': str})
@@ -199,7 +232,8 @@ def extract_material_types_and_materials(input_file, debug=False, quiet=False):
                 'package_spec': '',  # Not available in this format
                 'material_type_name': material_type_name if pd.notna(material_type_name) else None,
                 'material_child_type_name': material_child_type_name if pd.notna(material_child_type_name) else None,
-                'is_active': True
+                'is_active': True,
+                'store_id': store_id  # Add store_id from detected path
             })
 
         if not quiet:
@@ -365,46 +399,74 @@ def insert_material_data_to_database(material_types, material_child_types, mater
                         material_child_type_id = material_child_type_ids.get(
                             key)
 
-                    query = """
-                    INSERT INTO material (material_number, name, description, unit, package_spec, 
-                                        material_type_id, material_child_type_id, is_active)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (material_number) 
-                    DO UPDATE SET
-                        name = EXCLUDED.name,
-                        description = EXCLUDED.description,
-                        unit = EXCLUDED.unit,
-                        package_spec = EXCLUDED.package_spec,
-                        material_type_id = EXCLUDED.material_type_id,
-                        material_child_type_id = EXCLUDED.material_child_type_id,
-                        is_active = EXCLUDED.is_active,
-                        updated_at = CURRENT_TIMESTAMP
-                    RETURNING (xmax = 0) AS inserted;
-                    """
+                    # Insert or update materials with type information (store-specific)
+                    if material['store_id'] is not None:
+                        query = """
+                        INSERT INTO material (material_number, name, description, unit, package_spec, 
+                                            material_type_id, material_child_type_id, store_id, 
+                                            created_at, updated_at, is_active)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, %s)
+                        ON CONFLICT (material_number, store_id) 
+                        DO UPDATE SET
+                            material_type_id = EXCLUDED.material_type_id,
+                            material_child_type_id = EXCLUDED.material_child_type_id,
+                            name = COALESCE(NULLIF(EXCLUDED.name, ''), material.name),
+                            description = COALESCE(NULLIF(EXCLUDED.description, ''), material.description),
+                            unit = COALESCE(NULLIF(EXCLUDED.unit, ''), material.unit),
+                            package_spec = COALESCE(NULLIF(EXCLUDED.package_spec, ''), material.package_spec),
+                            updated_at = CURRENT_TIMESTAMP
+                        RETURNING (xmax = 0) AS inserted
+                        """
 
-                    cursor.execute(query, (
-                        material['material_number'],
-                        material['name'],
-                        material['description'],
-                        material['unit'],
-                        material['package_spec'],
-                        material_type_id,
-                        material_child_type_id,
-                        material['is_active']
-                    ))
+                        cursor.execute(query, (
+                            material['material_number'],
+                            material['name'],
+                            material['description'],
+                            material['unit'],
+                            material['package_spec'],
+                            material_type_id,
+                            material_child_type_id,
+                            material['store_id'],
+                            material['is_active']
+                        ))
 
-                    # Check if it was an insert or update
-                    result = cursor.fetchone()
-                    if result and result['inserted']:
-                        inserted_count += 1
+                        result = cursor.fetchone()
+                        if result and result['inserted']:
+                            inserted_count += 1
+                        else:
+                            updated_count += 1
                     else:
-                        updated_count += 1
+                        # Fallback to update-only approach if store_id cannot be detected
+                        query = """
+                        UPDATE material 
+                        SET material_type_id = %s,
+                            material_child_type_id = %s,
+                            name = COALESCE(NULLIF(%s, ''), name),
+                            description = COALESCE(NULLIF(%s, ''), description),
+                            unit = COALESCE(NULLIF(%s, ''), unit),
+                            package_spec = COALESCE(NULLIF(%s, ''), package_spec),
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE material_number = %s
+                        """
+
+                        cursor.execute(query, (
+                            material_type_id,
+                            material_child_type_id,
+                            material['name'],
+                            material['description'],
+                            material['unit'],
+                            material['package_spec'],
+                            material['material_number']
+                        ))
+
+                        if cursor.rowcount > 0:
+                            updated_count += 1
 
                 # Commit the transaction
                 conn.commit()
 
         if not quiet:
-            safe_print("✅ Database insertion completed:")
+            safe_print("✅ Database update completed:")
             safe_print(f"   📋 Material types: {len(material_types)}")
             safe_print(
                 f"   📋 Material child types: {len(material_child_types)}")

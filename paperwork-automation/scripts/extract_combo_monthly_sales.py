@@ -22,7 +22,7 @@ def safe_print(message):
         print(message)
     except UnicodeEncodeError:
         # Remove emojis and special Unicode characters for Windows console
-        clean_message = re.sub(r'[^\x00-\x7F]+', '', message)
+        clean_message = re.sub(r'[^\x00-\x7F]+', '?', str(message))
         print(clean_message)
 
 
@@ -48,7 +48,7 @@ def extract_combo_data_from_excel(file_path: str, quiet: bool = False) -> Dict[s
         excel_file = pd.ExcelFile(file_path)
 
         if not quiet:
-            print(f"Available sheets: {excel_file.sheet_names}")
+            safe_print(f"Available sheets: {excel_file.sheet_names}")
 
         # Target sheet for combo sales summary
         target_sheet = "套餐销售汇总"
@@ -277,30 +277,37 @@ def insert_to_database(data: Dict[str, List[Dict]], is_test: bool = False) -> bo
                 combo_inserted = 0
                 combo_updated = 0
 
+                # Insert combos for each store (since combos can be store-specific)
                 for combo in combos:
-                    try:
-                        query = """
-                        INSERT INTO combo (combo_code, name)
-                        VALUES (%s, %s)
-                        ON CONFLICT (combo_code)
-                        DO UPDATE SET
-                            name = EXCLUDED.name,
-                            updated_at = CURRENT_TIMESTAMP
-                        RETURNING (xmax = 0) AS inserted;
-                        """
+                    for store_id in range(1, 8):  # Stores 1-7
+                        # Use savepoint to prevent transaction abort
+                        cursor.execute("SAVEPOINT combo_sp")
+                        try:
+                            query = """
+                            INSERT INTO combo (combo_code, name, store_id)
+                            VALUES (%s, %s, %s)
+                            ON CONFLICT (store_id, combo_code)
+                            DO UPDATE SET
+                                name = EXCLUDED.name,
+                                updated_at = CURRENT_TIMESTAMP
+                            RETURNING (xmax = 0) AS inserted;
+                            """
 
-                        cursor.execute(
-                            query, (combo['combo_code'], combo['name']))
-                        result = cursor.fetchone()
-                        if result and result['inserted']:
-                            combo_inserted += 1
-                        else:
-                            combo_updated += 1
+                            cursor.execute(
+                                query, (combo['combo_code'], combo['name'], store_id))
+                            result = cursor.fetchone()
+                            if result and result['inserted']:
+                                combo_inserted += 1
+                            else:
+                                combo_updated += 1
+                            
+                            cursor.execute("RELEASE SAVEPOINT combo_sp")
 
-                    except Exception as e:
-                        print(
-                            f"ERROR: Error processing combo {combo['combo_code']}: {e}")
-                        continue
+                        except Exception as e:
+                            safe_print(
+                                f"ERROR: Error processing combo {combo['combo_code']} for store {store_id}: {e}")
+                            cursor.execute("ROLLBACK TO SAVEPOINT combo_sp")
+                            continue
 
                 # Insert combo dish sales
                 safe_print(
@@ -310,27 +317,33 @@ def insert_to_database(data: Dict[str, List[Dict]], is_test: bool = False) -> bo
                 sales_errors = 0
 
                 for sale in combo_dish_sales:
+                    # Use savepoint to prevent transaction abort on individual errors
+                    cursor.execute("SAVEPOINT combo_sale_sp")
                     try:
-                        # Get combo ID
+                        # Get combo ID for the specific store
                         cursor.execute(
-                            "SELECT id FROM combo WHERE combo_code = %s", (sale['combo_code'],))
+                            "SELECT id FROM combo WHERE combo_code = %s AND store_id = %s", 
+                            (sale['combo_code'], sale['store_id']))
                         combo_result = cursor.fetchone()
                         if not combo_result:
                             safe_print(
-                                f"Warning: Combo not found - code: {sale['combo_code']}")
+                                f"Warning: Combo not found - code: {sale['combo_code']} for store {sale['store_id']}")
                             sales_errors += 1
+                            cursor.execute("ROLLBACK TO SAVEPOINT combo_sale_sp")
                             continue
 
                         combo_id = combo_result['id']
 
-                        # Get dish ID
+                        # Get dish ID for the specific store
                         cursor.execute(
-                            "SELECT id FROM dish WHERE full_code = %s", (sale['dish_code'],))
+                            "SELECT id FROM dish WHERE full_code = %s AND store_id = %s", 
+                            (sale['dish_code'], sale['store_id']))
                         dish_result = cursor.fetchone()
                         if not dish_result:
                             safe_print(
-                                f"Warning: Dish not found - code: {sale['dish_code']}")
+                                f"Warning: Dish not found - code: {sale['dish_code']} for store {sale['store_id']}")
                             sales_errors += 1
+                            cursor.execute("ROLLBACK TO SAVEPOINT combo_sale_sp")
                             continue
 
                         dish_id = dish_result['id']
@@ -360,11 +373,14 @@ def insert_to_database(data: Dict[str, List[Dict]], is_test: bool = False) -> bo
                             sales_inserted += 1
                         else:
                             sales_updated += 1
+                        
+                        cursor.execute("RELEASE SAVEPOINT combo_sale_sp")
 
                     except Exception as e:
-                        print(
+                        safe_print(
                             f"ERROR: Error processing combo dish sale {sale['combo_code']}-{sale['dish_code']}: {e}")
                         sales_errors += 1
+                        cursor.execute("ROLLBACK TO SAVEPOINT combo_sale_sp")
                         continue
 
                 # Commit transaction

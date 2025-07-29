@@ -227,17 +227,31 @@ class SimpleHistoricalExtractor:
                         size = row.get('规格', '') if pd.notna(
                             row.get('规格')) else ''
 
-                        # Insert dish (simple version)
-                        cursor.execute("""
-                            INSERT INTO dish (full_code, size, name)
-                            VALUES (%s, %s, %s)
-                            ON CONFLICT (full_code, size) DO UPDATE SET
-                                name = EXCLUDED.name,
-                                updated_at = CURRENT_TIMESTAMP
-                        """, (full_code, size, dish_name))
+                        # Store-specific dish insertion (simple version)
+                        stores_to_create = set()
+                        
+                        # Check if we have store info for this dish
+                        if ('门店名称' in row and pd.notna(row['门店名称'])):
+                            store_name = str(row['门店名称']).strip()
+                            if store_name in store_mapping:
+                                stores_to_create.add(store_mapping[store_name])
+                        
+                        # If no store info, create for all stores (fallback)
+                        if not stores_to_create:
+                            stores_to_create = set(store_mapping.values())
+                            
+                        # Insert dish for each relevant store
+                        for store_id in stores_to_create:
+                            cursor.execute("""
+                                INSERT INTO dish (full_code, size, name, store_id)
+                                VALUES (%s, %s, %s, %s)
+                                ON CONFLICT (full_code, size, store_id) DO UPDATE SET
+                                    name = EXCLUDED.name,
+                                    updated_at = CURRENT_TIMESTAMP
+                            """, (full_code, size, dish_name, store_id))
 
-                        if cursor.rowcount > 0:
-                            results['dishes'] += 1
+                            if cursor.rowcount > 0:
+                                results['dishes'] += 1
 
                         # Process price history if available
                         if ('门店名称' in row and '单价' in row and
@@ -250,9 +264,9 @@ class SimpleHistoricalExtractor:
                                     if price > 0:
                                         store_id = store_mapping[store_name]
 
-                                        # Get dish ID
-                                        cursor.execute("SELECT id FROM dish WHERE full_code = %s AND size = %s",
-                                                       (full_code, size))
+                                        # Get dish ID (store-specific)
+                                        cursor.execute("SELECT id FROM dish WHERE full_code = %s AND size = %s AND store_id = %s",
+                                                       (full_code, size, store_id))
                                         dish_result = cursor.fetchone()
 
                                         if dish_result:

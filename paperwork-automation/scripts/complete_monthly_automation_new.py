@@ -54,6 +54,10 @@ class MonthlyAutomationProcessor:
         self.config = DatabaseConfig(is_test=is_test)
         self.db_manager = DatabaseManager(self.config)
         self.input_folder = Path("Input/monthly_report")
+        
+        # Initialize store mapping
+        self.store_mapping = self.get_store_mapping()
+        
         self.results = {
             'dish_types': 0,
             'dish_child_types': 0,
@@ -197,25 +201,32 @@ class MonthlyAutomationProcessor:
                             full_code) > 8 else full_code
 
                         # Insert or update dish
-                        cursor.execute("""
-                            INSERT INTO dish (
-                                name, full_code, short_code, size,
-                                dish_child_type_id, specification, unit
-                            )
-                            SELECT %s, %s, %s, %s, dct.id, %s, %s
-                            FROM dish_child_type dct
-                            JOIN dish_type dt ON dct.dish_type_id = dt.id
-                            WHERE dt.name = %s AND dct.name = %s
-                            ON CONFLICT (full_code, size) DO UPDATE SET
-                                name = EXCLUDED.name,
-                                short_code = EXCLUDED.short_code,
-                                specification = EXCLUDED.specification,
-                                unit = EXCLUDED.unit,
-                                updated_at = CURRENT_TIMESTAMP
-                        """, (
-                            row['菜品名称(门店pad显示名称)'], full_code, short_code, row['规格'],
-                            row['规格'], row['菜品单位'], row['大类名称'], row['子类名称']
-                        ))
+                        # Store-specific dish insertion
+                        store_name = row['门店名称']
+                        if store_name in store_mapping:
+                            store_id = store_mapping[store_name]
+                            cursor.execute("""
+                                INSERT INTO dish (
+                                    name, full_code, short_code, size,
+                                    dish_child_type_id, specification, unit, store_id
+                                )
+                                SELECT %s, %s, %s, %s, dct.id, %s, %s, %s
+                                FROM dish_child_type dct
+                                JOIN dish_type dt ON dct.dish_type_id = dt.id
+                                WHERE dt.name = %s AND dct.name = %s
+                                ON CONFLICT (store_id, full_code, size) DO UPDATE SET
+                                    name = EXCLUDED.name,
+                                    short_code = EXCLUDED.short_code,
+                                    specification = EXCLUDED.specification,
+                                    unit = EXCLUDED.unit,
+                                    updated_at = CURRENT_TIMESTAMP
+                            """, (
+                                row['菜品名称(门店pad显示名称)'], full_code, short_code, row['规格'],
+                                row['规格'], row['菜品单位'], store_id, row['大类名称'], row['子类名称']
+                            ))
+                        else:
+                            # Skip dishes for unknown stores
+                            continue
                         dish_count += cursor.rowcount
 
                         # Extract dish price history
@@ -224,26 +235,26 @@ class MonthlyAutomationProcessor:
                             store_id = store_mapping[store_name]
                             price = float(row['菜品单价'])
 
-                            # Mark existing prices as inactive if different
+                            # Mark existing prices as inactive if different (store-specific)
                             cursor.execute("""
                                 UPDATE dish_price_history
                                 SET is_active = FALSE
-                                WHERE dish_id IN (SELECT id FROM dish WHERE full_code = %s AND size = %s)
+                                WHERE dish_id IN (SELECT id FROM dish WHERE full_code = %s AND size = %s AND store_id = %s)
                                 AND store_id = %s AND price != %s AND is_active = TRUE
-                            """, (full_code, row['规格'], store_id, price))
+                            """, (full_code, row['规格'], store_id, store_id, price))
 
-                            # Insert new price history
+                            # Insert new price history (store-specific)
                             cursor.execute("""
                                 INSERT INTO dish_price_history (
                                     dish_id, store_id, price, effective_date, is_active
                                 )
                                 SELECT d.id, %s, %s, %s, TRUE
                                 FROM dish d
-                                WHERE d.full_code = %s AND d.size = %s
+                                WHERE d.full_code = %s AND d.size = %s AND d.store_id = %s
                                 ON CONFLICT (dish_id, store_id, effective_date) DO UPDATE SET
                                     price = EXCLUDED.price,
                                     is_active = TRUE
-                            """, (store_id, price, self.target_date, full_code, row['规格']))
+                            """, (store_id, price, self.target_date, full_code, row['规格'], store_id))
                             price_history_count += cursor.rowcount
 
                         # Extract monthly sales data (now properly aggregated)
@@ -279,7 +290,7 @@ class MonthlyAutomationProcessor:
                                         SELECT d.id, %s, %s, %s, %s, %s, %s, %s, %s
                                         FROM dish d
                                         WHERE d.full_code = %s AND d.size = %s
-                                        ON CONFLICT (dish_id, store_id, year, month, sales_mode) DO UPDATE SET
+                                        ON CONFLICT (dish_id, store_id, year, month) DO UPDATE SET
                                             sale_amount = EXCLUDED.sale_amount,
                                             return_amount = EXCLUDED.return_amount,
                                             free_meal_amount = EXCLUDED.free_meal_amount,
@@ -824,8 +835,19 @@ class MonthlyAutomationProcessor:
             f"RELATION: Extracting dish-material relationships from: {file_path.name}")
 
         try:
-            # Read the 计算 sheet
-            df = pd.read_excel(file_path, sheet_name='计算')
+            # Check if this is the new combined format or the old format
+            xl_file = pd.ExcelFile(file_path)
+            sheet_names = xl_file.sheet_names
+            
+            if '计算' in sheet_names:
+                # Old format - read from 计算 sheet
+                df = pd.read_excel(file_path, sheet_name='计算')
+                logger.info(f"Using old format - reading from '计算' sheet")
+            else:
+                # New format - read from first sheet (combined data from all stores)
+                df = pd.read_excel(file_path, sheet_name=sheet_names[0])
+                logger.info(f"Using new format - reading from '{sheet_names[0]}' sheet")
+            
             logger.info(
                 f"Loaded {len(df)} rows from dish-material relationships")
 
@@ -836,13 +858,26 @@ class MonthlyAutomationProcessor:
 
                 for _, row in df.iterrows():
                     try:
-                        # Get dish and material identifiers
-                        full_code = str(int(row['菜品编码'])) if pd.notna(
-                            row['菜品编码']) else None
-                        short_code = str(int(row['菜品短编码'])) if pd.notna(
-                            row['菜品短编码']) else None
-                        material_number = str(int(row['物料号'])) if pd.notna(
-                            row['物料号']) else None
+                        # Get store_id for processing
+                        row_store_id = row.get('store_id', 1)
+                        # Get dish and material identifiers with improved validation
+                        full_code = None
+                        if pd.notna(row['菜品编码']):
+                            try:
+                                # Try to convert to int first, then to string
+                                full_code = str(int(float(row['菜品编码'])))
+                            except (ValueError, TypeError):
+                                # If conversion fails, skip non-numeric codes
+                                continue
+                        
+                        material_number = None
+                        if pd.notna(row['物料号']):
+                            try:
+                                # Try to convert to int first, then to string
+                                material_number = str(int(float(row['物料号'])))
+                            except (ValueError, TypeError):
+                                # If conversion fails, skip non-numeric material numbers
+                                continue
 
                         if not full_code or not material_number:
                             continue
@@ -854,9 +889,19 @@ class MonthlyAutomationProcessor:
                         else:
                             dish_size = None
 
-                        # Get standard quantity from column N (出品分量(kg))
-                        standard_qty = float(row['出品分量(kg)']) if pd.notna(
-                            row['出品分量(kg)']) else 0
+                        # Get standard quantity from column N (出品分量(kg)) with improved parsing
+                        standard_qty = 0
+                        if pd.notna(row['出品分量(kg)']):
+                            try:
+                                qty_str = str(row['出品分量(kg)']).strip()
+                                # Handle formats like '2pc', '10pc' by extracting numeric part
+                                if 'pc' in qty_str.lower():
+                                    qty_str = qty_str.lower().replace('pc', '').strip()
+                                standard_qty = float(qty_str)
+                            except (ValueError, TypeError):
+                                # If parsing fails, skip this row
+                                continue
+                        
                         if standard_qty <= 0:
                             continue
 
@@ -891,51 +936,66 @@ class MonthlyAutomationProcessor:
                                     except (ValueError, TypeError):
                                         unit_conversion_rate = 1.0  # Default if conversion fails
 
-                        # CRITICAL FIX: Match dish by full_code AND size to handle different specifications
-                        # Use BOTH full_code and size for precise matching
-                        if dish_size:
-                            # Match by full_code AND size
-                            cursor.execute("""
-                                INSERT INTO dish_material (dish_id, material_id, standard_quantity, loss_rate, unit_conversion_rate)
-                                SELECT d.id, m.id, %s, %s, %s
-                                FROM dish d, material m
-                                WHERE d.full_code = %s 
-                                AND d.size = %s
-                                AND m.material_number = %s
-                                ON CONFLICT (dish_id, material_id) DO UPDATE SET
-                                    standard_quantity = EXCLUDED.standard_quantity,
-                                    loss_rate = EXCLUDED.loss_rate,
-                                    unit_conversion_rate = EXCLUDED.unit_conversion_rate,
-                                    updated_at = CURRENT_TIMESTAMP
-                            """, (standard_qty, loss_rate, unit_conversion_rate, full_code, dish_size, material_number))
-                        else:
-                            # Fallback: Match by full_code only when no size specified
-                            cursor.execute("""
-                                INSERT INTO dish_material (dish_id, material_id, standard_quantity, loss_rate, unit_conversion_rate)
-                                SELECT d.id, m.id, %s, %s, %s
-                                FROM dish d, material m
-                                WHERE d.full_code = %s 
-                                AND d.size IS NULL
-                                AND m.material_number = %s
-                                ON CONFLICT (dish_id, material_id) DO UPDATE SET
-                                    standard_quantity = EXCLUDED.standard_quantity,
-                                    loss_rate = EXCLUDED.loss_rate,
-                                    unit_conversion_rate = EXCLUDED.unit_conversion_rate,
-                                    updated_at = CURRENT_TIMESTAMP
-                            """, (standard_qty, loss_rate, unit_conversion_rate, full_code, material_number))
+                        # CRITICAL FIX: Use store_id from the input file instead of looping through all stores
+                        # The input file already contains the correct store_id for each dish-material relationship
+                        input_store_id = row.get('store_id', 1)  # Get store_id from input file, default to 1
+                        
+                        # Store-specific processing using input file store_id
+                        
+                        try:
+                            if dish_size:
+                                # Match by full_code AND size for the specific store from input
+                                cursor.execute("""
+                                    INSERT INTO dish_material (dish_id, material_id, standard_quantity, loss_rate, unit_conversion_rate, store_id)
+                                    SELECT d.id, m.id, %s, %s, %s, d.store_id
+                                    FROM dish d, material m
+                                    WHERE d.full_code = %s 
+                                    AND d.size = %s
+                                    AND d.store_id = %s
+                                    AND m.material_number = %s
+                                    AND m.store_id = %s
+                                    ON CONFLICT (dish_id, material_id, store_id) DO UPDATE SET
+                                        standard_quantity = EXCLUDED.standard_quantity,
+                                        loss_rate = EXCLUDED.loss_rate,
+                                        unit_conversion_rate = EXCLUDED.unit_conversion_rate,
+                                        updated_at = CURRENT_TIMESTAMP
+                                """, (standard_qty, loss_rate, unit_conversion_rate, full_code, dish_size, input_store_id, material_number, input_store_id))
+                            else:
+                                # Match by full_code only when no size specified for the specific store from input
+                                cursor.execute("""
+                                    INSERT INTO dish_material (dish_id, material_id, standard_quantity, loss_rate, unit_conversion_rate, store_id)
+                                    SELECT d.id, m.id, %s, %s, %s, d.store_id
+                                    FROM dish d, material m
+                                    WHERE d.full_code = %s 
+                                    AND d.size IS NULL
+                                    AND d.store_id = %s
+                                    AND m.material_number = %s
+                                    AND m.store_id = %s
+                                    ON CONFLICT (dish_id, material_id, store_id) DO UPDATE SET
+                                        standard_quantity = EXCLUDED.standard_quantity,
+                                        loss_rate = EXCLUDED.loss_rate,
+                                        unit_conversion_rate = EXCLUDED.unit_conversion_rate,
+                                        updated_at = CURRENT_TIMESTAMP
+                                """, (standard_qty, loss_rate, unit_conversion_rate, full_code, input_store_id, material_number, input_store_id))
 
-                        dish_material_count += cursor.rowcount
+                            dish_material_count += cursor.rowcount
+                            
+                            # Count successful insertions
 
-                        # Debug logging for dish 1060062 and material 1500882
-                        if full_code == '1060062' and material_number == '1500882':
-                            logger.info(
-                                f"DISH-MATERIAL DEBUG: Dish {full_code} ({dish_size}) -> Material {material_number}, Standard Qty: {standard_qty}, Unit Conversion Rate: {unit_conversion_rate}")
+                        except Exception as e:
+                            logger.error(f"Error inserting dish-material for store {input_store_id}: {e}")
+                            continue
+
+                        # Debug logging removed for production
 
                     except Exception as e:
                         logger.error(
                             f"Error processing dish-material relationship: {e}")
                         continue
 
+                # Commit the transaction to persist the dish-material relationships
+                conn.commit()
+                
                 self.log_result('dish_materials', dish_material_count,
                                 "Processed dish-material relationships")
 
@@ -1060,18 +1120,18 @@ class MonthlyAutomationProcessor:
             return False
 
     def generate_gross_margin_report(self, target_date: str) -> bool:
-        """Generate gross margin analysis report."""
+        """Generate monthly gross margin analysis report."""
         logger.info(
-            f"GROSS MARGIN REPORT: Generating gross margin analysis report for {target_date}")
+            f"GROSS MARGIN REPORT: Generating monthly gross margin analysis report for {target_date}")
 
         try:
             import subprocess
             import sys
 
-            # Call the gross margin report generation script
+            # Call the monthly gross margin report generation script
             cmd = [
                 sys.executable,
-                "-m", "scripts.generate_gross_margin_report",
+                "-m", "scripts.generate_monthly_gross_margin_report",
                 "--target-date", target_date
             ]
 
@@ -1089,9 +1149,9 @@ class MonthlyAutomationProcessor:
 
             if result.returncode == 0:
                 logger.info(
-                    "SUCCESS: Gross margin report generation completed")
+                    "SUCCESS: Monthly gross margin report generation completed")
                 self.log_result('gross_margin_report', 1,
-                                "Generated gross margin report with price and material analysis")
+                                "Generated monthly gross margin analysis report (毛利相关分析指标)")
                 return True
             else:
                 logger.error(

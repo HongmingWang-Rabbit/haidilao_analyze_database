@@ -576,8 +576,10 @@ class AutomationMenu:
         print("📦 Material details → materials, material price history")
         print("🏪 Inventory checking results → inventory counts by store")
         print("🔗 Calculated dish-material usage → dish-material relationships")
-        print("📋 Generate material variance analysis report")
-        print("🍻 Generate beverage variance analysis report")
+        print("📋 Generate reports:")
+        print("   • Material variance analysis report")
+        print("   • Beverage variance analysis report")
+        print("   • Monthly gross margin analysis report (毛利相关分析指标)")
         print()
 
         # Get target date - either from files or user input
@@ -672,6 +674,7 @@ class AutomationMenu:
             print("✅ All monthly data has been processed and imported")
             print("✅ Material variance analysis report has been generated")
             print("✅ Beverage variance analysis report has been generated")
+            print("✅ Monthly gross margin analysis report has been generated")
             print("📁 Check the output/ folder for generated reports")
             print("📊 Database has been updated with all monthly data")
         else:
@@ -713,6 +716,8 @@ class AutomationMenu:
                  "batch_material_prices"),
                 ("h", "Historical Data Extraction (All Months)",
                  "historical_data"),
+                ("i", "📊 Inventory Calculation Data (All Months)",
+                 "inventory_calculation"),
                 ("t", "🏦 Bank Transaction Processing (Daily)", "bank_transactions"),
                 ("b", "← Back to Main Menu", "back")
             ]
@@ -756,6 +761,8 @@ class AutomationMenu:
                 self.extract_material_prices_batch()
             elif choice == 'h':
                 self.extract_historical_data()
+            elif choice == 'i':
+                self.extract_inventory_calculation_data()
             elif choice == 't':
                 self.process_bank_transactions()
             else:
@@ -848,8 +855,8 @@ class AutomationMenu:
             print("=" * 30)
 
             options = [
-                # ("1", "Store 6 Data Conversion (New Logic)", "store6_conversion"),  # Disabled - no longer needed
-                ("2", "Legacy Format Conversion", "legacy_conversion"),
+                # Disabled - no longer needed
+                ("1", "Snappy to BI Format Conversion", "store6_conversion"),
                 ("b", "← Back to Main Menu", "back")
             ]
 
@@ -859,10 +866,9 @@ class AutomationMenu:
 
             if choice == 'b':
                 break
-            # elif choice == '1':
-            #     self.convert_store6_data()  # Disabled - no longer needed
-            elif choice == '2':
-                self.convert_legacy_format()
+            elif choice == '1':
+                self.convert_store6_data()  # Disabled - no longer needed
+
             else:
                 print("❌ Invalid choice. Please try again.")
                 input("Press Enter to continue...")
@@ -2123,6 +2129,45 @@ except Exception as e:
             print("📊 Check the output summary for detailed statistics.")
         else:
             print("❌ Historical data extraction failed. Please check the logs.")
+
+        input("Press Enter to continue...")
+
+    def extract_inventory_calculation_data(self):
+        """Extract inventory calculation data from all historical months"""
+        print("📊 INVENTORY CALCULATION DATA EXTRACTION")
+        print("=" * 50)
+        print("📋 This will extract dish material usage data from:")
+        print("   • Current month inventory files")
+        print("   • ALL historical inventory files with 计算 sheets")
+        print("   • Includes corrected portion size mapping")
+        print()
+        print("⚠️  This extracts thousands of records and may take several minutes!")
+        print("🔧 Uses corrected column mapping to avoid unreasonable portion sizes")
+        print()
+
+        confirm = input(
+            "Do you want to proceed with inventory calculation extraction? (y/N): ").lower().strip()
+        if confirm != 'y':
+            print("❌ Operation cancelled.")
+            input("Press Enter to continue...")
+            return
+
+        print()
+        print("🔄 Starting inventory calculation data extraction...")
+        print("⏱️  This may take 5-10 minutes depending on data volume.")
+        print()
+
+        command = f'{self.python_cmd} scripts/extract_inventory_calculation_data.py'
+        success = self.run_command(
+            command, "Inventory Calculation Data Extraction")
+
+        if success:
+            print("🎉 Inventory calculation data extraction completed successfully!")
+            print(
+                "📊 Check the output file for thousands of records with corrected portion sizes.")
+        else:
+            print(
+                "❌ Inventory calculation data extraction failed. Please check the logs.")
 
         input("Press Enter to continue...")
 

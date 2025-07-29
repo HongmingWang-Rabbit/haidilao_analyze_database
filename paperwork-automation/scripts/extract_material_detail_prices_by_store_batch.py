@@ -475,11 +475,11 @@ def insert_all_store_prices_to_database(all_store_prices: Dict[int, List[Dict]],
 
                     for price_data in store_prices:
                         try:
-                            # First, get material_id from material_number
+                            # First, get material_id from material_number and store_id
                             cursor.execute("""
                                 SELECT id FROM material 
-                                WHERE material_number = %s
-                            """, (price_data['material_number'],))
+                                WHERE material_number = %s AND store_id = %s
+                            """, (price_data['material_number'], price_data['store_id']))
 
                             material_result = cursor.fetchone()
                             if not material_result:

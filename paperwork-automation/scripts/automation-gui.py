@@ -282,6 +282,36 @@ class HaidilaoAutomationGUI:
         
         main_report_frame.pack(fill='x')
         
+        # Additional Report Types
+        additional_reports_frame = ttk.LabelFrame(gen_section, text="📊 Additional Reports", padding="10")
+        
+        # Gross Margin Reports row
+        gross_margin_row = ttk.Frame(additional_reports_frame)
+        
+        ttk.Button(gross_margin_row, 
+                  text="💰 Gross Margin Report (Daily)",
+                  command=self.generate_gross_margin_report,
+                  style='Success.TButton').pack(side='left')
+        
+        gross_margin_row.pack(fill='x', pady=(0, 10))
+        
+        # Material Reports row
+        material_row = ttk.Frame(additional_reports_frame)
+        
+        ttk.Button(material_row, 
+                  text="📦 Monthly Material Report",
+                  command=self.generate_monthly_material_report,
+                  style='Info.TButton').pack(side='left', padx=(0, 10))
+        
+        ttk.Button(material_row, 
+                  text="🍹 Monthly Beverage Report",
+                  command=self.generate_monthly_beverage_report,
+                  style='Info.TButton').pack(side='left')
+        
+        material_row.pack(fill='x')
+        
+        additional_reports_frame.pack(fill='x', pady=(0, 20))
+        
         # Report history
         history_frame = ttk.Frame(gen_section)
         ttk.Label(history_frame, text="📁 Recent Reports:", 
@@ -776,6 +806,62 @@ Working Directory: {os.getcwd()}
         
         # Then run the actual test after a delay
         self.root.after(3000, lambda: self.run_test('quick'))
+    
+    def generate_gross_margin_report(self):
+        """Generate gross margin report (毛利报表)"""
+        date = self.date_var.get().strip()
+        
+        if not date:
+            messagebox.showerror("Error", "Please enter a report date!")
+            return
+        
+        # Validate date format
+        try:
+            datetime.strptime(date, '%Y-%m-%d')
+        except ValueError:
+            messagebox.showerror("Error", "Invalid date format! Use YYYY-MM-DD")
+            return
+        
+        command = f'python3 scripts/generate_gross_margin_report.py --target-date {date}'
+        self.run_command(command, f'Generate Gross Margin Report for {date}')
+    
+    def generate_monthly_material_report(self):
+        """Generate monthly material report"""
+        date = self.date_var.get().strip()
+        
+        if not date:
+            messagebox.showerror("Error", "Please enter a report date!")
+            return
+        
+        # For monthly reports, convert to YYYY-MM format
+        try:
+            dt = datetime.strptime(date, '%Y-%m-%d')
+            month_format = dt.strftime('%Y-%m')
+        except ValueError:
+            messagebox.showerror("Error", "Invalid date format! Use YYYY-MM-DD")
+            return
+        
+        command = f'python3 scripts/generate_monthly_material_report.py --date {month_format}'
+        self.run_command(command, f'Generate Monthly Material Report for {month_format}')
+    
+    def generate_monthly_beverage_report(self):
+        """Generate monthly beverage report"""
+        date = self.date_var.get().strip()
+        
+        if not date:
+            messagebox.showerror("Error", "Please enter a report date!")
+            return
+        
+        # For monthly reports, convert to YYYY-MM format
+        try:
+            dt = datetime.strptime(date, '%Y-%m-%d')
+            month_format = dt.strftime('%Y-%m')
+        except ValueError:
+            messagebox.showerror("Error", "Invalid date format! Use YYYY-MM-DD")
+            return
+        
+        command = f'python3 scripts/generate_monthly_beverage_report.py --date {month_format}'
+        self.run_command(command, f'Generate Monthly Beverage Report for {month_format}')
     
     def run_command(self, command, description):
         """Run command in background thread"""

@@ -323,7 +323,7 @@ class BeverageVarianceGenerator:
                     theoretical_calc = "SUM((COALESCE(ads.total_sale_amount, 0) - COALESCE(ads.total_return_amount, 0)) * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as theoretical_total"
                     combo_calc = "SUM(COALESCE(mcds.sale_amount, 0) * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as combo_total"
 
-                # Working query with dynamic calculation
+                # Working query with dynamic calculation - fix parameter formatting
                 query = f"""
                 WITH beverage_materials AS (
                     SELECT DISTINCT m.id as material_id
@@ -341,7 +341,7 @@ class BeverageVarianceGenerator:
                         SUM(COALESCE(sale_amount, 0)) as total_sale_amount,
                         SUM(COALESCE(return_amount, 0)) as total_return_amount
                     FROM dish_monthly_sale
-                    WHERE year = %s AND month = %s
+                    WHERE year = {year} AND month = {month}
                     GROUP BY dish_id, store_id
                 ),
                 -- Get theoretical usage from dish sales (only for materials with dish relationships)
@@ -367,7 +367,7 @@ class BeverageVarianceGenerator:
                     JOIN beverage_materials bm ON m.id = bm.material_id
                     JOIN dish_material dm ON m.id = dm.material_id
                     JOIN monthly_combo_dish_sale mcds ON dm.dish_id = mcds.dish_id 
-                        AND mcds.year = %s AND mcds.month = %s
+                        AND mcds.year = {year} AND mcds.month = {month}
                     GROUP BY m.id, mcds.store_id
                 ),
                 
@@ -391,9 +391,9 @@ class BeverageVarianceGenerator:
                     JOIN beverage_materials bm ON m.id = bm.material_id
                     CROSS JOIN store s
                     LEFT JOIN material_monthly_usage mmu ON m.id = mmu.material_id AND s.id = mmu.store_id
-                        AND mmu.year = %s AND mmu.month = %s
+                        AND mmu.year = {year} AND mmu.month = {month}
                     LEFT JOIN inventory_count ic ON m.id = ic.material_id AND s.id = ic.store_id
-                        AND EXTRACT(year FROM ic.count_date) = %s AND EXTRACT(month FROM ic.count_date) = %s
+                        AND EXTRACT(year FROM ic.count_date) = {year} AND EXTRACT(month FROM ic.count_date) = {month}
                     LEFT JOIN material_price_history mph ON m.id = mph.material_id AND s.id = mph.store_id
                         AND mph.is_active = TRUE
                     WHERE s.is_active = TRUE
@@ -422,8 +422,7 @@ class BeverageVarianceGenerator:
                 ORDER BY bd.store_name, bd.material_name
                 """
 
-                cursor.execute(query, (year, month, year, month, year,
-                               month, year, month, year, month))
+                cursor.execute(query)
                 results = cursor.fetchall()
 
                 # Convert to list of dictionaries with variance calculations
