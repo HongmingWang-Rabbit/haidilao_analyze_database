@@ -2,31 +2,27 @@
 """
 Yearly comparison worksheet generator (同比数据).
 Only handles worksheet creation - receives data from main report generator.
+Now inherits from BaseWorksheetGenerator to eliminate code duplication.
 """
 
 from datetime import datetime
-from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
+from .base_classes import BaseWorksheetGenerator
 
 
-class YearlyComparisonWorksheetGenerator:
+class YearlyComparisonWorksheetGenerator(BaseWorksheetGenerator):
     """Generate yearly comparison worksheet (同比数据) from provided data"""
 
     def __init__(self, store_names, target_date):
-        self.store_names = store_names
-        self.target_date = target_date
-        # Calculate previous year date
-        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
-        self.current_year = target_dt.year
-        self.previous_year = target_dt.year - 1
-        self.month = target_dt.month
-        self.day = target_dt.day
+        # Call parent constructor to set up common functionality
+        super().__init__(store_names, target_date)
+        
+        # Calculate previous year date using parent's parsed target_dt
+        self.current_year = self.target_dt.year
+        self.previous_year = self.target_dt.year - 1
+        self.month = self.target_dt.month
+        self.day = self.target_dt.day
 
-    def calculate_percentage_change(self, current, previous):
-        """Calculate percentage change between current and previous values"""
-        if previous == 0 or previous is None:
-            return 0.0
-        return ((current - previous) / previous) * 100
+    # Removed duplicate calculate_percentage_change - now using parent's method
 
     def format_percentage_change(self, change):
         """Format percentage change with appropriate color coding"""

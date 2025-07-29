@@ -8,19 +8,28 @@ import pandas as pd
 import argparse
 import sys
 import os
-import warnings
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
+from pathlib import Path
 
-# Suppress openpyxl warnings
-warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.append(str(project_root))
+
+# Import centralized utilities
+from lib.excel_utils import (
+    clean_dish_code, get_dish_reading_dtype, suppress_excel_warnings,
+    safe_read_excel, validate_required_columns
+)
+from lib.config import STORE_NAME_MAPPING
+from lib.base_classes import BaseExtractor
+
+# Suppress openpyxl warnings using centralized utility
+suppress_excel_warnings()
 
 # Try to import database utilities
 try:
-    import sys
-    sys.path.append('.')
     from utils.database import get_database_manager, DatabaseConfig
-    get_database_manager = get_database_manager
 except ImportError:
     print("Database module not found. SQL file generation only.")
     get_database_manager = None
@@ -33,19 +42,7 @@ except ImportError:
     pass
 
 
-def clean_dish_code(code):
-    """Clean and validate dish code"""
-    if pd.isna(code):
-        return None
-
-    # Convert to string and clean
-    code_str = str(code).strip()
-
-    # Remove .0 if it's a whole number (e.g., 90001690.0 -> 90001690)
-    if code_str.endswith('.0'):
-        code_str = code_str[:-2]
-
-    return code_str if code_str and code_str != '-' else None
+# Removed duplicate clean_dish_code function - now using centralized version
 
 
 def escape_sql_string(value):

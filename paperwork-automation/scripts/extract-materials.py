@@ -12,7 +12,6 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 from dotenv import load_dotenv
-import warnings
 from typing import Dict, List, Optional
 
 # Load environment variables
@@ -22,32 +21,23 @@ load_dotenv()
 project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
+# Import centralized utilities
+from lib.excel_utils import (
+    clean_material_number, get_material_reading_dtype, suppress_excel_warnings
+)
+from lib.config import STORE_NAME_MAPPING
+
 try:
     from utils.database import get_database_manager
 except ImportError:
     print("⚠️  Database module not found. SQL file generation only.")
     get_database_manager = None
 
-# Suppress openpyxl warnings
-warnings.filterwarnings('ignore', category=UserWarning, module='openpyxl')
+# Suppress openpyxl warnings using centralized utility
+suppress_excel_warnings()
 
 
-def clean_material_number(material_number):
-    """
-    Clean material number by removing trailing zeroes before the actual number.
-    Example: 1000040.0 -> 1000040
-    """
-    if pd.isna(material_number):
-        return None
-
-    # Convert to string and handle float format
-    material_str = str(material_number)
-
-    # Remove .0 if present
-    if material_str.endswith('.0'):
-        material_str = material_str[:-2]
-
-    return material_str
+# Removed duplicate clean_material_number function - now using centralized version
 
 
 def escape_sql_string(value):

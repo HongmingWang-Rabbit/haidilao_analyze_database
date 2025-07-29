@@ -2,19 +2,19 @@
 """
 Business Insight worksheet generator (营业透视).
 Only handles worksheet creation - receives data from main report generator.
+Now inherits from BaseWorksheetGenerator to eliminate code duplication.
 """
 
 from datetime import datetime
-from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
+from .base_classes import BaseWorksheetGenerator
 
 
-class BusinessInsightWorksheetGenerator:
+class BusinessInsightWorksheetGenerator(BaseWorksheetGenerator):
     """Generate business insight worksheet (营业透视) from provided data"""
 
     def __init__(self, store_names, target_date):
-        self.store_names = store_names
-        self.target_date = target_date
+        # Call parent constructor to set up common functionality
+        super().__init__(store_names, target_date)
 
     def generate_worksheet(self, wb, daily_data, monthly_data, previous_month_data,
                            monthly_targets, current_mtd, prev_mtd,
@@ -23,8 +23,8 @@ class BusinessInsightWorksheetGenerator:
 
         ws = wb.create_sheet("营业透视")
 
-        # Parse target date for title
-        target_dt = datetime.strptime(self.target_date, '%Y-%m-%d')
+        # Use parent's parsed target_dt instead of re-parsing
+        target_dt = self.target_dt
 
         # Convert list data to dictionaries keyed by store_id for easier access
         daily_dict = {row['store_id']: row for row in daily_data} if isinstance(
@@ -38,11 +38,10 @@ class BusinessInsightWorksheetGenerator:
         prev_mtd_dict = {row['store_id']: row for row in prev_mtd} if isinstance(
             prev_mtd, list) else prev_mtd
 
-        # Set column widths
+        # Set column widths using parent method
         column_widths = [15, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12,
                          12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12]
-        for i, width in enumerate(column_widths, 1):
-            ws.column_dimensions[get_column_letter(i)].width = width
+        self.set_column_widths(ws, column_widths)
 
         current_row = 1
 
