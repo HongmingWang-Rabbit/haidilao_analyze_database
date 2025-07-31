@@ -1,0 +1,33 @@
+INFO:lib.hi_bowl_daily_processor:Reading sheet: 2025-07-01
+INFO:root:Reading Excel file: D:\personal_programming_work\honeypot_frontend_v2\haidilao_analyze_database\paperwork-automation\Input\daily_report\hi-bowl-report\daily-data\HaiDiLao-report-2025-7 (1).xlsx, sheet: 2025-07-01
+INFO:root:Successfully read 220 rows, 20 columns
+INFO:root:Reading Excel file: D:\personal_programming_work\honeypot_frontend_v2\haidilao_analyze_database\paperwork-automation\Input\daily_report\hi-bowl-report\daily-data\HaiDiLao-report-2025-7 (1).xlsx, sheet: 2025-07-01
+INFO:root:Successfully read 218 rows, 20 columns
+INFO:lib.hi_bowl_daily_processor:Reading sheet: 2025-07-02
+INFO:root:Reading Excel file: D:\personal_programming_work\honeypot_frontend_v2\haidilao_analyze_database\paperwork-automation\Input\daily_report\hi-bowl-report\daily-data\HaiDiLao-report-2025-7 (1).xlsx, sheet: 2025-07-02
+INFO:root:Successfully read 154 rows, 20 columns
+INFO:root:Reading Excel file: D:\personal_programming_work\honeypot_frontend_v2\haidilao_analyze_database\paperwork-automation\Input\daily_report\hi-bowl-report\daily-data\HaiDiLao-report-2025-7 (1).xlsx, sheet: 2025-07-02
+INFO:root:Successfully read 152 rows, 20 columns
+INFO:lib.hi_bowl_daily_processor:Reading sheet: 2025-07-03
+INFO:root:Reading Excel file: D:\personal_programming_work\honeypot_frontend_v2\haidilao_analyze_database\paperwork-automation\Input\daily_report\hi-bowl-report\daily-data\HaiDiLao-report-2025-7 (1).xlsx, sheet: 2025-07-03
+INFO:root:Successfully read 187 rows, 20 columns
+INFO:root:Reading Excel file: D:\personal_programming_work\honeypot_frontend_v2\haidilao_analyze_database\paperwork-automation\Input\daily_report\hi-bowl-report\daily-data\HaiDiLao-report-2025-7 (1).xlsx, sheet: 2025-07-03
+INFO:root:Successfully read 185 rows, 20 columns
+INFO:lib.hi_bowl_daily_processor:Loaded 555 total transactions from 3 sheets
+INFO:lib.hi_bowl_daily_processor:Calculated summary for period 2507
+INFO:lib.hi_bowl_daily_processor:Total orders: 555, Total guests: 1615
+INFO:lib.hi_bowl_daily_processor:Weekday days: 3, Weekend days: 0
+Read 555 rows, 3 sheets
+
+DEBUG: Starting time segment calculations. df has 555 rows
+DEBUG: time_segments = {'08:00-13:59': (8, 14), '14:00-16:59': (14, 17), '17:00-21:59': (17, 22), '22:00-07:59': (22, 32)}
+
+Time segment revenues:
+  08:00-13:59: $10,703.59
+  14:00-16:59: $7,873.93
+  17:00-21:59: $36,682.54
+  22:00-07:59: $6,293.09
+
+Total: $61,553.15
+Expected: $67,260.42
+Match: NO

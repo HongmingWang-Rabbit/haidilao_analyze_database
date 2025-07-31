@@ -127,6 +127,7 @@ class HaidilaoAutomationGUI:
         self.notebook = ttk.Notebook(self.notebook_frame)
         
         # Create tabs
+        self.create_workflows_tab()
         self.create_processing_tab()
         self.create_reports_tab()
         self.create_testing_tab()
@@ -180,6 +181,248 @@ class HaidilaoAutomationGUI:
         quick_frame.pack(side='right')
         
         self.header_frame = header_frame
+        
+    def create_workflows_tab(self):
+        """Create automated workflows tab"""
+        workflows_frame = ttk.Frame(self.notebook, padding="20")
+        self.notebook.add(workflows_frame, text="🚀 Workflows")
+        
+        # Complete automation section
+        automation_section = ttk.LabelFrame(workflows_frame, text="🚀 Complete Automation Workflows", padding="15")
+        
+        workflows = [
+            {
+                "title": "🏦 Daily Bank Transaction Processing",
+                "desc": "Process bank files and classify transactions",
+                "action": self.run_bank_processing
+            },
+            {
+                "title": "🍜 Hi-Bowl Daily Report Processing",
+                "desc": "Process Hi-Bowl daily data and generate reports",
+                "action": self.run_hi_bowl_processing
+            },
+            {
+                "title": "🌅 Complete Daily Automation",
+                "desc": "Process all daily reports and generate comprehensive analysis",
+                "action": self.run_daily_automation
+            },
+            {
+                "title": "📅 Complete Monthly Automation",
+                "desc": "Process monthly data with variance analysis and reports",
+                "action": self.run_monthly_automation
+            }
+        ]
+        
+        for workflow in workflows:
+            workflow_frame = ttk.Frame(automation_section)
+            
+            btn = ttk.Button(workflow_frame, text=workflow["title"],
+                           command=workflow["action"],
+                           style='Primary.TButton')
+            desc_label = ttk.Label(workflow_frame, text=workflow["desc"],
+                                 font=('Helvetica', 9),
+                                 foreground='gray')
+            
+            btn.pack(fill='x')
+            desc_label.pack(pady=(2, 0))
+            
+            workflow_frame.pack(fill='x', pady=5)
+        
+        automation_section.pack(fill='both', expand=True, pady=(0, 20))
+        
+        # Quick actions section
+        quick_section = ttk.LabelFrame(workflows_frame, text="⚡ Quick Actions", padding="15")
+        
+        quick_actions = [
+            ("🕷️ QBI Web Scraping", "Scrape QBI system for latest data", self.run_qbi_scraping),
+            ("📊 Generate Today's Report", "Generate report with today's date", self.quick_daily_report),
+            ("🔄 Refresh Database", "Update database with latest data", self.refresh_database),
+        ]
+        
+        for text, desc, action in quick_actions:
+            action_frame = ttk.Frame(quick_section)
+            
+            btn = ttk.Button(action_frame, text=text,
+                           command=action,
+                           style='Info.TButton')
+            desc_label = ttk.Label(action_frame, text=desc,
+                                 font=('Helvetica', 9),
+                                 foreground='gray')
+            
+            btn.pack(fill='x')
+            desc_label.pack(pady=(2, 0))
+            
+            action_frame.pack(fill='x', pady=5)
+        
+        quick_section.pack(fill='x')
+    
+    def run_bank_processing(self):
+        """Run bank transaction processing"""
+        # Create dialog for date input
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Bank Transaction Processing")
+        dialog.geometry("400x200")
+        
+        ttk.Label(dialog, text="Enter target date (YYYY-MM-DD):",
+                 font=('Helvetica', 11)).pack(pady=10)
+        
+        date_var = tk.StringVar(value=datetime.now().strftime('%Y-%m-%d'))
+        date_entry = ttk.Entry(dialog, textvariable=date_var, font=('Helvetica', 11))
+        date_entry.pack(pady=5)
+        
+        def process():
+            date = date_var.get()
+            dialog.destroy()
+            command = f'python -m scripts.process_bank_transactions --target-date {date}'
+            self.run_command(command, f'Bank Transaction Processing for {date}')
+        
+        ttk.Button(dialog, text="Process", command=process,
+                  style='Primary.TButton').pack(pady=10)
+    
+    def run_hi_bowl_processing(self):
+        """Run Hi-Bowl daily report processing"""
+        # Create dialog for file selection and date input
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Hi-Bowl Daily Report Processing")
+        dialog.geometry("500x300")
+        
+        ttk.Label(dialog, text="🍜 Hi-Bowl Daily Report Processing",
+                 font=('Helvetica', 14, 'bold')).pack(pady=10)
+        
+        # File selection
+        file_frame = ttk.Frame(dialog)
+        ttk.Label(file_frame, text="Input file:").pack(side='left', padx=5)
+        
+        file_var = tk.StringVar()
+        file_entry = ttk.Entry(file_frame, textvariable=file_var, width=40)
+        file_entry.pack(side='left', padx=5)
+        
+        def browse():
+            filename = filedialog.askopenfilename(
+                title="Select Hi-Bowl Excel file",
+                filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")],
+                initialdir=str(Path("Input/daily_report/hi-bowl-report/daily-data"))
+            )
+            if filename:
+                file_var.set(filename)
+        
+        ttk.Button(file_frame, text="Browse", command=browse).pack(side='left')
+        file_frame.pack(pady=10)
+        
+        # Month selection
+        month_frame = ttk.Frame(dialog)
+        ttk.Label(month_frame, text="Target month (YYYY-MM):").pack(side='left', padx=5)
+        
+        month_var = tk.StringVar(value=datetime.now().strftime('%Y-%m'))
+        month_entry = ttk.Entry(month_frame, textvariable=month_var)
+        month_entry.pack(side='left', padx=5)
+        
+        month_frame.pack(pady=10)
+        
+        # Output file
+        output_frame = ttk.Frame(dialog)
+        ttk.Label(output_frame, text="Output file:").pack(side='left', padx=5)
+        
+        output_var = tk.StringVar()
+        output_entry = ttk.Entry(output_frame, textvariable=output_var, width=40)
+        output_entry.pack(side='left', padx=5)
+        
+        def update_output():
+            month = month_var.get().replace('-', '')
+            output_var.set(f"output/hi-bowl/hi_bowl_report_{month}.xlsx")
+        
+        # Update output when month changes
+        month_var.trace('w', lambda *args: update_output())
+        update_output()
+        
+        output_frame.pack(pady=10)
+        
+        def process():
+            input_file = file_var.get()
+            output_file = output_var.get()
+            month = month_var.get().replace('-', '')
+            
+            if not input_file:
+                messagebox.showerror("Error", "Please select an input file!")
+                return
+            
+            dialog.destroy()
+            command = f'python -m scripts.process_hi_bowl_daily --input-file "{input_file}" --output-file "{output_file}" --target-month {month}'
+            self.run_command(command, 'Hi-Bowl Daily Report Processing')
+        
+        ttk.Button(dialog, text="Process", command=process,
+                  style='Primary.TButton').pack(pady=20)
+    
+    def run_daily_automation(self):
+        """Run complete daily automation"""
+        if messagebox.askyesno("Confirm", "Run complete daily automation workflow?"):
+            command = 'python -m scripts.complete_automation'
+            self.run_command(command, 'Complete Daily Automation')
+    
+    def run_monthly_automation(self):
+        """Run complete monthly automation"""
+        # Create dialog for date input
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Complete Monthly Automation")
+        dialog.geometry("400x250")
+        
+        ttk.Label(dialog, text="Enter target date (YYYY-MM-DD):",
+                 font=('Helvetica', 11)).pack(pady=10)
+        
+        date_var = tk.StringVar(value=datetime.now().strftime('%Y-%m-%d'))
+        date_entry = ttk.Entry(dialog, textvariable=date_var, font=('Helvetica', 11))
+        date_entry.pack(pady=5)
+        
+        ttk.Label(dialog, text="Inventory count date (YYYY-MM-DD):",
+                 font=('Helvetica', 11)).pack(pady=10)
+        
+        inv_date_var = tk.StringVar(value=datetime.now().strftime('%Y-%m-%d'))
+        inv_entry = ttk.Entry(dialog, textvariable=inv_date_var, font=('Helvetica', 11))
+        inv_entry.pack(pady=5)
+        
+        def process():
+            date = date_var.get()
+            inv_date = inv_date_var.get()
+            dialog.destroy()
+            command = f'python -m scripts.complete_monthly_automation_new --date {date} --inventory-count-date {inv_date}'
+            self.run_command(command, 'Complete Monthly Automation')
+        
+        ttk.Button(dialog, text="Process", command=process,
+                  style='Primary.TButton').pack(pady=20)
+    
+    def run_qbi_scraping(self):
+        """Run QBI web scraping"""
+        # Create dialog for date input
+        dialog = tk.Toplevel(self.root)
+        dialog.title("QBI Web Scraping")
+        dialog.geometry("400x200")
+        
+        ttk.Label(dialog, text="Enter target date (YYYY-MM-DD):",
+                 font=('Helvetica', 11)).pack(pady=10)
+        
+        date_var = tk.StringVar(value=datetime.now().strftime('%Y-%m-%d'))
+        date_entry = ttk.Entry(dialog, textvariable=date_var, font=('Helvetica', 11))
+        date_entry.pack(pady=5)
+        
+        def process():
+            date = date_var.get()
+            dialog.destroy()
+            command = f'python -m scripts.qbi_scraper_cli --target-date {date}'
+            self.run_command(command, f'QBI Web Scraping for {date}')
+        
+        ttk.Button(dialog, text="Scrape", command=process,
+                  style='Primary.TButton').pack(pady=10)
+    
+    def quick_daily_report(self):
+        """Generate report for today"""
+        today = datetime.now().strftime('%Y-%m-%d')
+        command = f'python -m scripts.generate_database_report --date {today}'
+        self.run_command(command, f'Generate Daily Report for {today}')
+    
+    def refresh_database(self):
+        """Refresh database with latest data"""
+        if messagebox.askyesno("Confirm", "Refresh database with latest data?"):
+            self.log_message("🔄 Database refresh not yet implemented")
         
     def create_processing_tab(self):
         """Create data processing tab"""

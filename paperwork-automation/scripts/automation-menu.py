@@ -377,6 +377,130 @@ class AutomationMenu:
             print("❌ Bank transaction processing failed.")
 
         input("Press Enter to continue...")
+    
+    def run_hi_bowl_daily_processing(self):
+        """Run Hi-Bowl daily report processing"""
+        print("🍜 HI-BOWL DAILY REPORT PROCESSING")
+        print("=" * 50)
+        print("This will process Hi-Bowl daily transaction data and generate")
+        print("the overseas business reporting template (海外新业态管报数据).")
+        print()
+        
+        # Check for Hi-Bowl input files
+        hi_bowl_daily_path = self.input_folder / "daily_report" / "hi-bowl-report" / "daily-data"
+        if not hi_bowl_daily_path.exists():
+            print("❌ Hi-Bowl daily data folder not found!")
+            print(f"   Expected path: {hi_bowl_daily_path}")
+            print("\n📁 Please create the folder structure and place your Hi-Bowl Excel files there.")
+            input("Press Enter to continue...")
+            return
+            
+        # List available files
+        hi_bowl_files = list(hi_bowl_daily_path.glob("*.xls*"))
+        hi_bowl_files = [f for f in hi_bowl_files if not f.name.startswith("~$")]  # Filter temp files
+        
+        # Remove duplicates (in case of case-insensitive filesystems)
+        seen_files = set()
+        unique_files = []
+        for f in hi_bowl_files:
+            if f.name.lower() not in seen_files:
+                seen_files.add(f.name.lower())
+                unique_files.append(f)
+        hi_bowl_files = unique_files
+        
+        if not hi_bowl_files:
+            print("❌ No Excel files found in Hi-Bowl daily data folder!")
+            print(f"   Path: {hi_bowl_daily_path}")
+            input("Press Enter to continue...")
+            return
+            
+        print("📁 Available Hi-Bowl files:")
+        for i, file in enumerate(hi_bowl_files, 1):
+            print(f"   {i}. {file.name}")
+        print()
+        
+        # Let user select file
+        if len(hi_bowl_files) == 1:
+            selected_file = hi_bowl_files[0]
+            print(f"📄 Using file: {selected_file.name}")
+        else:
+            while True:
+                try:
+                    choice = input(f"Select file (1-{len(hi_bowl_files)}): ").strip()
+                    idx = int(choice) - 1
+                    if 0 <= idx < len(hi_bowl_files):
+                        selected_file = hi_bowl_files[idx]
+                        break
+                    else:
+                        print("❌ Invalid selection. Please try again.")
+                except ValueError:
+                    print("❌ Please enter a number.")
+        
+        # Get target month
+        print("\n📅 Enter target month for processing:")
+        print("Format: YYYY-MM (e.g., 2025-07)")
+        print("Press Enter to auto-detect from filename")
+        
+        month_input = input("\nTarget month: ").strip()
+        
+        if not month_input:
+            # Try to detect from filename
+            import re
+            match = re.search(r'(\d{4})-(\d{1,2})', selected_file.name)
+            if match:
+                year = match.group(1)
+                month = match.group(2).zfill(2)
+                target_month = f"{year}{month}"
+                print(f"📅 Auto-detected month: {year}-{month}")
+            else:
+                print("❌ Could not auto-detect month from filename.")
+                input("Press Enter to continue...")
+                return
+        else:
+            try:
+                from datetime import datetime
+                dt = datetime.strptime(month_input, '%Y-%m')
+                target_month = dt.strftime('%Y%m')
+                print(f"📅 Using month: {month_input}")
+            except ValueError:
+                print("❌ Invalid month format. Please use YYYY-MM format.")
+                input("Press Enter to continue...")
+                return
+        
+        # Generate output filename
+        output_filename = f"hi_bowl_report_{target_month}.xlsx"
+        output_path = self.project_root / "output" / "hi-bowl" / output_filename
+        
+        print(f"\n📤 Output will be saved to: {output_path}")
+        
+        # Confirm before processing
+        confirm = input("\nStart Hi-Bowl report processing? (y/N): ").lower()
+        if confirm != 'y':
+            print("❌ Processing cancelled.")
+            input("Press Enter to continue...")
+            return
+        
+        # Run the Hi-Bowl processing command
+        command = f'{self.python_cmd} scripts/process_hi_bowl_daily.py --input-file "{selected_file}" --output-file "{output_path}" --target-month {target_month}'
+        print(f"🚀 Running Hi-Bowl processor...")
+        
+        result = self.run_command(command, "Hi-Bowl Daily Report Processing")
+        
+        if result:
+            print("\n✅ Hi-Bowl report processing completed successfully!")
+            print(f"📊 Report saved to: {output_path}")
+            print("\n📋 The report includes:")
+            print("   • 收入(含税) - Revenue with tax")
+            print("   • 收入(不含税) - Revenue without tax")
+            print("   • 优惠总金额 - Total discount amounts")
+            print("   • 营业天数 - Operating days statistics")
+            print("   • 就餐人数 - Guest counts by weekday/weekend")
+            print("   • 订单数量 - Order counts analysis")
+        else:
+            print("\n❌ Hi-Bowl report processing failed.")
+            print("Please check the error messages above.")
+        
+        input("\nPress Enter to continue...")
 
     def run_complete_daily_automation(self):
         """Run complete daily automation workflow"""
@@ -1075,26 +1199,27 @@ class AutomationMenu:
             # Main workflow options
             workflow_options = [
                 ("1", "🏦 Daily Bank Transaction Processing", "bank_processing"),
-                ("2", "🌅 Complete Daily Automation", "daily_automation"),
-                ("3", "📅 Complete Monthly Automation", "monthly_automation"),
+                ("2", "🍜 Hi-Bowl Daily Report Processing", "hi_bowl_processing"),
+                ("3", "🌅 Complete Daily Automation", "daily_automation"),
+                ("4", "📅 Complete Monthly Automation", "monthly_automation"),
             ]
             self.print_menu_section(
                 "🚀 COMPLETE AUTOMATION WORKFLOWS", workflow_options)
 
             # Single operation options
             single_options = [
-                ("4", "📤 Single Extraction", "single_extraction"),
-                ("5", "📊 Single Report Generation", "single_generate"),
-                ("6", "🔄 Single Conversion", "single_conversion"),
-                ("7", "🕷️  Single Web Scraping", "single_scraping"),
+                ("5", "📤 Single Extraction", "single_extraction"),
+                ("6", "📊 Single Report Generation", "single_generate"),
+                ("7", "🔄 Single Conversion", "single_conversion"),
+                ("8", "🕷️  Single Web Scraping", "single_scraping"),
             ]
             self.print_menu_section("🔧 SINGLE OPERATIONS", single_options)
 
             # System options
             system_options = [
-                ("8", "🧪 Testing", "testing"),
-                ("9", "🗄️  Database Management", "database"),
-                ("10", "⚙️  System", "system"),
+                ("9", "🧪 Testing", "testing"),
+                ("10", "🗄️  Database Management", "database"),
+                ("11", "⚙️  System", "system"),
                 ("q", "🚪 Quit", "quit")
             ]
             self.print_menu_section("🛠️  SYSTEM & MAINTENANCE", system_options)
@@ -1104,22 +1229,24 @@ class AutomationMenu:
             if choice == '1':
                 self.run_bank_processing()
             elif choice == '2':
-                self.run_complete_daily_automation()
+                self.run_hi_bowl_daily_processing()
             elif choice == '3':
-                self.run_complete_monthly_automation()
+                self.run_complete_daily_automation()
             elif choice == '4':
-                self.show_single_extraction_menu()
+                self.run_complete_monthly_automation()
             elif choice == '5':
-                self.show_single_generate_menu()
+                self.show_single_extraction_menu()
             elif choice == '6':
-                self.show_single_conversion_menu()
+                self.show_single_generate_menu()
             elif choice == '7':
-                self.show_single_web_scraping_menu()
+                self.show_single_conversion_menu()
             elif choice == '8':
-                self.show_testing_menu()
+                self.show_single_web_scraping_menu()
             elif choice == '9':
-                self.show_database_management_menu()
+                self.show_testing_menu()
             elif choice == '10':
+                self.show_database_management_menu()
+            elif choice == '11':
                 self.show_system_menu()
             elif choice == 'q':
                 print("👋 Goodbye!")
