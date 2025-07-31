@@ -6,6 +6,8 @@ Now inherits from BaseWorksheetGenerator to eliminate code duplication.
 """
 
 from datetime import datetime
+from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 from .base_classes import BaseWorksheetGenerator
 
 

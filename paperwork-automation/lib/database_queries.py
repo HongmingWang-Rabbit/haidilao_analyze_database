@@ -637,6 +637,95 @@ class ReportDataProvider:
             print(f"❌ Error getting daily store performance data: {e}")
             return []
 
+    def get_weekly_store_performance(self, start_date: str, end_date: str):
+        """
+        Get weekly store performance data for tracking worksheet (7-day aggregation).
+
+        Args:
+            start_date: Start date of the 7-day period in YYYY-MM-DD format
+            end_date: End date of the 7-day period in YYYY-MM-DD format
+
+        Returns:
+            List of store performance data dictionaries with weekly aggregations
+        """
+        from datetime import datetime
+
+        # Parse dates to get previous year equivalent period
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d')
+        prev_year = start_dt.year - 1
+        prev_year_start = f"{prev_year}-{start_dt.month:02d}-{start_dt.day:02d}"
+        prev_year_end = f"{prev_year}-{end_dt.month:02d}-{end_dt.day:02d}"
+
+        # Define individual store managers as per reference sheet
+        store_managers = {
+            1: '张森磊',
+            2: '潘幸远',
+            3: 'Bao Xiaoyun',
+            4: '李俊娟',
+            5: '陈浩',
+            6: '高新菊',
+            7: '潘幸远'
+        }
+
+        sql = """
+        SELECT 
+            s.id as store_id,
+            s.name as store_name,
+            s.seats_total as seating_capacity,
+            COALESCE(
+                (SELECT AVG(turnover_rate) 
+                 FROM daily_report dr2 
+                 WHERE dr2.store_id = s.id 
+                   AND dr2.date >= '2024-01-01' 
+                   AND dr2.date <= '2024-12-31'), 
+                5.0
+            ) as annual_avg_turnover_2024,
+            -- Current year weekly data (7-day aggregation)
+            COALESCE(AVG(dr_current.turnover_rate), 0) as current_avg_turnover_rate,
+            COALESCE(SUM(dr_current.revenue_tax_not_included) / 10000.0, 0) as current_total_revenue,
+            -- Previous year weekly data (7-day aggregation)
+            COALESCE(AVG(dr_prev.turnover_rate), 0) as prev_avg_turnover_rate,
+            COALESCE(SUM(dr_prev.revenue_tax_not_included) / 10000.0, 0) as prev_total_revenue
+        FROM store s
+        LEFT JOIN daily_report dr_current ON s.id = dr_current.store_id 
+            AND dr_current.date >= %s AND dr_current.date <= %s
+        LEFT JOIN daily_report dr_prev ON s.id = dr_prev.store_id 
+            AND dr_prev.date >= %s AND dr_prev.date <= %s
+        WHERE s.id BETWEEN 1 AND 7
+        GROUP BY s.id, s.name, s.seats_total
+        ORDER BY s.id
+        """
+
+        try:
+            results = self.db_manager.fetch_all(
+                sql, (start_date, end_date, prev_year_start, prev_year_end))
+
+            # Convert to expected format
+            performance_data = []
+            for row in results:
+                store_id = row['store_id']
+                performance_data.append({
+                    'store_id': store_id,
+                    'store_name': row['store_name'],
+                    # Use individual managers
+                    'manager_name': store_managers.get(store_id, '蒋冰遇'),
+                    'seating_capacity': row.get('seating_capacity', 0),
+                    'annual_avg_turnover_2024': row.get('annual_avg_turnover_2024', 0),
+                    # Current year weekly data (preserve Decimal precision)
+                    'current_avg_turnover_rate': row.get('current_avg_turnover_rate', 0),
+                    'current_total_revenue': row.get('current_total_revenue', 0),
+                    # Previous year weekly data (preserve Decimal precision)
+                    'prev_avg_turnover_rate': row.get('prev_avg_turnover_rate', 0),
+                    'prev_total_revenue': row.get('prev_total_revenue', 0)
+                })
+
+            return performance_data
+
+        except Exception as e:
+            print(f"❌ Error getting weekly store performance data: {e}")
+            return []
+
     def get_gross_margin_dish_price_data(self, target_date: str):
         """
         Get dish price data for gross margin analysis.

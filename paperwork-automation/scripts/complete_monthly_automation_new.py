@@ -290,7 +290,7 @@ class MonthlyAutomationProcessor:
                                         SELECT d.id, %s, %s, %s, %s, %s, %s, %s, %s
                                         FROM dish d
                                         WHERE d.full_code = %s AND d.size = %s
-                                        ON CONFLICT (dish_id, store_id, year, month) DO UPDATE SET
+                                        ON CONFLICT (dish_id, store_id, year, month, sales_mode) DO UPDATE SET
                                             sale_amount = EXCLUDED.sale_amount,
                                             return_amount = EXCLUDED.return_amount,
                                             free_meal_amount = EXCLUDED.free_meal_amount,
@@ -829,6 +829,33 @@ class MonthlyAutomationProcessor:
                 f"Inventory data extraction failed: {e}")
             return False
 
+    def generate_complete_dish_material_relationships(self, target_date: str) -> bool:
+        """Generate complete dish-material relationships using our new generator."""
+        try:
+            # Import and run our dish-material relationship generator
+            from scripts.generate_complete_dish_material_usage import CompleteDishMaterialUsageGenerator
+            
+            logger.info(f"Generating complete dish-material relationships for {target_date}...")
+            
+            # Create generator instance with same test setting as this processor
+            generator = CompleteDishMaterialUsageGenerator(target_date, is_test=self.config.is_test)
+            
+            # Generate the complete calculated usage data
+            output_path = generator.generate_complete_usage_data()
+            
+            if output_path:
+                logger.info(f"Successfully generated complete dish-material usage data: {output_path}")
+                return True
+            else:
+                logger.error("Failed to generate complete dish-material usage data")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error generating complete dish-material relationships: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
     def extract_dish_materials(self, file_path: Path) -> bool:
         """Extract dish-material relationships from calculated dish material usage."""
         logger.info(
@@ -1005,6 +1032,48 @@ class MonthlyAutomationProcessor:
             logger.error(f"Failed to extract dish-material relationships: {e}")
             self.results['errors'].append(
                 f"Dish-material extraction failed: {e}")
+            return False
+
+    def generate_materials_use_with_division(self, target_date: str) -> bool:
+        """Generate materials_use calculation files with division by unit_conversion_rate."""
+        logger.info(f"MATERIALS USE: Generating materials_use calculations with DIVISION for {target_date}")
+
+        try:
+            import subprocess
+            import sys
+
+            # Call the materials_use generation script with division
+            cmd = [
+                sys.executable,
+                "scripts/generate_materials_use_with_division.py",
+                "--target-date", target_date
+            ]
+
+            # Set up environment to include current directory in Python path
+            import os
+            env = os.environ.copy()
+            current_dir = str(Path.cwd())
+            if 'PYTHONPATH' in env:
+                env['PYTHONPATH'] = f"{current_dir};{env['PYTHONPATH']}"
+            else:
+                env['PYTHONPATH'] = current_dir
+
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, cwd=Path.cwd(), env=env)
+
+            if result.returncode == 0:
+                logger.info("SUCCESS: Materials_use calculations with DIVISION completed")
+                self.log_result('materials_use_division', 1,
+                                "Generated materials_use calculations using division by unit_conversion_rate")
+                return True
+            else:
+                logger.error(f"ERROR: Materials_use generation with division failed: {result.stderr}")
+                self.results['errors'].append(f"Materials_use division generation failed: {result.stderr}")
+                return False
+
+        except Exception as e:
+            logger.error(f"Failed to generate materials_use with division: {e}")
+            self.results['errors'].append(f"Materials_use division generation error: {e}")
             return False
 
     def generate_analysis_report(self, target_date: str) -> bool:
@@ -1270,21 +1339,48 @@ class MonthlyAutomationProcessor:
             logger.error("No inventory checking result folder found")
             success = False
 
+        # Step 4.5: Generate complete dish-material relationships using our new generator
+        # Commented out - not needed for every monthly automation run
+        # logger.info("GENERATE: Creating complete dish-material relationships...")
+        # success &= self.generate_complete_dish_material_relationships(target_date)
+
         # Step 5: Extract dish-material relationships
-        calc_folder = self.input_folder / "calculated_dish_material_usage"
-        calc_files = list(calc_folder.glob("*.xls*")) + \
-            list(calc_folder.glob("*.XLS*"))
+        # First check output folder (from our generator), then input folder (manual files)
+        output_calc_folder = Path("output") / "calculated_dish_material_usage"
+        input_calc_folder = self.input_folder / "calculated_dish_material_usage"
+        
+        calc_files = []
+        
+        # Priority 1: Check output folder for generated files
+        if output_calc_folder.exists():
+            output_files = list(output_calc_folder.glob("*.xls*")) + \
+                          list(output_calc_folder.glob("*.XLS*"))
+            calc_files.extend(output_files)
+            
+        # Priority 2: Check input folder for manual files
+        if input_calc_folder.exists():
+            input_files = list(input_calc_folder.glob("*.xls*")) + \
+                         list(input_calc_folder.glob("*.XLS*"))
+            calc_files.extend(input_files)
 
         # Filter out temporary Excel files (starting with ~$)
         calc_files = [f for f in calc_files if not f.name.startswith("~$")]
 
         if calc_files:
+            # Sort by modification time to get the latest file (prioritizes newest generated file)
+            calc_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+            logger.info(f"Using calculated dish-material usage file: {calc_files[0]}")
             success &= self.extract_dish_materials(calc_files[0])
         else:
-            logger.error("No calculated dish material usage file found")
+            logger.error("No calculated dish material usage file found in output/ or Input/monthly_report/ folders")
             success = False
 
-        # Step 6: Generate analysis reports (both material and beverage)
+        # Step 6: Generate materials_use calculations with division (NEW REQUIREMENT)
+        # Commented out - not needed for every monthly automation run
+        # if success:
+        #     success &= self.generate_materials_use_with_division(target_date)
+
+        # Step 7: Generate analysis reports (both material and beverage)
         if success:
             success &= self.generate_analysis_report(target_date)
 
@@ -1323,12 +1419,15 @@ class MonthlyAutomationProcessor:
         material_report_count = self.results.get('monthly_material_report', 0)
         beverage_report_count = self.results.get('monthly_beverage_report', 0)
         gross_margin_report_count = self.results.get('gross_margin_report', 0)
+        materials_use_division_count = self.results.get('materials_use_division', 0)
         safe_log(logger.info,
                  f"SUCCESS: Material variance report: {'Generated' if material_report_count > 0 else 'Failed'}")
         safe_log(logger.info,
                  f"SUCCESS: Beverage variance report: {'Generated' if beverage_report_count > 0 else 'Failed'}")
         safe_log(logger.info,
                  f"SUCCESS: Gross margin analysis report: {'Generated' if gross_margin_report_count > 0 else 'Failed'}")
+        safe_log(logger.info,
+                 f"SUCCESS: Materials_use calculations (DIVISION): {'Generated' if materials_use_division_count > 0 else 'Failed'}")
 
         if self.results['errors']:
             logger.warning(

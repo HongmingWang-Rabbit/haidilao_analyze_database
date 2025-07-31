@@ -65,9 +65,7 @@ class MonthlyDishesWorksheetGenerator:
         return ws
 
     def generate_material_variance_worksheet(self, wb, data_provider):
-        """Generate material variance analysis worksheet comparing calculated vs actual usage"""
-
-        ws = wb.create_sheet("物料用量差异分析")
+        """Generate material variance analysis worksheets - one per store"""
 
         # Parse target date for title
         target_dt = datetime.strptime(self.target_date, '%Y-%m-%d')
@@ -79,9 +77,33 @@ class MonthlyDishesWorksheetGenerator:
 
         if not variance_data:
             # Create empty worksheet with message
+            ws = wb.create_sheet("物料用量差异分析")
             ws['A1'] = "无可用数据 - No Variance Data Available"
             ws['A1'].font = Font(bold=True, size=14)
             return ws
+
+        # Group variance data by store
+        stores_data = {}
+        for data in variance_data:
+            store_name = data['store_name']
+            if store_name not in stores_data:
+                stores_data[store_name] = []
+            stores_data[store_name].append(data)
+
+        # Create a worksheet for each store
+        created_worksheets = []
+        for store_name, store_variance_data in stores_data.items():
+            ws = self.create_store_variance_worksheet(wb, store_name, store_variance_data, target_dt)
+            created_worksheets.append(ws)
+
+        return created_worksheets
+
+    def create_store_variance_worksheet(self, wb, store_name, store_variance_data, target_dt):
+        """Create a variance analysis worksheet for a specific store"""
+        
+        # Create sheet name with store identifier
+        sheet_name = f"物料用量差异分析-{store_name}"
+        ws = wb.create_sheet(sheet_name)
 
         # Set column widths for readability (added dish usage details, minus inventory, and 2 cost columns)
         column_widths = [8, 12, 15, 12, 8, 25, 15, 15, 15, 15, 15, 12, 20, 12, 15, 15]
@@ -93,7 +115,7 @@ class MonthlyDishesWorksheetGenerator:
 
         # Title section (now extends to P column for 16 columns)
         ws.merge_cells(f'A{current_row}:P{current_row}')
-        ws[f'A{current_row}'] = f"物料用量差异分析 - {target_dt.strftime('%Y年%m月')}"
+        ws[f'A{current_row}'] = f"物料用量差异分析 - {store_name} - {target_dt.strftime('%Y年%m月')}"
         ws[f'A{current_row}'].font = Font(bold=True, size=16, color="FFFFFF")
         ws[f'A{current_row}'].alignment = Alignment(
             horizontal='center', vertical='center')
@@ -101,18 +123,88 @@ class MonthlyDishesWorksheetGenerator:
             start_color="C41E3A", end_color="C41E3A", fill_type="solid")
         current_row += 2
 
-        # Summary section
-        current_row = self.add_variance_summary_section(
-            ws, current_row, variance_data)
+        # Summary section for this store
+        current_row = self.add_store_variance_summary_section(
+            ws, current_row, store_variance_data, store_name)
 
-        # Main variance data section
+        # Main variance data section for this store
         current_row = self.add_variance_data_section(
-            ws, current_row, variance_data)
+            ws, current_row, store_variance_data)
 
         # Apply variance formatting
         self.apply_variance_formatting(ws, current_row - 1)
 
         return ws
+
+    def add_store_variance_summary_section(self, ws, start_row, variance_data, store_name):
+        """Add variance summary statistics section for a specific store"""
+        current_row = start_row
+
+        # Calculate summary statistics for this store
+        total_materials = len(variance_data)
+        materials_over_threshold = len(
+            [row for row in variance_data if abs(row['variance_percent']) > 5])
+        materials_normal = total_materials - materials_over_threshold
+
+        over_usage = len(
+            [row for row in variance_data if row['variance_percent'] > 5])
+        under_usage = len(
+            [row for row in variance_data if row['variance_percent'] < -5])
+
+        total_theoretical = sum(row['theoretical_usage']
+                                for row in variance_data)
+        total_combo_usage = sum(row['combo_usage']
+                                for row in variance_data)
+        total_combined_theoretical = total_theoretical + total_combo_usage
+        total_system = sum(row['system_record'] for row in variance_data)
+        total_inventory = sum(row['inventory_count'] for row in variance_data)
+        total_variance = total_system - total_combined_theoretical
+        overall_variance_percent = (
+            total_variance / total_combined_theoretical * 100) if total_combined_theoretical > 0 else 0
+
+        # Create summary section
+        ws.merge_cells(f'A{current_row}:D{current_row}')
+        ws[f'A{current_row}'] = f"{store_name} - 差异分析概览"
+        ws[f'A{current_row}'].font = Font(bold=True, size=12)
+        ws[f'A{current_row}'].fill = PatternFill(
+            start_color="E6F3FF", end_color="E6F3FF", fill_type="solid")
+        current_row += 1
+
+        summary_data = [
+            ("物料总数", total_materials),
+            ("差异超5%物料", materials_over_threshold),
+            ("正常范围物料", materials_normal),
+            ("超量使用物料", over_usage),
+            ("少用物料", under_usage),
+            ("总理论用量", f"{total_theoretical:.2f}"),
+            ("总套餐用量", f"{total_combo_usage:.2f}"),
+            ("总系统记录", f"{total_system:.2f}"),
+            ("总库存盘点", f"{total_inventory:.2f}"),
+            ("总差异", f"{total_variance:.2f}"),
+            ("总差异率", f"{overall_variance_percent:.1f}%")
+        ]
+
+        for i, (label, value) in enumerate(summary_data):
+            row = current_row + (i // 2)
+            col = 1 + (i % 2) * 3
+
+            cell_label = ws.cell(row=row, column=col, value=label)
+            cell_value = ws.cell(row=row, column=col+1, value=value)
+            cell_label.font = Font(bold=True)
+
+            # Color code summary metrics
+            if i >= 5:  # Usage metrics
+                fill_color = "E8F5E8"
+                # Overall variance (now index 10)
+                if i == 10 and abs(overall_variance_percent) > 5:
+                    fill_color = "FFE6E6" if overall_variance_percent > 0 else "FFF0E6"
+                cell_label.fill = PatternFill(
+                    start_color=fill_color, end_color=fill_color, fill_type="solid")
+                cell_value.fill = PatternFill(
+                    start_color=fill_color, end_color=fill_color, fill_type="solid")
+
+        current_row += 3
+        return current_row + 1
 
     def get_dish_material_data(self, data_provider):
         """Query database for comprehensive dish-material relationship data"""
@@ -616,7 +708,7 @@ class MonthlyDishesWorksheetGenerator:
                 else:
                     calculation_sql = "SUM(ds.net_sales * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as theoretical_total"
 
-                # Get regular theoretical usage (dish sales * standard_quantity * loss_rate [/ unit_conversion_rate]) - Store-specific
+                # Get regular theoretical usage (dish sales * standard_quantity * loss_rate / unit_conversion_rate) - Store-specific
                 regular_theoretical_sql = f"""
                 WITH aggregated_dish_sales AS (
                     SELECT 
@@ -671,7 +763,7 @@ class MonthlyDishesWorksheetGenerator:
                 else:
                     combo_calculation_sql = "SUM(cds.net_sales * COALESCE(dm.standard_quantity, 0) * COALESCE(dm.loss_rate, 1.0)) as combo_total"
 
-                # Get combo usage (combo dish sales * standard_quantity * loss_rate [/ unit_conversion_rate]) - Store-specific
+                # Get combo usage (combo dish sales * standard_quantity * loss_rate / unit_conversion_rate) - Store-specific
                 combo_usage_sql = f"""
                 WITH combo_dish_sales AS (
                     SELECT 
