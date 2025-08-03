@@ -4,6 +4,11 @@ Generate comprehensive database report (main wrapper).
 Orchestrates all worksheet generation using centralized data provider.
 """
 
+import sys
+from pathlib import Path
+# Add parent directory to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from lib.business_insight_worksheet import BusinessInsightWorksheetGenerator
 from lib.time_segment_worksheet import TimeSegmentWorksheetGenerator
 from lib.yearly_comparison_worksheet import YearlyComparisonWorksheetGenerator
@@ -15,8 +20,6 @@ from lib.weekly_store_tracking_worksheet import WeeklyStoreTrackingGenerator
 from lib.database_queries import ReportDataProvider
 from utils.database import DatabaseConfig, DatabaseManager
 import os
-import sys
-from pathlib import Path
 from dotenv import load_dotenv
 from openpyxl import Workbook
 

@@ -26,6 +26,7 @@ class AutomationMenu:
         # Auto-detect Python command based on OS
         self.python_cmd = self.get_python_command()
         self.input_folder = self.project_root / "Input"
+        self.output_folder = self.project_root / "output"
 
     def get_python_command(self):
         """Auto-detect appropriate Python command based on OS"""
@@ -935,6 +936,7 @@ class AutomationMenu:
                     "monthly_detailed_spending"),
                 ("g", "Gross Margin Report (毛利报表)", "gross_margin_report"),
                 ("v", "Monthly Beverage Report", "monthly_beverage_report"),
+                ("r", "Monthly Store Revenue & Turnover Compare", "monthly_revenue_compare"),
                 ("b", "← Back to Main Menu", "back")
             ]
 
@@ -966,6 +968,8 @@ class AutomationMenu:
                 self.generate_gross_margin_report()
             elif choice == 'v':
                 self.generate_monthly_beverage_report()
+            elif choice == 'r':
+                self.generate_monthly_revenue_compare_report()
             else:
                 print("❌ Invalid choice. Please try again.")
                 input("Press Enter to continue...")
@@ -1696,6 +1700,95 @@ except Exception as e:
             print("❌ Failed to generate monthly beverage report")
 
         input("Press Enter to continue...")
+
+    def generate_monthly_revenue_compare_report(self):
+        """Generate monthly store revenue and turnover rate comparison report"""
+        print("📊 MONTHLY STORE REVENUE & TURNOVER COMPARISON")
+        print("=" * 50)
+        print("This will generate a monthly comparison report showing:")
+        print("✅ Revenue comparison for all 7 Canadian stores")
+        print("✅ Turnover rate comparison for all stores")
+        print("✅ Year-over-year percentage changes")
+        print()
+
+        # Get year and month
+        print("📅 Enter the target year and month:")
+        year_input = input("Year (e.g., 2025): ").strip()
+        month_input = input("Month (1-12): ").strip()
+
+        try:
+            year = int(year_input)
+            month = int(month_input)
+            
+            if year < 2020 or year > 2030:
+                print("❌ Invalid year. Please enter a year between 2020 and 2030.")
+                input("Press Enter to continue...")
+                return
+            
+            if month < 1 or month > 12:
+                print("❌ Invalid month. Please enter a month between 1 and 12.")
+                input("Press Enter to continue...")
+                return
+                
+        except ValueError:
+            print("❌ Invalid input. Please enter numeric values.")
+            input("Press Enter to continue...")
+            return
+
+        print(f"\n📅 Target period: {year}-{month:02d}")
+        print(f"📊 Will compare with: {year-1}-{month:02d}")
+        
+        # Define output path
+        output_filename = f"monthly_revenue_compare_{year}{month:02d}.xlsx"
+        output_path = self.output_folder / "monthly-revenue-compare" / output_filename
+        
+        print(f"📁 Output will be saved to: {output_path}")
+        
+        confirm = input("\nGenerate monthly revenue comparison report? (y/N): ").lower()
+        if confirm != 'y':
+            return
+
+        # Create output directory if needed
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Import and run the generator
+        try:
+            import sys
+            import os
+            # Add parent directory to path for imports
+            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            
+            from utils.database import DatabaseManager, DatabaseConfig
+            from lib.monthly_store_revenue_compare_worksheet import MonthlyStoreRevenueCompareWorksheet
+            
+            # Create database manager
+            config = DatabaseConfig()
+            db_manager = DatabaseManager(config)
+            
+            # Create generator
+            generator = MonthlyStoreRevenueCompareWorksheet(db_manager)
+            
+            # Generate report
+            print("\n🔄 Generating report...")
+            success = generator.generate_report(year, month, str(output_path))
+            
+            if success:
+                print("✅ Monthly revenue comparison report generated successfully!")
+                print(f"📁 Report saved to: {output_path}")
+                print("\n📋 The report includes:")
+                print("   • Revenue data for all 7 Canadian stores")
+                print("   • Turnover rate data for all stores")
+                print("   • Year-over-year comparison percentages")
+                print("   • Monthly totals and averages")
+            else:
+                print("❌ Failed to generate monthly revenue comparison report")
+                
+        except Exception as e:
+            print(f"❌ Error generating report: {str(e)}")
+            import traceback
+            traceback.print_exc()
+
+        input("\nPress Enter to continue...")
 
     def parse_date_input(self, date_input: str) -> str:
         """Parse user date input and return formatted date string"""

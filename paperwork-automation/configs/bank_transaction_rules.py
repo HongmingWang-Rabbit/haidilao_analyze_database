@@ -198,7 +198,7 @@ BANK_TRANSACTION_RULES: List[Tuple[TransactionMatchRule, Dict]] = [
         description_pattern=re.compile(r'FANTUAN.*MSP/DIV', re.IGNORECASE)
     ), {
         "品名": TransactionType.INCOME_RECEIVED.value,
-        "付款详情": "饭团外卖佣金",
+        "付款详情": "饭团第三方进账",
         "单据号": False,
         "附件": False,
         "是否登记线下付款表": False,
@@ -330,7 +330,7 @@ BANK_TRANSACTION_RULES: List[Tuple[TransactionMatchRule, Dict]] = [
         description_pattern=re.compile(r'\bUBER\b', re.IGNORECASE)
     ), {
         "品名": TransactionType.INCOME_RECEIVED.value,
-        "付款详情": "Uber外卖佣金",
+        "付款详情": "Uber第三方进账",
         "单据号": False,
         "附件": False,
         "是否登记线下付款表": False,

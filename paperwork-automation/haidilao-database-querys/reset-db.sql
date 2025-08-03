@@ -700,8 +700,30 @@ CREATE TABLE month_static_data (
 
 -- Insert exchange rate data for 2025
 INSERT INTO month_static_data (month, cad_usd_rate) VALUES
+('2024-01-01', 0.754661),  -- Jan 2024 CAD/USD rate
+('2024-02-01', 0.754661),  -- Feb 2024 CAD/USD rate
+('2024-03-01', 0.754661),  -- Mar 2024 CAD/USD rate
+('2024-04-01', 0.754661),  -- Apr 2024 CAD/USD rate
+('2024-05-01', 0.754661),  -- May 2024 CAD/USD rate
+('2024-06-01', 0.754661),  -- June 2024 CAD/USD rate
+('2024-07-01', 0.754661),  -- July 2024 CAD/USD rate
+('2024-08-01', 0.754661),  -- Aug 2024 CAD/USD rate
+('2024-09-01', 0.754661),  -- Sep 2024 CAD/USD rate
+('2024-10-01', 0.754661),  -- Oct 2024 CAD/USD rate
+('2024-11-01', 0.754661),  -- Nov 2024 CAD/USD rate
+('2024-12-01', 0.754661),  -- Dec 2024 CAD/USD rate
+('2025-01-01', 0.695265),  -- Jan 2025 CAD/USD rate
+('2025-02-01', 0.695265),  -- Feb 2025 CAD/USD rate
+('2025-03-01', 0.695265),  -- Mar 2025 CAD/USD rate
+('2025-04-01', 0.695265),  -- Apr 2025 CAD/USD rate
+('2025-05-01', 0.695265),  -- May 2025 CAD/USD rate
 ('2025-06-01', 0.695265),  -- June 2025 CAD/USD rate
-('2025-07-01', 0.695265)   -- July 2025 CAD/USD rate (same rate used)
+('2025-07-01', 0.695265),  -- July 2025 CAD/USD rate 
+('2025-08-01', 0.695265),  -- Aug 2025 CAD/USD rate 
+('2025-09-01', 0.695265),  -- Sep 2025 CAD/USD rate 
+('2025-10-01', 0.695265),  -- Oct 2025 CAD/USD rate 
+('2025-11-01', 0.695265),  -- Nov 2025 CAD/USD rate 
+('2025-12-01', 0.695265)   -- Dec 2025 CAD/USD rate 
 ON CONFLICT (month) DO UPDATE SET
     cad_usd_rate = EXCLUDED.cad_usd_rate,
     updated_at = CURRENT_TIMESTAMP;

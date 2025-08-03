@@ -323,6 +323,10 @@ class BankTransactionProcessor:
                 credit_val = row.iloc[6]
                 if isinstance(credit_val, (int, float)) and credit_val != 0:
                     credit = abs(credit_val)
+            
+            # Skip transactions with no balance impact (no debit and no credit)
+            if not debit and not credit:
+                return None
 
             # Get classification using concatenated description and details
             # Some transactions have info in Transaction Description, others in Details
@@ -412,6 +416,10 @@ class BankTransactionProcessor:
                         if not self.should_process_transaction(date_str, "CA7D-CIBC 0401", last_existing_dates):
                             continue
                         
+                        # Skip transactions with zero amount (no balance impact)
+                        if amount == 0:
+                            continue
+                            
                         # Determine debit/credit based on section
                         if current_section == 'debit':
                             debit = abs(amount)
@@ -502,6 +510,10 @@ class BankTransactionProcessor:
                         withdrawals) and withdrawals > 0 else ''
                     credit = deposits if pd.notna(
                         deposits) and deposits > 0 else ''
+                    
+                    # Skip transactions with no balance impact (no debit and no credit)
+                    if not debit and not credit:
+                        continue
 
                     # Calculate transaction amount for classification
                     transaction_amount = None

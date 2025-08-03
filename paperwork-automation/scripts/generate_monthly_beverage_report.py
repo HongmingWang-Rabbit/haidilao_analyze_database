@@ -5,18 +5,20 @@ Focuses on beverage sales vs inventory variance analysis.
 Compares system sales data with actual inventory count for beverages.
 """
 
-from utils.database import DatabaseConfig, DatabaseManager
-from lib.beverage_summary_worksheet import BeverageSummaryGenerator
-from lib.beverage_variance_worksheet import BeverageVarianceGenerator
-from openpyxl import Workbook
-from dotenv import load_dotenv
-from datetime import datetime
 import os
 import sys
 from pathlib import Path
 
 # Add parent directory to path for imports FIRST
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Now import our modules after path is set
+from utils.database import DatabaseConfig, DatabaseManager
+from lib.beverage_summary_worksheet import BeverageSummaryGenerator
+from lib.beverage_variance_worksheet import BeverageVarianceGenerator
+from openpyxl import Workbook
+from dotenv import load_dotenv
+from datetime import datetime
 
 # Load environment variables
 load_dotenv()

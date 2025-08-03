@@ -114,8 +114,8 @@ class ComparisonWorksheetGenerator:
             prev_mtd_revenue = sum(float(
                 row['prev_mtd_revenue']) for row in prev_mtd_dict.values()) if prev_mtd_dict else 0
 
-            # Target totals
-            target_revenue = sum(float(row['target_revenue'])
+            # Target totals - handle None values
+            target_revenue = sum(float(row['target_revenue']) if row['target_revenue'] is not None else 0
                                  for row in targets_dict.values())
 
         else:

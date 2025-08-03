@@ -267,9 +267,9 @@ class DailyStoreTrackingGenerator:
         if store_data:
             # Turnover rates: use WEIGHTED AVERAGE (total tables served / total seats)
             total_current_tables = sum(
-                s['current_turnover_rate'] * s['seating_capacity'] for s in store_data)
+                (s['current_turnover_rate'] or 0) * s['seating_capacity'] for s in store_data)
             total_prev_tables = sum(
-                s['prev_turnover_rate'] * s['seating_capacity'] for s in store_data)
+                (s['prev_turnover_rate'] or 0) * s['seating_capacity'] for s in store_data)
             total_seats = sum(s['seating_capacity'] for s in store_data)
 
             # Calculate weighted averages (maintain 5 decimal precision)
@@ -278,8 +278,8 @@ class DailyStoreTrackingGenerator:
             avg_prev_turnover = total_prev_tables / total_seats if total_seats > 0 else 0
 
             # Revenue: use SUM for regional totals
-            sum_current_revenue = sum(s['current_revenue'] for s in store_data)
-            sum_prev_revenue = sum(s['prev_revenue'] for s in store_data)
+            sum_current_revenue = sum((s['current_revenue'] or 0) for s in store_data)
+            sum_prev_revenue = sum((s['prev_revenue'] or 0) for s in store_data)
         else:
             avg_current_turnover = avg_prev_turnover = 0
             sum_current_revenue = sum_prev_revenue = 0
@@ -301,12 +301,12 @@ class DailyStoreTrackingGenerator:
         if not store_data:
             return store_data
 
-        # Extract data for normalization (convert Decimal to float)
-        current_turnovers = [float(s['current_turnover_rate'])
+        # Extract data for normalization (convert Decimal to float, handle None)
+        current_turnovers = [float(s['current_turnover_rate'] or 0)
                              for s in store_data]
-        prev_turnovers = [float(s['prev_turnover_rate']) for s in store_data]
-        current_revenues = [float(s['current_revenue']) for s in store_data]
-        prev_revenues = [float(s['prev_revenue']) for s in store_data]
+        prev_turnovers = [float(s['prev_turnover_rate'] or 0) for s in store_data]
+        current_revenues = [float(s['current_revenue'] or 0) for s in store_data]
+        prev_revenues = [float(s['prev_revenue'] or 0) for s in store_data]
 
         # Calculate comparison values
         turnover_diffs = [curr - prev for curr,

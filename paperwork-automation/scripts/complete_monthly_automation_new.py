@@ -11,13 +11,17 @@ Workflow:
 5. Generate analysis workbook with material variance calculations
 """
 
-from utils.database import DatabaseManager, DatabaseConfig
-from scripts.extract_combo_monthly_sales import extract_combo_data_from_excel, insert_to_database as insert_combo_to_database
 import sys
 import os
+from pathlib import Path
+
+# Add parent directory to Python path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from utils.database import DatabaseManager, DatabaseConfig
+from scripts.extract_combo_monthly_sales import extract_combo_data_from_excel, insert_to_database as insert_combo_to_database
 import logging
 import pandas as pd
-from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 import argparse
@@ -153,6 +157,9 @@ class MonthlyAutomationProcessor:
                     # Remove .0 suffix from float conversion
                     if code_str.endswith('.0'):
                         code_str = code_str[:-2]
+                    # Remove leading zeros for numeric codes
+                    if code_str and code_str.isdigit():
+                        code_str = str(int(code_str))  # This removes leading zeros
                     return code_str if code_str else None
 
                 df['full_code_clean'] = df['菜品编码'].apply(clean_dish_code)
@@ -289,7 +296,7 @@ class MonthlyAutomationProcessor:
                                         )
                                         SELECT d.id, %s, %s, %s, %s, %s, %s, %s, %s
                                         FROM dish d
-                                        WHERE d.full_code = %s AND d.size = %s
+                                        WHERE d.full_code = %s AND d.size = %s AND d.store_id = %s
                                         ON CONFLICT (dish_id, store_id, year, month, sales_mode) DO UPDATE SET
                                             sale_amount = EXCLUDED.sale_amount,
                                             return_amount = EXCLUDED.return_amount,
@@ -301,7 +308,7 @@ class MonthlyAutomationProcessor:
                                         row['出品数量'], row['退菜数量'],
                                         row.get('免单数量', 0), row.get(
                                             '赠菜数量', 0), sales_mode,
-                                        full_code, row['规格']
+                                        full_code, row['规格'], store_id
                                     ))
                                 monthly_sales_count += cursor.rowcount
 
@@ -317,7 +324,7 @@ class MonthlyAutomationProcessor:
                 self.log_result(
                     'dish_price_history', price_history_count, "Processed dish price history")
                 self.log_result(
-                    'monthly_sales', monthly_sales_count, "Processed monthly sales")
+                    'dish_monthly_sales', monthly_sales_count, "Processed monthly sales")
 
                 safe_log(
                     logger.info, "SUCCESS: Dish extraction completed successfully")
@@ -522,7 +529,7 @@ class MonthlyAutomationProcessor:
                 env['PYTHONPATH'] = current_dir
 
             result = subprocess.run(
-                cmd, capture_output=True, text=True, cwd=Path.cwd(), env=env, encoding='utf-8', errors='replace')
+                cmd, capture_output=True, text=True, cwd=current_dir, env=env, encoding='utf-8', errors='replace')
 
             if result.returncode != 0:
                 logger.error(
@@ -604,7 +611,7 @@ class MonthlyAutomationProcessor:
                 env['PYTHONPATH'] = current_dir
 
             result = subprocess.run(
-                cmd, capture_output=True, text=True, cwd=Path.cwd(), env=env, encoding='utf-8', errors='replace')
+                cmd, capture_output=True, text=True, cwd=current_dir, env=env, encoding='utf-8', errors='replace')
 
             if result.returncode == 0:
                 logger.info(
@@ -829,32 +836,9 @@ class MonthlyAutomationProcessor:
                 f"Inventory data extraction failed: {e}")
             return False
 
-    def generate_complete_dish_material_relationships(self, target_date: str) -> bool:
-        """Generate complete dish-material relationships using our new generator."""
-        try:
-            # Import and run our dish-material relationship generator
-            from scripts.generate_complete_dish_material_usage import CompleteDishMaterialUsageGenerator
-            
-            logger.info(f"Generating complete dish-material relationships for {target_date}...")
-            
-            # Create generator instance with same test setting as this processor
-            generator = CompleteDishMaterialUsageGenerator(target_date, is_test=self.config.is_test)
-            
-            # Generate the complete calculated usage data
-            output_path = generator.generate_complete_usage_data()
-            
-            if output_path:
-                logger.info(f"Successfully generated complete dish-material usage data: {output_path}")
-                return True
-            else:
-                logger.error("Failed to generate complete dish-material usage data")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error generating complete dish-material relationships: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
+    # REMOVED - dish-material relationships must ONLY come from input files
+    # def generate_complete_dish_material_relationships - this function has been removed
+    # All dish-material data must come from Input/monthly_report/calculated_dish_material_usage
 
     def extract_dish_materials(self, file_path: Path) -> bool:
         """Extract dish-material relationships from calculated dish material usage."""
@@ -886,24 +870,49 @@ class MonthlyAutomationProcessor:
                 for _, row in df.iterrows():
                     try:
                         # Get store_id for processing
-                        row_store_id = row.get('store_id', 1)
+                        # First try to get store_id directly, if not present, convert from store name
+                        row_store_id = row.get('store_id', None)
+                        if row_store_id is None and '门店名称' in row:
+                            store_name = row['门店名称']
+                            # Convert store name to ID
+                            store_name_to_id = {
+                                '加拿大一店': 1,
+                                '加拿大二店': 2,
+                                '加拿大三店': 3,
+                                '加拿大四店': 4,
+                                '加拿大五店': 5,
+                                '加拿大六店': 6,
+                                '加拿大七店': 7
+                            }
+                            row_store_id = store_name_to_id.get(store_name, 1)
+                        else:
+                            row_store_id = row_store_id or 1
                         # Get dish and material identifiers with improved validation
                         full_code = None
                         if pd.notna(row['菜品编码']):
-                            try:
-                                # Try to convert to int first, then to string
-                                full_code = str(int(float(row['菜品编码'])))
-                            except (ValueError, TypeError):
-                                # If conversion fails, skip non-numeric codes
+                            # Convert to string and clean
+                            code_str = str(row['菜品编码']).strip()
+                            # Remove .0 suffix if it exists (from float conversion)
+                            if code_str.endswith('.0'):
+                                code_str = code_str[:-2]
+                            # Remove leading zeros for numeric codes
+                            if code_str and code_str.isdigit():
+                                code_str = str(int(code_str))  # This removes leading zeros
+                                full_code = code_str
+                            else:
                                 continue
                         
                         material_number = None
                         if pd.notna(row['物料号']):
-                            try:
-                                # Try to convert to int first, then to string
-                                material_number = str(int(float(row['物料号'])))
-                            except (ValueError, TypeError):
-                                # If conversion fails, skip non-numeric material numbers
+                            # Convert to string and clean, preserving leading zeros
+                            mat_str = str(row['物料号']).strip()
+                            # Remove .0 suffix if it exists (from float conversion)
+                            if mat_str.endswith('.0'):
+                                mat_str = mat_str[:-2]
+                            # Verify it's numeric or keep as is for material numbers
+                            if mat_str:
+                                material_number = mat_str
+                            else:
                                 continue
 
                         if not full_code or not material_number:
@@ -965,7 +974,7 @@ class MonthlyAutomationProcessor:
 
                         # CRITICAL FIX: Use store_id from the input file instead of looping through all stores
                         # The input file already contains the correct store_id for each dish-material relationship
-                        input_store_id = row.get('store_id', 1)  # Get store_id from input file, default to 1
+                        input_store_id = row_store_id  # Use the store_id we already extracted above
                         
                         # Store-specific processing using input file store_id
                         
@@ -1043,9 +1052,10 @@ class MonthlyAutomationProcessor:
             import sys
 
             # Call the materials_use generation script with division
+            script_path = Path(__file__).parent / "generate_materials_use_with_division.py"
             cmd = [
                 sys.executable,
-                "scripts/generate_materials_use_with_division.py",
+                str(script_path),
                 "--target-date", target_date
             ]
 
@@ -1059,7 +1069,7 @@ class MonthlyAutomationProcessor:
                 env['PYTHONPATH'] = current_dir
 
             result = subprocess.run(
-                cmd, capture_output=True, text=True, cwd=Path.cwd(), env=env)
+                cmd, capture_output=True, text=True, cwd=current_dir, env=env, encoding='utf-8', errors='replace')
 
             if result.returncode == 0:
                 logger.info("SUCCESS: Materials_use calculations with DIVISION completed")
@@ -1067,8 +1077,13 @@ class MonthlyAutomationProcessor:
                                 "Generated materials_use calculations using division by unit_conversion_rate")
                 return True
             else:
-                logger.error(f"ERROR: Materials_use generation with division failed: {result.stderr}")
-                self.results['errors'].append(f"Materials_use division generation failed: {result.stderr}")
+                # Provide more detailed error information
+                error_msg = result.stderr if result.stderr else result.stdout
+                logger.error(f"ERROR: Materials_use generation with division failed with code {result.returncode}")
+                logger.error(f"STDERR: {result.stderr}")
+                logger.error(f"STDOUT: {result.stdout}")
+                logger.error(f"Command was: {' '.join(cmd)}")
+                self.results['errors'].append(f"Materials_use division generation failed: {error_msg}")
                 return False
 
         except Exception as e:
@@ -1098,24 +1113,37 @@ class MonthlyAutomationProcessor:
             import subprocess
             import sys
 
-            # Call the updated monthly material report generation script with proper module path
+            # Call the updated monthly material report generation script
+            # Use direct script path instead of -m flag for better compatibility
+            # Use full report generation script
+            script_path = Path(__file__).parent / "generate_monthly_material_report.py"
             cmd = [
                 sys.executable,
-                "-m", "scripts.generate_monthly_material_report",
+                str(script_path),
                 "--date", target_date
             ]
 
             # Set up environment to include current directory in Python path
             import os
             env = os.environ.copy()
-            current_dir = str(Path.cwd())
+            current_dir = str(Path(__file__).parent.parent)  # Parent of scripts folder
             if 'PYTHONPATH' in env:
                 env['PYTHONPATH'] = f"{current_dir};{env['PYTHONPATH']}"
             else:
                 env['PYTHONPATH'] = current_dir
 
+            logger.info(f"Running command: {' '.join(cmd)}")
+            logger.info(f"Working directory: {current_dir}")
+            logger.info(f"Script exists: {script_path.exists()}")
+            
             result = subprocess.run(
-                cmd, capture_output=True, text=True, cwd=Path.cwd(), env=env)
+                cmd, capture_output=True, text=True, cwd=current_dir, env=env, encoding='utf-8', errors='replace')
+            
+            logger.info(f"Command finished with return code: {result.returncode}")
+            if result.stdout:
+                logger.info(f"STDOUT: {result.stdout[:1000]}")  # First 1000 chars
+            if result.stderr:
+                logger.info(f"STDERR: {result.stderr[:1000]}")  # First 1000 chars
 
             if result.returncode == 0:
                 logger.info(
@@ -1129,10 +1157,15 @@ class MonthlyAutomationProcessor:
                                 "Generated monthly material report with new structure")
                 return True
             else:
+                # Provide more detailed error information
+                error_msg = result.stderr if result.stderr else result.stdout
                 logger.error(
-                    f"ERROR: Monthly material report generation failed: {result.stderr}")
+                    f"ERROR: Monthly material report generation failed with code {result.returncode}")
+                logger.error(f"STDERR: {result.stderr}")
+                logger.error(f"STDOUT: {result.stdout}")
+                logger.error(f"Command was: {' '.join(cmd)}")
                 self.results['errors'].append(
-                    f"Monthly material report generation failed: {result.stderr}")
+                    f"Monthly material report generation failed: {error_msg}")
                 return False
 
         except Exception as e:
@@ -1151,23 +1184,25 @@ class MonthlyAutomationProcessor:
             import sys
 
             # Call the beverage report generation script
+            # Use full report generation script
+            script_path = Path(__file__).parent / "generate_monthly_beverage_report.py"
             cmd = [
                 sys.executable,
-                "-m", "scripts.generate_monthly_beverage_report",
+                str(script_path),
                 "--date", target_date
             ]
 
             # Set up environment to include current directory in Python path
             import os
             env = os.environ.copy()
-            current_dir = str(Path.cwd())
+            current_dir = str(Path(__file__).parent.parent)  # Parent of scripts folder
             if 'PYTHONPATH' in env:
                 env['PYTHONPATH'] = f"{current_dir};{env['PYTHONPATH']}"
             else:
                 env['PYTHONPATH'] = current_dir
 
             result = subprocess.run(
-                cmd, capture_output=True, text=True, cwd=Path.cwd(), env=env)
+                cmd, capture_output=True, text=True, cwd=current_dir, env=env, encoding='utf-8', errors='replace')
 
             if result.returncode == 0:
                 logger.info(
@@ -1176,10 +1211,15 @@ class MonthlyAutomationProcessor:
                                 "Generated monthly beverage report with variance analysis")
                 return True
             else:
+                # Provide more detailed error information
+                error_msg = result.stderr if result.stderr else result.stdout
                 logger.error(
-                    f"ERROR: Monthly beverage report generation failed: {result.stderr}")
+                    f"ERROR: Monthly beverage report generation failed with code {result.returncode}")
+                logger.error(f"STDERR: {result.stderr}")
+                logger.error(f"STDOUT: {result.stdout}")
+                logger.error(f"Command was: {' '.join(cmd)}")
                 self.results['errors'].append(
-                    f"Monthly beverage report generation failed: {result.stderr}")
+                    f"Monthly beverage report generation failed: {error_msg}")
                 return False
 
         except Exception as e:
@@ -1198,23 +1238,25 @@ class MonthlyAutomationProcessor:
             import sys
 
             # Call the monthly gross margin report generation script
+            # Use full report generation script
+            script_path = Path(__file__).parent / "generate_monthly_gross_margin_report.py"
             cmd = [
                 sys.executable,
-                "-m", "scripts.generate_monthly_gross_margin_report",
+                str(script_path),
                 "--target-date", target_date
             ]
 
             # Set up environment to include current directory in Python path
             import os
             env = os.environ.copy()
-            current_dir = str(Path.cwd())
+            current_dir = str(Path(__file__).parent.parent)  # Parent of scripts folder
             if 'PYTHONPATH' in env:
                 env['PYTHONPATH'] = f"{current_dir};{env['PYTHONPATH']}"
             else:
                 env['PYTHONPATH'] = current_dir
 
             result = subprocess.run(
-                cmd, capture_output=True, text=True, cwd=Path.cwd(), env=env)
+                cmd, capture_output=True, text=True, cwd=current_dir, env=env, encoding='utf-8', errors='replace')
 
             if result.returncode == 0:
                 logger.info(
@@ -1223,10 +1265,15 @@ class MonthlyAutomationProcessor:
                                 "Generated monthly gross margin analysis report (毛利相关分析指标)")
                 return True
             else:
+                # Provide more detailed error information
+                error_msg = result.stderr if result.stderr else result.stdout
                 logger.error(
-                    f"ERROR: Gross margin report generation failed: {result.stderr}")
+                    f"ERROR: Gross margin report generation failed with code {result.returncode}")
+                logger.error(f"STDERR: {result.stderr}")
+                logger.error(f"STDOUT: {result.stdout}")
+                logger.error(f"Command was: {' '.join(cmd)}")
                 self.results['errors'].append(
-                    f"Gross margin report generation failed: {result.stderr}")
+                    f"Gross margin report generation failed: {error_msg}")
                 return False
 
         except Exception as e:
@@ -1305,6 +1352,7 @@ class MonthlyAutomationProcessor:
             f"INVENTORY: Using inventory count date: {self.inventory_count_date}")
 
         success = True
+        logger.info("=== STARTING PROCESS_ALL - success = True ===")
 
         # Step 1: Extract from monthly dish sales
         dish_sale_folder = self.input_folder / "monthly_dish_sale"
@@ -1315,53 +1363,88 @@ class MonthlyAutomationProcessor:
         dish_files = [f for f in dish_files if not f.name.startswith("~$")]
 
         if dish_files:
-            success &= self.extract_dish_types_and_dishes(dish_files[0])
+            result = self.extract_dish_types_and_dishes(dish_files[0])
+            logger.info(f"Step 1 (dishes) returned: {result}, success was: {success}, now: {success and result}")
+            success &= result
         else:
             logger.error("No monthly dish sale file found")
             success = False
 
         # Step 1.5: Extract combo data from monthly combo sales
-        success &= self.extract_combo_from_monthly_report()
+        result = self.extract_combo_from_monthly_report()
+        logger.info(f"Step 1.5 (combo) returned: {result}, success was: {success}, now: {success and result}")
+        success &= result
 
         # Step 2: Extract material master data (materials, types) from first available store
         material_folder = self.input_folder / "material_detail"
-        success &= self.extract_material_master_data(material_folder)
+        result = self.extract_material_master_data(material_folder)
+        logger.info(f"Step 2 (material master) returned: {result}, success was: {success}, now: {success and result}")
+        success &= result
 
         # Step 3: Extract material prices from all stores (now that materials exist)
-        success &= self.extract_material_detail_batch(material_folder)
+        result = self.extract_material_detail_batch(material_folder)
+        logger.info(f"Step 3 (material prices) returned: {result}, success was: {success}, now: {success and result}")
+        success &= result
 
         # Step 4: Extract from inventory checking results (System Record + Inventory Count)
         # This now handles both: 库存数量 → System Record, 盘点数量 → Inventory Count
         inventory_folder = self.input_folder / "inventory_checking_result"
         if inventory_folder.exists():
-            success &= self.extract_inventory_data(inventory_folder)
+            result = self.extract_inventory_data(inventory_folder)
+            logger.info(f"Step 4 (inventory) returned: {result}, success was: {success}, now: {success and result}")
+            success &= result
         else:
             logger.error("No inventory checking result folder found")
             success = False
 
-        # Step 4.5: Generate complete dish-material relationships using our new generator
-        # Commented out - not needed for every monthly automation run
-        # logger.info("GENERATE: Creating complete dish-material relationships...")
-        # success &= self.generate_complete_dish_material_relationships(target_date)
+        # Step 4.5: REMOVED - dish-material relationships must ONLY come from input files
+        # Never generate dish-material relationships - they must come from Input/monthly_report/calculated_dish_material_usage
 
         # Step 5: Extract dish-material relationships
-        # First check output folder (from our generator), then input folder (manual files)
+        # First TRY to update conversion rates from inventory files (optional)
+        conversion_rates = {}
+        try:
+            logger.info("Checking for conversion rates from inventory checking result files...")
+            from extract_and_update_conversion_rates import extract_conversion_rates_from_inventory, update_calculated_file
+            
+            # Extract conversion rates (optional - may not exist)
+            conversion_rates = extract_conversion_rates_from_inventory()
+            if conversion_rates:
+                logger.info(f"Extracted {len(conversion_rates)} conversion rates from inventory files")
+            else:
+                logger.info("No conversion rates found in inventory files (this is normal if 计算 sheets don't exist)")
+        except Exception as e:
+            logger.warning(f"Could not extract conversion rates: {e} (continuing without them)")
+        
+        # Check for updated file in output folder first
         output_calc_folder = Path("output") / "calculated_dish_material_usage"
         input_calc_folder = self.input_folder / "calculated_dish_material_usage"
         
         calc_files = []
         
-        # Priority 1: Check output folder for generated files
+        # Priority 1: Check output folder for updated files with correct conversion rates
         if output_calc_folder.exists():
-            output_files = list(output_calc_folder.glob("*.xls*")) + \
-                          list(output_calc_folder.glob("*.XLS*"))
-            calc_files.extend(output_files)
-            
-        # Priority 2: Check input folder for manual files
-        if input_calc_folder.exists():
+            output_files = list(output_calc_folder.glob("*updated*.xlsx"))
+            if output_files:
+                # Use the most recent updated file
+                output_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+                calc_files.append(output_files[0])
+                logger.info(f"Using updated file with correct conversion rates: {output_files[0].name}")
+        
+        # If no updated file exists, create one
+        if not calc_files and conversion_rates:
+            logger.info("Creating updated file with correct conversion rates...")
+            updated_file = update_calculated_file(conversion_rates)
+            if updated_file and updated_file.exists():
+                calc_files.append(updated_file)
+                logger.info(f"Created and using: {updated_file.name}")
+        
+        # Fallback: Use input folder file if no updated version
+        if not calc_files and input_calc_folder.exists():
             input_files = list(input_calc_folder.glob("*.xls*")) + \
                          list(input_calc_folder.glob("*.XLS*"))
             calc_files.extend(input_files)
+            logger.warning("Using original input file - conversion rates may be incorrect!")
 
         # Filter out temporary Excel files (starting with ~$)
         calc_files = [f for f in calc_files if not f.name.startswith("~$")]
@@ -1370,19 +1453,33 @@ class MonthlyAutomationProcessor:
             # Sort by modification time to get the latest file (prioritizes newest generated file)
             calc_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
             logger.info(f"Using calculated dish-material usage file: {calc_files[0]}")
-            success &= self.extract_dish_materials(calc_files[0])
+            result = self.extract_dish_materials(calc_files[0])
+            logger.info(f"Step 5 (dish-materials) returned: {result}, success was: {success}, now: {success and result}")
+            success &= result
         else:
             logger.error("No calculated dish material usage file found in output/ or Input/monthly_report/ folders")
             success = False
 
         # Step 6: Generate materials_use calculations with division (NEW REQUIREMENT)
-        # Commented out - not needed for every monthly automation run
-        # if success:
-        #     success &= self.generate_materials_use_with_division(target_date)
+        try:
+            logger.info(f"Before Step 6 - success status: {success}")
+            if success:
+                success &= self.generate_materials_use_with_division(target_date)
+            else:
+                logger.error("Skipping Step 6 due to previous failures")
 
-        # Step 7: Generate analysis reports (both material and beverage)
-        if success:
-            success &= self.generate_analysis_report(target_date)
+            # Step 7: Generate analysis reports (both material and beverage)
+            logger.info(f"Before Step 7 - success status: {success}")
+            if success:
+                success &= self.generate_analysis_report(target_date)
+            else:
+                logger.error("Skipping Step 7 (report generation) due to previous failures")
+        except Exception as e:
+            logger.error(f"CRITICAL ERROR in steps 6-7: {e}")
+            import traceback
+            traceback.print_exc()
+            self.results['errors'].append(f"Critical error: {e}")
+            success = False
 
         # Print results summary
         self.print_results_summary()

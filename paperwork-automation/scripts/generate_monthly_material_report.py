@@ -5,13 +5,6 @@ Works with monthly performance data (dish_monthly_sale, material_monthly_usage)
 focusing on material usage analysis and variance reporting.
 """
 
-from utils.database import DatabaseConfig, DatabaseManager
-from lib.monthly_dishes_worksheet import MonthlyDishesWorksheetGenerator
-from lib.material_usage_summary_worksheet import MaterialUsageSummaryGenerator
-from lib.detailed_material_spending_worksheet import DetailedMaterialSpendingGenerator
-from openpyxl import Workbook
-from dotenv import load_dotenv
-from datetime import datetime
 import os
 import sys
 from pathlib import Path
@@ -19,7 +12,14 @@ from pathlib import Path
 # Add parent directory to path for imports FIRST
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# Now import our modules
+# Now import our modules after path is set
+from utils.database import DatabaseConfig, DatabaseManager
+from lib.monthly_dishes_worksheet import MonthlyDishesWorksheetGenerator
+from lib.material_usage_summary_worksheet import MaterialUsageSummaryGenerator
+from lib.detailed_material_spending_worksheet import DetailedMaterialSpendingGenerator
+from openpyxl import Workbook
+from dotenv import load_dotenv
+from datetime import datetime
 
 # Load environment variables
 load_dotenv()
@@ -114,10 +114,19 @@ class MonthlyMaterialReportGenerator:
             wb.remove(wb.active)
 
         # Generate material variance analysis worksheet
-        monthly_dishes_generator = MonthlyDishesWorksheetGenerator(
-            self.store_names, self.target_date)
-        variance_ws = monthly_dishes_generator.generate_material_variance_worksheet(
-            wb, self)
+        try:
+            print("INFO: Creating MonthlyDishesWorksheetGenerator...")
+            monthly_dishes_generator = MonthlyDishesWorksheetGenerator(
+                self.store_names, self.target_date)
+            print("INFO: Generating material variance worksheet...")
+            variance_ws = monthly_dishes_generator.generate_material_variance_worksheet(
+                wb, self)
+            print("INFO: Material variance worksheet generated successfully")
+        except Exception as e:
+            print(f"ERROR: Failed to generate material variance worksheet: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
         # Generate material usage summary worksheet
         if material_stats['count'] > 0:
@@ -226,6 +235,7 @@ class MonthlyMaterialReportGenerator:
 
 def main():
     """Main function"""
+    print("Starting generate_monthly_material_report.py...")
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -236,10 +246,13 @@ def main():
                         help="Use test database")
 
     args = parser.parse_args()
+    print(f"Arguments parsed: date={args.date}, test={args.test}")
 
     try:
+        print("Creating MonthlyMaterialReportGenerator...")
         generator = MonthlyMaterialReportGenerator(
             args.date, is_test=args.test)
+        print("Calling generate_report...")
         output_path = generator.generate_report()
 
         if output_path:
