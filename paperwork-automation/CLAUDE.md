@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a production-grade automation system for processing Haidilao restaurant operational data from Excel files and generating comprehensive business reports. The system handles daily operational data, time segment analysis, material usage tracking, and generates professional Excel reports for business analysis.
 
+**System Purpose**: Automate the extraction, processing, and reporting of restaurant operational data for 7 Canadian Haidilao stores plus Hi Bowl franchise, replacing manual Excel-based workflows with automated database-driven reporting.
+
 ## Key Commands
 
 ### Primary Entry Points
@@ -72,6 +74,7 @@ The system uses a modular architecture with centralized utilities to prevent cod
 ### Worksheet Generator Pattern
 
 All worksheet generators inherit from `BaseWorksheetGenerator` for consistent styling:
+
 - Business Insight, Yearly Comparison, Time Segment Analysis
 - Material Usage Summary, Detailed Material Spending
 - Gross Margin Analysis, Beverage Variance Reports
@@ -176,6 +179,7 @@ python3 scripts/automation-menu.py  # Then select 'r' for reset
 ### Material Number Precision Issues
 
 If different material numbers appear identical:
+
 ```python
 # WRONG - causes precision loss
 df = pd.read_excel(file_path)  # 1500680 and 1500681 both become 1500680.0
@@ -187,6 +191,7 @@ df = pd.read_excel(file_path, dtype={'物料': str})
 ### Target Date Parameter
 
 Ensure `--target-date` is passed through automation workflows:
+
 ```python
 # In automation scripts
 cmd = f"python3 script.py --target-date {target_date}"  # Not CURRENT_DATE
@@ -195,6 +200,7 @@ cmd = f"python3 script.py --target-date {target_date}"  # Not CURRENT_DATE
 ### Representative Product Selection
 
 When multiple products share a material number:
+
 1. Group by material description
 2. Calculate total contribution (price × quantity)
 3. Select product with highest contribution
@@ -203,6 +209,7 @@ When multiple products share a material number:
 ### Unicode Column Names
 
 Use escape sequences for reliability:
+
 ```python
 # Instead of Chinese characters directly
 column_name = '\u7269\u6599'  # 物料
@@ -211,7 +218,7 @@ column_name = '\u7269\u6599'  # 物料
 ## Performance Targets
 
 - Core operations: < 1 second
-- Full test suite: < 5 seconds  
+- Full test suite: < 5 seconds
 - Report generation: < 30 seconds
 - Database queries: < 10 seconds
 
@@ -238,11 +245,29 @@ export QBI_USERNAME="your_username"
 export QBI_PASSWORD="your_password"
 ```
 
-## Important Reminders
+## Development Standards (from .cursorrules)
 
-- **Feature Parity**: Maintain identical functionality between GUI and CLI
+### Mandatory Update Requirements
+
+When adding ANY new feature, you MUST update in this order:
+
+1. **Core Implementation** (lib/) with error handling and type hints
+2. **Tests** (tests/) with comprehensive coverage
+3. **Update BOTH** automation-menu.py AND automation-gui.py for feature parity
+4. **Update README.md** with new functionality
+5. **Update requirements.txt** if new dependencies added
+
+### Code Quality Requirements
+
 - **Test Coverage**: 100% test success rate required before commits
-- **Error Messages**: Provide user-friendly messages with recovery suggestions
+- **Type Hints**: Required for all function parameters and returns
+- **Error Handling**: Graceful degradation with specific exception types
+- **Documentation**: Docstrings for all classes and public methods
 - **Chinese Support**: Proper Unicode handling throughout the system
+
+### Database Best Practices
+
 - **Price History**: Deactivate old prices when inserting new ones
 - **Schema Evolution**: Use migration scripts, never drop tables directly
+- **Transaction Safety**: Always use rollback on errors
+- **Connection Management**: Use context managers and proper cleanup

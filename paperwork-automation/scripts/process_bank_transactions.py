@@ -32,71 +32,76 @@ logger = logging.getLogger(__name__)
 
 class ExcelImagePreserver:
     """Utility to preserve images in Excel files when using openpyxl"""
-    
+
     def __init__(self, source_file):
         self.source_file = Path(source_file)
         self.media_files = {}
         self.drawing_files = {}
-        
+
     def extract_media_and_drawings(self):
         """Extract media and drawing files from the source Excel file"""
         try:
             with zipfile.ZipFile(self.source_file, 'r') as zip_file:
                 file_list = zip_file.namelist()
-                
+
                 # Extract various image-related files
                 for file_name in file_list:
                     file_lower = file_name.lower()
-                    
+
                     # Media files (images)
                     if 'media/' in file_lower:
                         self.media_files[file_name] = zip_file.read(file_name)
-                    
+
                     # Drawing files and their relationships
                     elif 'drawings/' in file_lower:
-                        self.drawing_files[file_name] = zip_file.read(file_name)
-                    
+                        self.drawing_files[file_name] = zip_file.read(
+                            file_name)
+
                     # Chart files
                     elif 'charts/' in file_lower:
-                        self.drawing_files[file_name] = zip_file.read(file_name)
-                    
+                        self.drawing_files[file_name] = zip_file.read(
+                            file_name)
+
                     # Embedded objects
                     elif 'embeddings/' in file_lower:
                         self.media_files[file_name] = zip_file.read(file_name)
-                    
+
                     # Any other image files in unusual locations
                     elif any(ext in file_lower for ext in ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.emf', '.wmf']):
                         self.media_files[file_name] = zip_file.read(file_name)
-                        
-                logger.info(f"Extracted {len(self.media_files)} media files and {len(self.drawing_files)} drawing files")
+
+                logger.info(
+                    f"Extracted {len(self.media_files)} media files and {len(self.drawing_files)} drawing files")
                 if self.media_files:
-                    logger.info(f"Media files: {list(self.media_files.keys())}")
+                    logger.info(
+                        f"Media files: {list(self.media_files.keys())}")
                 if self.drawing_files:
-                    logger.info(f"Drawing files: {list(self.drawing_files.keys())}")
-                
+                    logger.info(
+                        f"Drawing files: {list(self.drawing_files.keys())}")
+
         except Exception as e:
             logger.error(f"Error extracting media/drawings: {e}")
-            
+
     def inject_media_and_drawings(self, target_file):
         """Inject the preserved media and drawing files into the target Excel file"""
         if not self.media_files and not self.drawing_files:
             logger.info("No media or drawing files to inject")
             return True  # Nothing to inject, but not an error
-            
+
         try:
             # Create a temporary file for the modified Excel
             with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as temp_file:
                 temp_path = temp_file.name
-            
+
             # Copy the target file to temp
             shutil.copy2(target_file, temp_path)
             logger.info(f"Created temporary file: {temp_path}")
-            
+
             # Open the Excel file as a ZIP and add media/drawings
             with zipfile.ZipFile(temp_path, 'a', compression=zipfile.ZIP_DEFLATED) as zip_file:
                 # Check existing files to avoid duplicates
                 existing_files = set(zip_file.namelist())
-                
+
                 # Add media files
                 injected_media = 0
                 for file_name, file_data in self.media_files.items():
@@ -105,9 +110,10 @@ class ExcelImagePreserver:
                         injected_media += 1
                         logger.debug(f"Injected media file: {file_name}")
                     else:
-                        logger.debug(f"Media file already exists, skipping: {file_name}")
-                    
-                # Add drawing files  
+                        logger.debug(
+                            f"Media file already exists, skipping: {file_name}")
+
+                # Add drawing files
                 injected_drawings = 0
                 for file_name, file_data in self.drawing_files.items():
                     if file_name not in existing_files:
@@ -115,14 +121,16 @@ class ExcelImagePreserver:
                         injected_drawings += 1
                         logger.debug(f"Injected drawing file: {file_name}")
                     else:
-                        logger.debug(f"Drawing file already exists, skipping: {file_name}")
-            
+                        logger.debug(
+                            f"Drawing file already exists, skipping: {file_name}")
+
             # Replace the original target file
             shutil.move(temp_path, target_file)
-            
-            logger.info(f"Successfully injected {injected_media} media files and {injected_drawings} drawing files")
+
+            logger.info(
+                f"Successfully injected {injected_media} media files and {injected_drawings} drawing files")
             return True
-            
+
         except Exception as e:
             logger.error(f"Error injecting media/drawings: {e}")
             import traceback
@@ -283,7 +291,7 @@ class BankTransactionProcessor:
                 date_obj = pd.to_datetime(date_str)
                 # Get sheet name for this account
                 sheet_name = self.account_mapping[account_num]
-                
+
                 # Check if we should process this transaction (target month and after last existing date)
                 if not self.should_process_transaction(date_obj.strftime('%Y-%m-%d'), sheet_name, last_existing_dates):
                     return None
@@ -323,7 +331,7 @@ class BankTransactionProcessor:
                 credit_val = row.iloc[6]
                 if isinstance(credit_val, (int, float)) and credit_val != 0:
                     credit = abs(credit_val)
-            
+
             # Skip transactions with no balance impact (no debit and no credit)
             if not debit and not credit:
                 return None
@@ -331,7 +339,7 @@ class BankTransactionProcessor:
             # Get classification using concatenated description and details
             # Some transactions have info in Transaction Description, others in Details
             combined_text = f"{description} {details}".strip()
-            
+
             # Calculate transaction amount and determine transaction type
             transaction_amount = None
             transaction_type = None
@@ -341,7 +349,7 @@ class BankTransactionProcessor:
             elif debit and isinstance(debit, (int, float)) and debit > 0:
                 transaction_amount = float(debit)  # Store as positive amount
                 transaction_type = 'debit'
-                
+
             classification = BankDescriptionConfig.get_transaction_info(
                 combined_text, transaction_amount, transaction_type)
 
@@ -379,12 +387,12 @@ class BankTransactionProcessor:
             df = pd.read_excel(file_path, engine='openpyxl', header=None)
             transactions = []
             current_section = None  # 'debit' or 'credit'
-            
+
             for idx, row in df.iterrows():
                 # Convert row to list for easier processing
                 row_data = row.tolist()
                 first_col = str(row_data[0]) if pd.notna(row_data[0]) else ""
-                
+
                 # Check for section headers
                 if 'Debit transactions' in first_col:
                     current_section = 'debit'
@@ -395,11 +403,11 @@ class BankTransactionProcessor:
                 elif 'Total debits' in first_col or 'Total credits' in first_col:
                     current_section = None
                     continue
-                
+
                 # Skip header rows and empty rows
                 if current_section is None or 'Description' in first_col or first_col == '' or pd.isna(row_data[0]):
                     continue
-                
+
                 # Process transaction rows (should have description in column 0, date in column 6, amount in column 7)
                 if len(row_data) >= 8 and pd.notna(row_data[6]) and pd.notna(row_data[7]):
                     try:
@@ -407,19 +415,21 @@ class BankTransactionProcessor:
                         description = str(row_data[0]).strip()
                         date_value = pd.to_datetime(row_data[6])
                         amount = float(row_data[7])
-                        bank_ref = str(row_data[10]) if len(row_data) > 10 and pd.notna(row_data[10]) else ""
-                        client_ref = str(row_data[11]) if len(row_data) > 11 and pd.notna(row_data[11]) else ""
-                        
+                        bank_ref = str(row_data[10]) if len(
+                            row_data) > 10 and pd.notna(row_data[10]) else ""
+                        client_ref = str(row_data[11]) if len(
+                            row_data) > 11 and pd.notna(row_data[11]) else ""
+
                         date_str = date_value.strftime('%Y-%m-%d')
-                        
+
                         # Check if we should process this transaction
                         if not self.should_process_transaction(date_str, "CA7D-CIBC 0401", last_existing_dates):
                             continue
-                        
+
                         # Skip transactions with zero amount (no balance impact)
                         if amount == 0:
                             continue
-                            
+
                         # Determine debit/credit based on section
                         if current_section == 'debit':
                             debit = abs(amount)
@@ -427,13 +437,15 @@ class BankTransactionProcessor:
                         else:  # credit section
                             debit = ''
                             credit = abs(amount)
-                        
+
                         # Get classification with amount and transaction type information
-                        transaction_amount = abs(amount)  # Store as positive amount
+                        # Store as positive amount
+                        transaction_amount = abs(amount)
                         transaction_type = current_section  # 'credit' or 'debit'
-                            
-                        classification = BankDescriptionConfig.get_transaction_info(description, transaction_amount, transaction_type)
-                        
+
+                        classification = BankDescriptionConfig.get_transaction_info(
+                            description, transaction_amount, transaction_type)
+
                         transaction = {
                             'Date': date_value.strftime('%b %d, %Y'),
                             'Transaction Description': description,
@@ -451,12 +463,14 @@ class BankTransactionProcessor:
                             '_account': '0401'
                         }
                         transactions.append(transaction)
-                        
+
                     except Exception as e:
-                        logger.warning(f"Error parsing CIBC transaction row {idx}: {e}")
+                        logger.warning(
+                            f"Error parsing CIBC transaction row {idx}: {e}")
                         continue
 
-            logger.info(f"Successfully processed {len(transactions)} CIBC transactions")
+            logger.info(
+                f"Successfully processed {len(transactions)} CIBC transactions")
             return transactions
 
         except Exception as e:
@@ -491,7 +505,7 @@ class BankTransactionProcessor:
                 for _, row in df.iterrows():
                     date_value = pd.to_datetime(row['Date'])
                     date_str = date_value.strftime('%Y-%m-%d')
-                    
+
                     # Check if we should process this transaction (target month and after last existing date)
                     sheet_name = self.account_mapping[account_num]
                     if not self.should_process_transaction(date_str, sheet_name, last_existing_dates):
@@ -510,7 +524,7 @@ class BankTransactionProcessor:
                         withdrawals) and withdrawals > 0 else ''
                     credit = deposits if pd.notna(
                         deposits) and deposits > 0 else ''
-                    
+
                     # Skip transactions with no balance impact (no debit and no credit)
                     if not debit and not credit:
                         continue
@@ -522,7 +536,8 @@ class BankTransactionProcessor:
                         transaction_amount = float(credit)
                         transaction_type = 'credit'
                     elif debit and isinstance(debit, (int, float)) and debit > 0:
-                        transaction_amount = float(debit)  # Store as positive amount
+                        # Store as positive amount
+                        transaction_amount = float(debit)
                         transaction_type = 'debit'
 
                     classification = BankDescriptionConfig.get_transaction_info(
@@ -563,20 +578,21 @@ class BankTransactionProcessor:
             return False
 
     def should_process_transaction(self, date_str: str, sheet_name: str, last_existing_dates: Dict[str, str]) -> bool:
-        """Check if transaction should be processed (in target month and after last existing date)"""
+        """Check if transaction should be processed (in target month and including/after last existing date)"""
         # First check if it's in target month
         if not self.is_target_month(date_str):
             return False
-        
+
         # If no last existing date for this sheet, process all target month transactions
         if sheet_name not in last_existing_dates:
             return True
-        
-        # Only process transactions after the last existing date
+
+        # Process transactions on or after the last existing date (to catch any missing ones from that day)
         try:
             transaction_date = pd.to_datetime(date_str)
-            last_existing_date = pd.to_datetime(last_existing_dates[sheet_name])
-            return transaction_date > last_existing_date
+            last_existing_date = pd.to_datetime(
+                last_existing_dates[sheet_name])
+            return transaction_date >= last_existing_date
         except:
             # If date parsing fails, fall back to target month check
             return True
@@ -588,19 +604,20 @@ class BankTransactionProcessor:
                 logger.error(
                     f"Template file does not exist: {self.template_file}")
                 return
-            
+
             # Create output directory first
             self.output_file.parent.mkdir(exist_ok=True)
-            
+
             # Step 1: Extract images and drawings from template for preservation
-            logger.info(f"Extracting images and drawings from template: {self.template_file}")
+            logger.info(
+                f"Extracting images and drawings from template: {self.template_file}")
             image_preserver = ExcelImagePreserver(self.template_file)
             image_preserver.extract_media_and_drawings()
-            
+
             # Step 2: Copy the template file to output location
             logger.info(f"Copying template file: {self.template_file}")
             shutil.copy2(self.template_file, self.output_file)
-            
+
             # Step 3: Load the copied file and modify it
             logger.info(f"Loading copied workbook: {self.output_file}")
             wb = load_workbook(self.output_file)
@@ -626,23 +643,29 @@ class BankTransactionProcessor:
                 wb.save(self.output_file)
                 wb.close()
                 logger.info(f"Saved modified workbook: {self.output_file}")
-                
+
                 # Give the file system a moment to finalize the file
                 import time
                 time.sleep(0.5)
-                
+
                 # Step 5: Re-inject the preserved images and drawings
-                logger.info(f"Re-injecting preserved images and drawings to: {self.output_file}")
-                success = image_preserver.inject_media_and_drawings(self.output_file)
+                logger.info(
+                    f"Re-injecting preserved images and drawings to: {self.output_file}")
+                success = image_preserver.inject_media_and_drawings(
+                    self.output_file)
                 if success:
-                    logger.info(f"Successfully preserved images in output file")
+                    logger.info(
+                        f"Successfully preserved images in output file")
                 else:
-                    logger.warning(f"Failed to preserve some images in output file")
+                    logger.warning(
+                        f"Failed to preserve some images in output file")
                     # Continue anyway - the file is still usable
-                
-                print(f"SUCCESS: Bank report saved to output folder: {self.output_file}")
-                print(f"SUMMARY: Added {total_added} new transactions, skipped {total_skipped} duplicates")
-                
+
+                print(
+                    f"SUCCESS: Bank report saved to output folder: {self.output_file}")
+                print(
+                    f"SUMMARY: Added {total_added} new transactions, skipped {total_skipped} duplicates")
+
             except Exception as e:
                 logger.error(f"Failed to save output file: {e}")
                 print(f"ERROR: Could not save output file: {e}")
@@ -745,17 +768,19 @@ class BankTransactionProcessor:
                     if field in ['单据号', '附件', '是否登记线下付款表', '是否登记支票使用表']:
                         # Get classification for this transaction's details
                         details = transaction.get('Details', '')
-                        
+
                         # Calculate transaction amount for classification
                         transaction_amount = None
                         transaction_type = None
                         if transaction.get('Credit') and isinstance(transaction.get('Credit'), (int, float)):
-                            transaction_amount = float(transaction.get('Credit'))
+                            transaction_amount = float(
+                                transaction.get('Credit'))
                             transaction_type = 'credit'
                         elif transaction.get('Debit') and isinstance(transaction.get('Debit'), (int, float)):
-                            transaction_amount = float(transaction.get('Debit'))  # Store as positive amount
+                            transaction_amount = float(transaction.get(
+                                'Debit'))  # Store as positive amount
                             transaction_type = 'debit'
-                            
+
                         classification = BankDescriptionConfig.get_transaction_info(
                             details, transaction_amount, transaction_type)
                         if classification.get(field, False):
@@ -775,13 +800,13 @@ class BankTransactionProcessor:
         """Check if transaction already exists in worksheet"""
         # Get bank-specific header positions for this sheet
         header_positions = self.get_header_positions_for_sheet(ws.title)
-        
+
         # Extract column positions for key fields
         date_col = header_positions.get('Date', 1)
         desc_col = header_positions.get('Transaction Description', 3)
         debit_col = header_positions.get('Debit', 6)
         credit_col = header_positions.get('Credit', 7)
-        
+
         # Check all existing rows for duplicates (more thorough but slower)
         # Start from row 3 to skip headers
         start_row = 3
@@ -794,16 +819,22 @@ class BankTransactionProcessor:
 
             # Normalize dates for comparison (handle different date formats)
             existing_date_normalized = self.normalize_date(existing_date)
-            transaction_date_normalized = self.normalize_date(transaction.get('Date'))
+            transaction_date_normalized = self.normalize_date(
+                transaction.get('Date'))
 
             # Convert other fields to strings for comparison, handling None values properly
             existing_desc_str = str(existing_desc) if existing_desc else ""
-            existing_debit_str = str(existing_debit) if existing_debit and existing_debit != "" else ""
-            existing_credit_str = str(existing_credit) if existing_credit and existing_credit != "" else ""
+            existing_debit_str = str(
+                existing_debit) if existing_debit and existing_debit != "" else ""
+            existing_credit_str = str(
+                existing_credit) if existing_credit and existing_credit != "" else ""
 
-            transaction_desc_str = str(transaction.get('Transaction Description', ''))
-            transaction_debit_str = str(transaction.get('Debit', '')) if transaction.get('Debit') and transaction.get('Debit') != "" else ""
-            transaction_credit_str = str(transaction.get('Credit', '')) if transaction.get('Credit') and transaction.get('Credit') != "" else ""
+            transaction_desc_str = str(
+                transaction.get('Transaction Description', ''))
+            transaction_debit_str = str(transaction.get('Debit', '')) if transaction.get(
+                'Debit') and transaction.get('Debit') != "" else ""
+            transaction_credit_str = str(transaction.get('Credit', '')) if transaction.get(
+                'Credit') and transaction.get('Credit') != "" else ""
 
             # Check if key fields match (using normalized dates)
             if (existing_date_normalized == transaction_date_normalized and
@@ -818,7 +849,7 @@ class BankTransactionProcessor:
         """Normalize date to a standard format for comparison"""
         if not date_value:
             return ""
-        
+
         try:
             # Convert to pandas datetime (handles multiple formats)
             date_obj = pd.to_datetime(date_value)
@@ -833,9 +864,9 @@ class BankTransactionProcessor:
         # Get bank-specific header positions to find the correct date column
         header_positions = self.get_header_positions_for_sheet(ws.title)
         date_col = header_positions.get('Date', 1)
-        
+
         last_date = None
-        
+
         # Check all data rows for the most recent date (don't limit to last 50 rows)
         for row in range(3, ws.max_row + 1):
             date_val = ws.cell(row=row, column=date_col).value
@@ -846,18 +877,18 @@ class BankTransactionProcessor:
                         last_date = parsed_date
                 except:
                     continue
-        
+
         # Return as string in YYYY-MM-DD format, or empty if no date found
         return last_date.strftime('%Y-%m-%d') if last_date else ""
 
     def get_last_existing_dates_from_template(self) -> Dict[str, str]:
         """Get the last existing date from each sheet in the template"""
         last_dates = {}
-        
+
         try:
             if self.template_file.exists():
                 wb = load_workbook(self.template_file)
-                
+
                 # Check all sheets that might contain bank data
                 for sheet_name in wb.sheetnames:
                     if any(bank in sheet_name for bank in ['CA', 'RBC', 'BMO', 'CIBC']):
@@ -865,14 +896,16 @@ class BankTransactionProcessor:
                         last_date = self.get_last_existing_date(ws)
                         if last_date:
                             last_dates[sheet_name] = last_date
-                            logger.info(f"Sheet '{sheet_name}': Last existing date is {last_date}")
+                            logger.info(
+                                f"Sheet '{sheet_name}': Last existing date is {last_date}")
                         else:
-                            logger.info(f"Sheet '{sheet_name}': No existing dates found")
-                
+                            logger.info(
+                                f"Sheet '{sheet_name}': No existing dates found")
+
                 wb.close()
         except Exception as e:
             logger.error(f"Error reading template file: {e}")
-        
+
         return last_dates
 
 

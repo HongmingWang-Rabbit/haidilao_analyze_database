@@ -524,7 +524,7 @@ class AutomationMenu:
         daily_files = [f for f in daily_files if not f.name.startswith("~$")]
         if daily_files:
             daily_file = daily_files[0]
-            command = f'{self.python_cmd} -m scripts.extract-all "{daily_file}" --daily-only --direct-db'
+            command = f'{self.python_cmd} scripts/extract_all.py "{daily_file}" --daily-only --direct-db'
             if not self.run_command(command, "Daily Store Report Extraction"):
                 return
 
@@ -537,7 +537,7 @@ class AutomationMenu:
         time_files = [f for f in time_files if not f.name.startswith("~$")]
         if time_files:
             time_file = time_files[0]
-            command = f'{self.python_cmd} -m scripts.extract-all "{time_file}" --time-only --direct-db'
+            command = f'{self.python_cmd} scripts/extract_all.py "{time_file}" --time-only --direct-db'
             if not self.run_command(command, "Time Segment Report Extraction"):
                 return
 
@@ -901,8 +901,8 @@ class AutomationMenu:
             return
 
         commands = {
-            'daily_store': f'{self.python_cmd} -m scripts.extract-all "{excel_file}" --daily-only --direct-db',
-            'time_segment': f'{self.python_cmd} -m scripts.extract-all "{excel_file}" --time-only --direct-db',
+            'daily_store': f'{self.python_cmd} scripts/extract_all.py "{excel_file}" --daily-only --direct-db',
+            'time_segment': f'{self.python_cmd} scripts/extract_all.py "{excel_file}" --time-only --direct-db',
             # 'store6': f'{self.python_cmd} -m scripts.convert_other_source "{excel_file}"',  # Disabled - no longer needed
             'monthly_dish': f'{self.python_cmd} scripts/extract_dish_monthly_sales.py "{excel_file}" --direct-db',
             'monthly_material': f'{self.python_cmd} scripts/extract_material_monthly_usage.py "{excel_file}" --direct-db',

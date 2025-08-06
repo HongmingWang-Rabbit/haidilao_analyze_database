@@ -121,10 +121,10 @@ class CompleteAutomationWorkflow:
         try:
             # Determine command based on mode
             mode_commands = {
-                'enhanced': f'python3 scripts/extract-all.py "{self.scraped_file}" --enhanced --direct-db',
-                'all': f'python3 scripts/extract-all.py "{self.scraped_file}" --direct-db',
-                'daily': f'python3 scripts/extract-all.py "{self.scraped_file}" --daily-only --direct-db',
-                'time': f'python3 scripts/extract-time-segments.py "{self.scraped_file}" --direct-db'
+                'enhanced': f'python3 scripts/extract_all.py "{self.scraped_file}" --enhanced --direct-db',
+                'all': f'python3 scripts/extract_all.py "{self.scraped_file}" --direct-db',
+                'daily': f'python3 scripts/extract_all.py "{self.scraped_file}" --daily-only --direct-db',
+                'time': f'python3 scripts/extract_all.py "{self.scraped_file}" --time-only --direct-db'
             }
             
             if mode not in mode_commands:

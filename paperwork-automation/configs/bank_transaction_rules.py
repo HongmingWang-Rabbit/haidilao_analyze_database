@@ -3,6 +3,7 @@ Bank Transaction Classification Rules
 Contains all the tuple-based rules for bank transaction matching.
 """
 
+from pickle import TRUE
 import re
 from typing import List, Tuple, Dict, Optional, Union
 from enum import Enum
@@ -58,7 +59,9 @@ class TransactionMatchRule:
 
     def __init__(self,
                  description_pattern: Optional[Union[str, re.Pattern]] = None,
-                 amount_pattern: Optional[float] = None,  # Exact amount only
+                 # Exact, comparison, or range
+                 amount_pattern: Optional[Union[float,
+                                                Tuple[str, float], Tuple[float, float]]] = None,
                  transaction_type: Optional[str] = None,  # 'credit' or 'debit'
                  case_sensitive: bool = False):
         """
@@ -66,7 +69,10 @@ class TransactionMatchRule:
 
         Args:
             description_pattern: String or compiled regex pattern for description matching
-            amount_pattern: Exact amount for monthly recurring transactions
+            amount_pattern: Can be:
+                - float: Exact amount for monthly recurring transactions
+                - ('>=', float) or ('<=', float): Comparison with a threshold
+                - (float, float): Range (min, max) inclusive
             transaction_type: 'credit' for incoming money, 'debit' for outgoing money
             case_sensitive: Whether description matching should be case sensitive
         """
@@ -103,11 +109,28 @@ class TransactionMatchRule:
             description_match = bool(
                 self.description_regex.search(description or ""))
 
-        # Check exact amount pattern (for recurring monthly transactions)
+        # Check amount pattern (exact, comparison, or range)
         amount_match = True
         if self.amount_pattern is not None and amount is not None:
-            # Exact amount match (with small tolerance for floating point)
-            amount_match = abs(abs(amount) - self.amount_pattern) < 0.01
+            if isinstance(self.amount_pattern, (int, float)):
+                # Exact amount match (with small tolerance for floating point)
+                amount_match = abs(abs(amount) - self.amount_pattern) < 0.01
+            elif isinstance(self.amount_pattern, tuple) and len(self.amount_pattern) == 2:
+                if isinstance(self.amount_pattern[0], str):
+                    # Comparison operators: ('>=', value) or ('<=', value)
+                    op, value = self.amount_pattern
+                    if op == '>=':
+                        amount_match = abs(amount) >= value
+                    elif op == '<=':
+                        amount_match = abs(amount) <= value
+                    else:
+                        amount_match = False
+                else:
+                    # Range: (min, max)
+                    min_val, max_val = self.amount_pattern
+                    amount_match = min_val <= abs(amount) <= max_val
+            else:
+                amount_match = False
 
         # Check transaction type (credit/debit) - now uses passed parameter
         type_match = True
@@ -180,6 +203,30 @@ BANK_TRANSACTION_RULES: List[Tuple[TransactionMatchRule, Dict]] = [
         "是否登记支票使用表": False,
     }),
 
+    (TransactionMatchRule(
+        description_pattern=re.compile(r'MISC PAYMENT\
+IOT PAY TECHNOLOGIES INC', re.IGNORECASE)
+    ), {
+        "品名": TransactionType.INCOME_RECEIVED.value,
+        "付款详情": "微信支付宝进账",
+        "单据号": False,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern=re.compile(r'MISC PAYMENT\
+IOT PAY', re.IGNORECASE)
+    ), {
+        "品名": TransactionType.INCOME_RECEIVED.value,
+        "付款详情": "微信支付宝进账",
+        "单据号": False,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
     # UBER HOLDINGS - 44x occurrences - Delivery platform income
     (TransactionMatchRule(
         description_pattern=re.compile(
@@ -217,13 +264,14 @@ BANK_TRANSACTION_RULES: List[Tuple[TransactionMatchRule, Dict]] = [
         "是否登记支票使用表": False,
     }),
 
-    # BR. patterns - Branch deposits/cash (200+ total occurrences)
     (TransactionMatchRule(
-        description_pattern=re.compile(r'BR\.\s*\d+', re.IGNORECASE)
+        description_pattern=re.compile(
+            r'MISC PAYMENT\s+[A-Z]+\d+\s+FIRST DATA CANADA\(J\)', re.IGNORECASE),
+        transaction_type="credit"
     ), {
         "品名": TransactionType.INCOME_RECEIVED.value,
-        "付款详情": "现金收入",
-        "单据号": True,
+        "付款详情": "Clover刷卡进账",
+        "单据号": False,
         "附件": False,
         "是否登记线下付款表": False,
         "是否登记支票使用表": False,
@@ -297,33 +345,39 @@ BANK_TRANSACTION_RULES: List[Tuple[TransactionMatchRule, Dict]] = [
         "是否登记支票使用表": False,
     }),
 
-    # ===== FALLBACK PATTERNS (Catch-all rules) =====
+    # ===== AMOUNT-BASED PATTERNS (Examples of range/comparison usage) =====
 
-    # General transfer patterns
+    # Large transfers (>= $50,000) - may need special attention
     (TransactionMatchRule(
-        description_pattern=re.compile(
-            r'TRANSFER|FUNDS.*TRANSFER', re.IGNORECASE)
-    ), {
-        "品名": TransactionType.INTERNAL_TRANSFER.value,
-        "付款详情": "账户转账",
-        "单据号": False,
-        "附件": False,
-        "是否登记线下付款表": False,
-        "是否登记支票使用表": False,
-    }),
-
-    # Generic deposit patterns (catch-all for remaining deposits)
-    (TransactionMatchRule(
-        description_pattern=re.compile(r'\bDEPOSIT\b', re.IGNORECASE),
+        description_pattern=re.compile(r'WIRE|TRANSFER', re.IGNORECASE),
+        amount_pattern=('>=', 50000),
         transaction_type='credit'
     ), {
-        "品名": TransactionType.INCOME_RECEIVED.value,
-        "付款详情": "银行现金存款",
+        "品名": TransactionType.INTERNAL_TRANSFER.value,
+        "付款详情": "大额转账收入",
+        "单据号": True,
+        "附件": True,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+    # Small service fees (<= $10)
+    (TransactionMatchRule(
+        description_pattern=re.compile(r'FEE|CHARGE', re.IGNORECASE),
+        amount_pattern=('<=', 10),
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.SERVICE_FEE.value,
+        "付款详情": "小额服务费",
         "单据号": False,
         "附件": False,
         "是否登记线下付款表": False,
         "是否登记支票使用表": False,
     }),
+
+    # ===== FALLBACK PATTERNS (Catch-all rules) =====
+
+
 
     # Generic UBER patterns (fallback for any UBER not caught above)
     (TransactionMatchRule(
@@ -331,6 +385,29 @@ BANK_TRANSACTION_RULES: List[Tuple[TransactionMatchRule, Dict]] = [
     ), {
         "品名": TransactionType.INCOME_RECEIVED.value,
         "付款详情": "Uber第三方进账",
+        "单据号": False,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern=re.compile(r'\bUBER\b', re.IGNORECASE)
+    ), {
+        "品名": TransactionType.INCOME_RECEIVED.value,
+        "付款详情": "Uber第三方进账",
+        "单据号": False,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
+
+    (TransactionMatchRule(
+        description_pattern="DEALUSE TECHNOL MSP/DIV"
+    ), {
+        "品名": TransactionType.INCOME_RECEIVED.value,
+        "付款详情": "DEALUSE（优品会团购）第三方进账",
         "单据号": False,
         "附件": False,
         "是否登记线下付款表": False,
@@ -355,6 +432,280 @@ BANK_TRANSACTION_RULES: List[Tuple[TransactionMatchRule, Dict]] = [
         "品名": TransactionType.PLATFORM_FEE.value,
         "付款详情": "OpenTable平台费",
         "单据号": False,
+        "附件": False,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern="ALOCHEM         RLS/LOY",
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.RENTAL_FEE.value,
+        "付款详情": "洗碗机租赁费",
+        "单据号": False,
+        "附件": True,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+
+    (TransactionMatchRule(
+        description_pattern=re.compile(r"RENT/LEASE\
+\d+\
+ALOUETTE WARE WASH CHEMICAL"),
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.RENTAL_FEE.value,
+        "付款详情": "洗碗机租赁费",
+        "单据号": True,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern=re.compile(r"RENT/LEASE\
+Rent\
+\d+"),
+        transaction_type='debit',
+        amount_pattern=3800,
+    ), {
+        "品名": TransactionType.RENTAL_FEE.value,
+        "付款详情": "七店员工宿舍租赁费",
+        "单据号": True,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+    # match VSA FEE10412682 MSP/DIV regex FEE10412682 can be any number
+    (TransactionMatchRule(
+        description_pattern=re.compile(r'VSA FEE\d+ MSP/DIV', re.IGNORECASE),
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.PROCESSING_FEE.value,
+        "付款详情": "Moneris刷卡手续费",
+        "单据号": False,
+        "附件": True,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+    # match MON FEE10412682 MSP/DIV
+    (TransactionMatchRule(
+        description_pattern=re.compile(r'MON FEE\d+ MSP/DIV', re.IGNORECASE),
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.PROCESSING_FEE.value,
+        "付款详情": "Moneris刷卡手续费",
+        "单据号": False,
+        "附件": True,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+    # match MRCH22048140016 MSP/DIV regex MRCH22048140016 can be any number
+    (TransactionMatchRule(
+        description_pattern=re.compile(r'MRCH\d+ MSP/DIV', re.IGNORECASE),
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.PROCESSING_FEE.value,
+        "付款详情": "Clover刷卡手续费",
+        "单据号": False,
+        "附件": True,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern=re.compile(r'''MISC PAYMENT
+MRCH\d+
+FIRST DATA CANADA\(J\)''', re.IGNORECASE | re.MULTILINE),
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.PROCESSING_FEE.value,
+        "付款详情": "Clover刷卡手续费",
+        "单据号": False,
+        "附件": True,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern=re.compile(r'INT FEE\d+ MSP/DIV', re.IGNORECASE),
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.PROCESSING_FEE.value,
+        "付款详情": "Moneris刷卡手续费",
+        "单据号": False,
+        "附件": True,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern=re.compile(r'MC FEE \d+ MSP/DIV', re.IGNORECASE),
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.PROCESSING_FEE.value,
+        "付款详情": "Moneris刷卡手续费",
+        "单据号": False,
+        "附件": True,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern=re.compile(r'AMX FEE\d+ MSP/DIV', re.IGNORECASE),
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.PROCESSING_FEE.value,
+        "付款详情": "Moneris刷卡手续费",
+        "单据号": False,
+        "附件": True,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern="ICBC            INS/ASS",
+        amount_pattern=146.76,
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.INSURANCE_FEE.value,
+        "付款详情": "七店采购用车保险费",
+        "单据号": True,
+        "附件": False,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+
+    (TransactionMatchRule(
+        description_pattern="ICBC            INS/ASS",
+        amount_pattern=182.44,
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.INSURANCE_FEE.value,
+        "付款详情": "二店采购用车保险费",
+        "单据号": True,
+        "附件": False,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern="Bill Payment - PAY-FILE FEES",
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.PROCESSING_FEE.value,
+        "付款详情": "银行手续费",
+        "单据号": False,
+        "附件": False,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern="ALECTRA UTIL    MSP/DIV",
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.ELECTRICITY_FEE.value,
+        "付款详情": "三店员工宿舍电费",
+        "单据号": True,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
+
+    (TransactionMatchRule(
+        description_pattern="Misc Payment - Herefordshire C",
+        amount_pattern=17843.27,
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.RENT.value,
+        "付款详情": "大嗨麻辣烫一店房租",
+        "单据号": True,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern="DEFT SETTLEMENT FLE",
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.INTERNAL_TRANSFER.value,
+        "付款详情": "转至RBC5419",
+        "单据号": False,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern="ENBRIDGE GAS    BPY/FAC",
+        transaction_type='debit',
+        amount_pattern=('<=', 300)
+    ), {
+        "品名": TransactionType.ELECTRICITY_FEE.value,
+        "付款详情": "三店员工宿舍电费",
+        "单据号": True,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern="ENBRIDGE GAS    BPY/FAC",
+        transaction_type='debit',
+        amount_pattern=('>=', 500)
+    ), {
+        "品名": TransactionType.ELECTRICITY_FEE.value,
+        "付款详情": "三店门店燃气费",
+        "单据号": True,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
+
+    (TransactionMatchRule(
+        description_pattern="COOPERATORS CSI INS/ASS",
+        transaction_type='debit',
+        amount_pattern=477.52
+    ), {
+        "品名": TransactionType.INSURANCE_FEE.value,
+        "付款详情": "四店门店货车保险费",
+        "单据号": False,
+        "附件": True,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+
+    (TransactionMatchRule(
+        description_pattern="COOPERATORS CSI INS/ASS",
+        transaction_type='debit',
+        amount_pattern=477.52
+    ), {
+        "品名": TransactionType.INSURANCE_FEE.value,
+        "付款详情": "四店门店货车保险费",
+        "单据号": False,
+        "附件": True,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern="VW CREDIT CAN   LNS/PRE",
+        transaction_type='debit',
+        amount_pattern=197.99
+    ), {
+        "品名": TransactionType.RENTAL_FEE.value,
+        "付款详情": "蒋冰遇汽车租赁费",
+        "单据号": True,
         "附件": False,
         "是否登记线下付款表": True,
         "是否登记支票使用表": False,
