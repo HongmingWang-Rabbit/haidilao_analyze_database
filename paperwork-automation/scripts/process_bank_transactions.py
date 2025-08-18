@@ -4,7 +4,6 @@ Bank Transaction Processing Script
 Processes all bank files and appends new transactions to existing sheets
 """
 
-from configs.bank_desc import BankDescriptionConfig
 from openpyxl.styles import PatternFill, Font, Border, Side
 from openpyxl import load_workbook, Workbook
 import pandas as pd
@@ -22,6 +21,8 @@ import os
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from configs.bank_desc import BankDescriptionConfig
 
 
 # Set up logging
@@ -185,7 +186,7 @@ class BankTransactionProcessor:
         logger.info(
             f"Processing bank transactions for {self.target_year}-{self.target_month:02d}")
 
-        # Get last existing dates from template to avoid duplicates
+        # Get last existing dates from template for logging
         last_existing_dates = self.get_last_existing_dates_from_template()
 
         # Collect all transactions by sheet name
@@ -262,6 +263,13 @@ class BankTransactionProcessor:
                     if transaction:  # Date filtering now done in parse method
                         sheet_name = self.account_mapping[current_account]
                         transactions_by_account[sheet_name].append(transaction)
+
+            # Log skipped transactions info
+            for sheet_name in transactions_by_account:
+                # Count how many were skipped by comparing what we would have had
+                # This is approximate since we don't track skips per account in BMO
+                if sheet_name in transactions_by_account and transactions_by_account[sheet_name]:
+                    logger.debug(f"BMO {sheet_name}: Processed {len(transactions_by_account[sheet_name])} transactions")
 
             return transactions_by_account
 
@@ -385,7 +393,9 @@ class BankTransactionProcessor:
 
         try:
             df = pd.read_excel(file_path, engine='openpyxl', header=None)
-            transactions = []
+            
+            # First, collect all transactions into a list
+            all_transactions = []
             current_section = None  # 'debit' or 'credit'
 
             for idx, row in df.iterrows():
@@ -462,7 +472,7 @@ class BankTransactionProcessor:
                             '是否登记支票使用表': "",
                             '_account': '0401'
                         }
-                        transactions.append(transaction)
+                        all_transactions.append(transaction)
 
                     except Exception as e:
                         logger.warning(
@@ -470,8 +480,8 @@ class BankTransactionProcessor:
                         continue
 
             logger.info(
-                f"Successfully processed {len(transactions)} CIBC transactions")
-            return transactions
+                f"Successfully processed {len(all_transactions)} CIBC transactions")
+            return all_transactions
 
         except Exception as e:
             logger.error(f"Error processing CIBC file: {e}")
@@ -558,6 +568,7 @@ class BankTransactionProcessor:
                         '是否登记支票使用表': "",
                         '_account': account_num
                     }
+                    
                     transactions.append(transaction)
 
                 if transactions:
@@ -578,24 +589,9 @@ class BankTransactionProcessor:
             return False
 
     def should_process_transaction(self, date_str: str, sheet_name: str, last_existing_dates: Dict[str, str]) -> bool:
-        """Check if transaction should be processed (in target month and including/after last existing date)"""
-        # First check if it's in target month
-        if not self.is_target_month(date_str):
-            return False
-
-        # If no last existing date for this sheet, process all target month transactions
-        if sheet_name not in last_existing_dates:
-            return True
-
-        # Process transactions on or after the last existing date (to catch any missing ones from that day)
-        try:
-            transaction_date = pd.to_datetime(date_str)
-            last_existing_date = pd.to_datetime(
-                last_existing_dates[sheet_name])
-            return transaction_date >= last_existing_date
-        except:
-            # If date parsing fails, fall back to target month check
-            return True
+        """Check if transaction should be processed (in target month)"""
+        # Only check if it's in target month - duplicate detection happens later
+        return self.is_target_month(date_str)
 
     def append_to_existing_workbook(self, all_transactions: Dict[str, List[Dict]]) -> None:
         """Append transactions to existing workbook sheets with image preservation"""
@@ -623,7 +619,6 @@ class BankTransactionProcessor:
             wb = load_workbook(self.output_file)
 
             total_added = 0
-            total_skipped = 0
 
             for sheet_name, transactions in all_transactions.items():
                 if sheet_name not in wb.sheetnames:
@@ -632,11 +627,10 @@ class BankTransactionProcessor:
                     continue
 
                 ws = wb[sheet_name]
-                added, skipped = self.append_to_worksheet(ws, transactions)
+                added = self.append_to_worksheet(ws, transactions)
                 total_added += added
-                total_skipped += skipped
                 logger.info(
-                    f"Sheet '{sheet_name}': Added {added} new transactions (skipped {skipped} duplicates)")
+                    f"Sheet '{sheet_name}': Added {added} new transactions")
 
             # Step 4: Save the modified file (this will lose images temporarily)
             try:
@@ -664,7 +658,7 @@ class BankTransactionProcessor:
                 print(
                     f"SUCCESS: Bank report saved to output folder: {self.output_file}")
                 print(
-                    f"SUMMARY: Added {total_added} new transactions, skipped {total_skipped} duplicates")
+                    f"SUMMARY: Added {total_added} new transactions")
 
             except Exception as e:
                 logger.error(f"Failed to save output file: {e}")
@@ -731,7 +725,7 @@ class BankTransactionProcessor:
                 '是否登记支票使用表': 14
             }
 
-    def append_to_worksheet(self, ws, transactions: List[Dict]) -> tuple:
+    def append_to_worksheet(self, ws, transactions: List[Dict]) -> int:
         """Append transactions to existing worksheet"""
         # Find the last row with data (starting from row 3)
         last_row = 2  # Headers are in row 2
@@ -748,12 +742,10 @@ class BankTransactionProcessor:
         skipped_count = 0
 
         for transaction in transactions:
-            # Check for duplicates against current worksheet state (including newly added rows)
-            current_last_row = last_row + added_count
-            is_duplicate = self.is_duplicate_transaction(
-                ws, transaction, current_last_row)
-            if is_duplicate:
+            # Check for duplicates against ALL existing transactions in the worksheet
+            if self.is_duplicate_transaction(ws, transaction, last_row + added_count):
                 skipped_count += 1
+                logger.debug(f"Skipping duplicate transaction: {transaction.get('Date')} - {transaction.get('Transaction Description')}")
                 continue
 
             # Add new transaction
@@ -794,7 +786,10 @@ class BankTransactionProcessor:
 
             added_count += 1
 
-        return added_count, skipped_count
+        if skipped_count > 0:
+            logger.info(f"Skipped {skipped_count} duplicate transactions in {ws.title}")
+
+        return added_count
 
     def is_duplicate_transaction(self, ws, transaction: Dict, last_row: int) -> bool:
         """Check if transaction already exists in worksheet"""
@@ -807,12 +802,17 @@ class BankTransactionProcessor:
         debit_col = header_positions.get('Debit', 6)
         credit_col = header_positions.get('Credit', 7)
 
-        # Check all existing rows for duplicates (more thorough but slower)
-        # Start from row 3 to skip headers
+        # Check ALL existing rows in the worksheet for duplicates
+        # Start from row 3 to skip headers, check up to max_row
         start_row = 3
 
-        for row in range(start_row, last_row + 1):
+        for row in range(start_row, ws.max_row + 1):
             existing_date = ws.cell(row=row, column=date_col).value
+            
+            # Stop if we hit empty rows
+            if not existing_date:
+                break
+                
             existing_desc = ws.cell(row=row, column=desc_col).value
             existing_debit = ws.cell(row=row, column=debit_col).value
             existing_credit = ws.cell(row=row, column=credit_col).value
@@ -823,18 +823,18 @@ class BankTransactionProcessor:
                 transaction.get('Date'))
 
             # Convert other fields to strings for comparison, handling None values properly
-            existing_desc_str = str(existing_desc) if existing_desc else ""
+            existing_desc_str = str(existing_desc).strip() if existing_desc else ""
             existing_debit_str = str(
-                existing_debit) if existing_debit and existing_debit != "" else ""
+                existing_debit).strip() if existing_debit and str(existing_debit).strip() != "" else ""
             existing_credit_str = str(
-                existing_credit) if existing_credit and existing_credit != "" else ""
+                existing_credit).strip() if existing_credit and str(existing_credit).strip() != "" else ""
 
             transaction_desc_str = str(
-                transaction.get('Transaction Description', ''))
-            transaction_debit_str = str(transaction.get('Debit', '')) if transaction.get(
-                'Debit') and transaction.get('Debit') != "" else ""
-            transaction_credit_str = str(transaction.get('Credit', '')) if transaction.get(
-                'Credit') and transaction.get('Credit') != "" else ""
+                transaction.get('Transaction Description', '')).strip()
+            transaction_debit_str = str(transaction.get('Debit', '')).strip() if transaction.get(
+                'Debit') and str(transaction.get('Debit')).strip() != "" else ""
+            transaction_credit_str = str(transaction.get('Credit', '')).strip() if transaction.get(
+                'Credit') and str(transaction.get('Credit')).strip() != "" else ""
 
             # Check if key fields match (using normalized dates)
             if (existing_date_normalized == transaction_date_normalized and
@@ -907,6 +907,83 @@ class BankTransactionProcessor:
             logger.error(f"Error reading template file: {e}")
 
         return last_dates
+    
+    def get_last_date_transactions_from_template(self) -> Dict[str, List[Dict]]:
+        """Get all transactions from the last date in each sheet"""
+        last_date_transactions = {}
+        
+        try:
+            if self.template_file.exists():
+                wb = load_workbook(self.template_file)
+                
+                # Check all sheets that might contain bank data
+                for sheet_name in wb.sheetnames:
+                    if any(bank in sheet_name for bank in ['CA', 'RBC', 'BMO', 'CIBC']):
+                        ws = wb[sheet_name]
+                        
+                        # Get the last existing date first
+                        last_date = self.get_last_existing_date(ws)
+                        if not last_date:
+                            continue
+                        
+                        # Get bank-specific header positions
+                        header_positions = self.get_header_positions_for_sheet(sheet_name)
+                        date_col = header_positions.get('Date', 1)
+                        desc_col = header_positions.get('Transaction Description', 3)
+                        debit_col = header_positions.get('Debit', 6)
+                        credit_col = header_positions.get('Credit', 7)
+                        
+                        # Collect all transactions from the last date
+                        transactions = []
+                        for row in range(3, ws.max_row + 1):
+                            existing_date = ws.cell(row=row, column=date_col).value
+                            if existing_date:
+                                # Normalize date for comparison
+                                existing_date_normalized = self.normalize_date(existing_date)
+                                
+                                # If this is a transaction from the last date
+                                if existing_date_normalized == last_date:
+                                    existing_desc = ws.cell(row=row, column=desc_col).value
+                                    existing_debit = ws.cell(row=row, column=debit_col).value
+                                    existing_credit = ws.cell(row=row, column=credit_col).value
+                                    
+                                    transactions.append({
+                                        'date': existing_date_normalized,
+                                        'description': str(existing_desc).strip() if existing_desc else "",
+                                        'debit': str(existing_debit).strip() if existing_debit and str(existing_debit).strip() != "" else "",
+                                        'credit': str(existing_credit).strip() if existing_credit and str(existing_credit).strip() != "" else ""
+                                    })
+                        
+                        if transactions:
+                            last_date_transactions[sheet_name] = transactions
+                            logger.info(f"Sheet '{sheet_name}': Found {len(transactions)} transactions on last date {last_date}")
+                
+                wb.close()
+        except Exception as e:
+            logger.error(f"Error reading last date transactions from template: {e}")
+        
+        return last_date_transactions
+    
+    def is_transaction_in_last_date_reference(self, transaction: Dict, sheet_name: str, last_date_transactions: Dict[str, List[Dict]]) -> bool:
+        """Check if a transaction already exists in the last date reference"""
+        if sheet_name not in last_date_transactions:
+            return False
+        
+        # Normalize transaction data for comparison
+        trans_date = self.normalize_date(transaction.get('Date'))
+        trans_desc = str(transaction.get('Transaction Description', '')).strip()
+        trans_debit = str(transaction.get('Debit', '')).strip() if transaction.get('Debit') and str(transaction.get('Debit')).strip() != "" else ""
+        trans_credit = str(transaction.get('Credit', '')).strip() if transaction.get('Credit') and str(transaction.get('Credit')).strip() != "" else ""
+        
+        # Check against each transaction in the reference
+        for ref_trans in last_date_transactions[sheet_name]:
+            if (ref_trans['date'] == trans_date and
+                ref_trans['description'] == trans_desc and
+                ref_trans['debit'] == trans_debit and
+                ref_trans['credit'] == trans_credit):
+                return True
+        
+        return False
 
 
 def main():

@@ -357,55 +357,55 @@ class YearlyComparisonDailyWorksheetGenerator:
         title = f"加拿大-各门店{self.target_date.replace('-', '年', 1).replace('-', '月', 1)}日同比数据-{weekday}"
         ws.merge_cells('A1:J1')
         ws['A1'] = title
-        ws['A1'].font = Font(bold=True, size=12)
+        ws['A1'].font = Font(bold=True, size=12, color="FFFFFF")
         ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
         ws['A1'].fill = PatternFill(
-            start_color="FFD700", end_color="FFD700", fill_type="solid")
+            start_color="4472C4", end_color="4472C4", fill_type="solid")
 
         # Headers
         headers = ["项目", "内容"] + list(self.store_names.values()) + ["加拿大片区"]
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=2, column=col, value=header)
-            cell.font = Font(bold=True)
+            cell.font = Font(bold=True, color="FFFFFF")
             cell.fill = PatternFill(
-                start_color="FFD700", end_color="FFD700", fill_type="solid")
+                start_color="4472C4", end_color="4472C4", fill_type="solid")
             cell.alignment = Alignment(horizontal='center', vertical='center')
 
         # Data rows with exact structure from screenshots but adapted for year-over-year
         data_rows = [
             # 桌数(考核) section
-            ("桌数\n(考核)", "今日总桌数", "FFFF99"),
-            ("", "今日外卖桌数", "FFFF99"),
-            ("", "今日未计入考核桌数", "FFFF99"),
-            ("", f"{target_dt.month}月总桌数", "FFFF99"),
-            ("", "上年同期总桌数", "FFFF99"),
-            ("", "对比上年同期总桌数", "FFFF00"),  # Highlighted
+            ("桌数\n(考核)", "今日总桌数", "DEEAF6"),  # Light blue
+            ("", "今日外卖桌数", "DEEAF6"),
+            ("", "今日未计入考核桌数", "DEEAF6"),
+            ("", f"{target_dt.month}月总桌数", "DEEAF6"),
+            ("", "上年同期总桌数", "DEEAF6"),
+            ("", "对比上年同期总桌数", "5B9BD5"),  # Medium blue highlight
 
             # 收入 section
-            ("收入\n(不含税-万加元)", "今日营业收入(万)", "E6F3FF"),
-            ("", "本月截止目前营业收入(万)", "E6F3FF"),
-            ("", "上年截止目前营业收入(万)", "E6F3FF"),
-            ("", "同比营业收入变化(万)", "E6F3FF"),
-            ("", "本月营业收入目标(万)", "E6F3FF"),
-            ("", "本月截止目标完成率", "FFFF00"),  # Highlighted
-            ("", "标准时间进度", "E6F3FF"),
-            ("", "当月累计优惠总金额(万)", "E6F3FF"),
-            ("", "当月累计优惠占比", "E6F3FF"),
+            ("收入\n(不含税-万加元)", "今日营业收入(万)", "B4C7E7"),  # Lighter blue
+            ("", "本月截止目前营业收入(万)", "B4C7E7"),
+            ("", "上年截止目前营业收入(万)", "B4C7E7"),
+            ("", "同比营业收入变化(万)", "B4C7E7"),
+            ("", "本月营业收入目标(万)", "B4C7E7"),
+            ("", "本月截止目标完成率", "5B9BD5"),  # Medium blue highlight
+            ("", "标准时间进度", "B4C7E7"),
+            ("", "当月累计优惠总金额(万)", "B4C7E7"),
+            ("", "当月累计优惠占比", "B4C7E7"),
 
             # 单桌消费 section
-            ("单桌消费\n(不含税)", "今日人均消费", "FFFF99"),
-            ("", "今日消费客数", "FFFF99"),
-            ("", "今日单桌消费", "FFFF99"),
-            ("", "截止今日单桌消费", "FFFF99"),  # Highlighted
-            ("", "上年单桌消费", "FFFF99"),
-            ("", "同比上年变化", "FFFF99"),
+            ("单桌消费\n(不含税)", "今日人均消费", "DEEAF6"),  # Light blue
+            ("", "今日消费客数", "DEEAF6"),
+            ("", "今日单桌消费", "DEEAF6"),
+            ("", "截止今日单桌消费", "DEEAF6"),
+            ("", "上年单桌消费", "DEEAF6"),
+            ("", "同比上年变化", "DEEAF6"),
 
             # 翻台率 section
-            ("翻台率", "名次", "FFFF00"),  # Highlighted
-            ("", f"{target_dt.month}月{target_dt.day}日翻台率排名店铺", "E6F3FF"),
-            ("", f"{target_dt.month}月{target_dt.day}日翻台率排名", "FFFF00"),
-            ("", f"{target_dt.month}月平均翻台率排名店铺", "E6F3FF"),
-            ("", f"{target_dt.month}月平均翻台率排名", "FFFF00"),
+            ("翻台率", "名次", "5B9BD5"),  # Medium blue highlight
+            ("", f"{target_dt.month}月{target_dt.day}日翻台率排名店铺", "B4C7E7"),  # Lighter blue
+            ("", f"{target_dt.month}月{target_dt.day}日翻台率排名", "5B9BD5"),  # Medium blue highlight
+            ("", f"{target_dt.month}月平均翻台率排名店铺", "B4C7E7"),  # Lighter blue
+            ("", f"{target_dt.month}月平均翻台率排名", "5B9BD5"),  # Medium blue highlight
         ]
 
         # Add data to worksheet

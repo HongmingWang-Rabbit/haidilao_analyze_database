@@ -212,8 +212,8 @@ class DetailedMaterialSpendingGenerator:
                 ws[f'A{current_row}'] = material_name
                 ws[f'B{current_row}'] = round(total_amount, 2)
                 ws[f'C{current_row}'] = material_type
-                ws[f'D{current_row}'] = round(used_quantity, 4)
-                ws[f'E{current_row}'] = round(unit_price, 4)
+                ws[f'D{current_row}'] = round(used_quantity, 2)
+                ws[f'E{current_row}'] = round(unit_price, 2)
                 ws[f'F{current_row}'] = unit
 
                 # Format cells

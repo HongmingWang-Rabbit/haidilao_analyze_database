@@ -648,14 +648,27 @@ class ReportDataProvider:
         Returns:
             List of store performance data dictionaries with weekly aggregations
         """
-        from datetime import datetime
+        from datetime import datetime, timedelta
 
-        # Parse dates to get previous year equivalent period
+        # Parse dates to get previous year equivalent period with same weekday alignment
         start_dt = datetime.strptime(start_date, '%Y-%m-%d')
         end_dt = datetime.strptime(end_date, '%Y-%m-%d')
-        prev_year = start_dt.year - 1
-        prev_year_start = f"{prev_year}-{start_dt.month:02d}-{start_dt.day:02d}"
-        prev_year_end = f"{prev_year}-{end_dt.month:02d}-{end_dt.day:02d}"
+        
+        # Calculate previous year dates with same weekday alignment
+        prev_year_base_end = end_dt.replace(year=end_dt.year - 1)
+        
+        # Find the nearest date with the same weekday as end_dt
+        weekday_diff = end_dt.weekday() - prev_year_base_end.weekday()
+        if weekday_diff > 3:  # If difference is more than 3 days forward, go back a week
+            weekday_diff -= 7
+        elif weekday_diff < -3:  # If difference is more than 3 days backward, go forward a week
+            weekday_diff += 7
+        
+        prev_year_end_dt = prev_year_base_end + timedelta(days=weekday_diff)
+        prev_year_start_dt = prev_year_end_dt - timedelta(days=6)  # 7 days including end date
+        
+        prev_year_start = prev_year_start_dt.strftime('%Y-%m-%d')
+        prev_year_end = prev_year_end_dt.strftime('%Y-%m-%d')
 
         # Define individual store managers as per reference sheet
         store_managers = {

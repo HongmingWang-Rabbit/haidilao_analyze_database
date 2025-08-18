@@ -161,6 +161,18 @@ BANK_TRANSACTION_RULES: List[Tuple[TransactionMatchRule, Dict]] = [
         "是否登记支票使用表": False,
     }),
 
+    (TransactionMatchRule(
+        description_pattern="ACTIVITY FEE",
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.SERVICE_FEE.value,
+        "付款详情": "银行服务费",
+        "单据号": False,
+        "附件": False,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
     # BMO Plan Fee Rebate - exact recurring monthly credit
     (TransactionMatchRule(
         description_pattern="Service Charge / Correction",
@@ -332,6 +344,18 @@ IOT PAY', re.IGNORECASE)
         "是否登记支票使用表": False,
     }),
 
+    (TransactionMatchRule(
+        description_pattern="HUNGRYPANDA",
+        transaction_type='credit'
+    ), {
+        "品名": TransactionType.INCOME_RECEIVED.value,
+        "付款详情": "熊猫外卖第三方进账",
+        "单据号": False,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
     # Credit card transactions
     (TransactionMatchRule(
         description_pattern=re.compile(
@@ -358,20 +382,6 @@ IOT PAY', re.IGNORECASE)
         "单据号": True,
         "附件": True,
         "是否登记线下付款表": True,
-        "是否登记支票使用表": False,
-    }),
-
-    # Small service fees (<= $10)
-    (TransactionMatchRule(
-        description_pattern=re.compile(r'FEE|CHARGE', re.IGNORECASE),
-        amount_pattern=('<=', 10),
-        transaction_type='debit'
-    ), {
-        "品名": TransactionType.SERVICE_FEE.value,
-        "付款详情": "小额服务费",
-        "单据号": False,
-        "附件": False,
-        "是否登记线下付款表": False,
         "是否登记支票使用表": False,
     }),
 
@@ -408,6 +418,28 @@ IOT PAY', re.IGNORECASE)
     ), {
         "品名": TransactionType.INCOME_RECEIVED.value,
         "付款详情": "DEALUSE（优品会团购）第三方进账",
+        "单据号": False,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern="INTERAC ETRNSFR RECVD        WANRONG SHENG"
+    ), {
+        "品名": TransactionType.INCOME_RECEIVED.value,
+        "付款详情": "现金收入",
+        "单据号": False,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern="INTERAC ETRNSFR RECVD        YIFEIYANG"
+    ), {
+        "品名": TransactionType.INCOME_RECEIVED.value,
+        "付款详情": "现金收入",
         "单据号": False,
         "附件": False,
         "是否登记线下付款表": False,
@@ -517,6 +549,19 @@ Rent\
         "是否登记支票使用表": False,
     }),
 
+    # match MRCH22048140016 MSP/DIV regex MRCH22048140016 can be any number
+    (TransactionMatchRule(
+        description_pattern=re.compile(r'MRCH\d+ MSP/DIV', re.IGNORECASE),
+        transaction_type='credit'
+    ), {
+        "品名": TransactionType.INCOME_RECEIVED.value,
+        "付款详情": "Clover刷卡进账",
+        "单据号": False,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
     (TransactionMatchRule(
         description_pattern=re.compile(r'''MISC PAYMENT
 MRCH\d+
@@ -552,6 +597,19 @@ FIRST DATA CANADA\(J\)''', re.IGNORECASE | re.MULTILINE),
         "单据号": False,
         "附件": True,
         "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+
+    (TransactionMatchRule(
+        description_pattern="SNAPPYDEBIT     EXP/RDD",
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.PLATFORM_FEE.value,
+        "付款详情": "Snappy平台费",
+        "单据号": True,
+        "附件": False,
+        "是否登记线下付款表": False,
         "是否登记支票使用表": False,
     }),
 

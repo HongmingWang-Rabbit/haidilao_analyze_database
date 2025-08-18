@@ -238,26 +238,26 @@ class TimeSegmentWorksheetGenerator:
                     float(prev_year_mtd_avg_turnover)
 
                 ws.cell(row=current_row, column=3,
-                        value=round(mtd_turnover, 5))
+                        value=round(mtd_turnover, 2))
                 ws.cell(row=current_row, column=4, value=round(
-                    prev_year_mtd_avg_turnover, 5))
+                    prev_year_mtd_avg_turnover, 2))
                 ws.cell(row=current_row, column=5,
-                        value=round(target_turnover, 5))
+                        value=round(target_turnover, 2))
                 ws.cell(row=current_row, column=6,
-                        value=round(target_diff_mtd, 5))
+                        value=round(target_diff_mtd, 2))
                 ws.cell(row=current_row, column=7,
-                        value=round(prev_diff_mtd, 5))
+                        value=round(prev_diff_mtd, 2))
 
                 # Daily data for columns H and I
                 ws.cell(row=current_row, column=8, value=round(
-                    segment_data['turnover_current'], 5))
+                    segment_data['turnover_current'], 2))
                 ws.cell(row=current_row, column=9,
                         value=round(segment_data['tables'], 1))
 
                 # Column J: 翻台率（Previous year same weekday）
                 weekday_turnover = segment_data.get('turnover_prev_weekday', 0)
                 ws.cell(row=current_row, column=10,
-                        value=round(weekday_turnover, 5))
+                        value=round(weekday_turnover, 2))
 
                 # Column K: 桌数（Previous year same weekday）
                 weekday_tables = segment_data.get('tables_prev_weekday', 0)
@@ -268,7 +268,7 @@ class TimeSegmentWorksheetGenerator:
                 weekday_turnover_diff = segment_data['turnover_current'] - \
                     weekday_turnover
                 ws.cell(row=current_row, column=12,
-                        value=round(weekday_turnover_diff, 5))
+                        value=round(weekday_turnover_diff, 2))
 
                 # MTD totals for columns M and N
                 mtd_tables = segment_data.get(
@@ -336,16 +336,16 @@ class TimeSegmentWorksheetGenerator:
             col15_diff = col13_sum - col14_sum  # YoY difference
 
             ws.cell(row=current_row, column=2, value=f"{store_name}汇总")
-            ws.cell(row=current_row, column=3, value=round(col3_sum, 5))
-            ws.cell(row=current_row, column=4, value=round(col4_sum, 5))
-            ws.cell(row=current_row, column=5, value=round(col5_sum, 5))
-            ws.cell(row=current_row, column=6, value=round(col6_diff, 5))
-            ws.cell(row=current_row, column=7, value=round(col7_diff, 5))
-            ws.cell(row=current_row, column=8, value=round(col8_sum, 5))
+            ws.cell(row=current_row, column=3, value=round(col3_sum, 2))
+            ws.cell(row=current_row, column=4, value=round(col4_sum, 2))
+            ws.cell(row=current_row, column=5, value=round(col5_sum, 2))
+            ws.cell(row=current_row, column=6, value=round(col6_diff, 2))
+            ws.cell(row=current_row, column=7, value=round(col7_diff, 2))
+            ws.cell(row=current_row, column=8, value=round(col8_sum, 2))
             ws.cell(row=current_row, column=9, value=round(col9_sum, 1))
-            ws.cell(row=current_row, column=10, value=round(col10_sum, 5))
+            ws.cell(row=current_row, column=10, value=round(col10_sum, 2))
             ws.cell(row=current_row, column=11, value=round(col11_sum, 1))
-            ws.cell(row=current_row, column=12, value=round(col12_diff, 5))
+            ws.cell(row=current_row, column=12, value=round(col12_diff, 2))
             ws.cell(row=current_row, column=13, value=round(col13_sum, 1))
             ws.cell(row=current_row, column=14, value=round(col14_sum, 0))
             ws.cell(row=current_row, column=15, value=round(col15_diff, 1))
@@ -479,16 +479,16 @@ class TimeSegmentWorksheetGenerator:
             col6_diff = col7_diff = col12_diff = col15_diff = 0
 
         ws.cell(row=current_row, column=1, value="区域整体")
-        ws.cell(row=current_row, column=3, value=round(col3_avg, 5))
-        ws.cell(row=current_row, column=4, value=round(col4_avg, 5))
-        ws.cell(row=current_row, column=5, value=round(col5_avg, 5))
-        ws.cell(row=current_row, column=6, value=round(col6_diff, 5))
-        ws.cell(row=current_row, column=7, value=round(col7_diff, 5))
-        ws.cell(row=current_row, column=8, value=round(col8_avg, 5))
+        ws.cell(row=current_row, column=3, value=round(col3_avg, 2))
+        ws.cell(row=current_row, column=4, value=round(col4_avg, 2))
+        ws.cell(row=current_row, column=5, value=round(col5_avg, 2))
+        ws.cell(row=current_row, column=6, value=round(col6_diff, 2))
+        ws.cell(row=current_row, column=7, value=round(col7_diff, 2))
+        ws.cell(row=current_row, column=8, value=round(col8_avg, 2))
         ws.cell(row=current_row, column=9, value=round(col9_sum, 1))
-        ws.cell(row=current_row, column=10, value=round(col10_avg, 5))
+        ws.cell(row=current_row, column=10, value=round(col10_avg, 2))
         ws.cell(row=current_row, column=11, value=round(col11_sum, 1))
-        ws.cell(row=current_row, column=12, value=round(col12_diff, 5))
+        ws.cell(row=current_row, column=12, value=round(col12_diff, 2))
         ws.cell(row=current_row, column=13, value=round(col13_sum, 1))
         ws.cell(row=current_row, column=14, value=round(col14_sum, 0))
         ws.cell(row=current_row, column=15, value=round(col15_diff, 1))
@@ -500,11 +500,8 @@ class TimeSegmentWorksheetGenerator:
             cell.fill = PatternFill(
                 start_color="000080", end_color="000080", fill_type="solid")
 
-        # Apply common formatting first
+        # Apply common formatting
         self.apply_common_formatting(ws, current_row + 1)
-
-        # Apply ranking color formatting for "同比差异" columns AFTER common formatting
-        self.apply_ranking_colors(ws, current_row)
 
         return ws
 

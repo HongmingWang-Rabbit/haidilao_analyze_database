@@ -49,8 +49,25 @@ class WeeklyStoreTrackingGenerator:
             # Parse target date and calculate date ranges
             target_dt = datetime.strptime(target_date, '%Y-%m-%d')
             start_dt = target_dt - timedelta(days=6)  # 7 days including target_date
-            prev_year_end_dt = target_dt.replace(year=target_dt.year - 1)
+            
+            # Calculate previous year dates with same weekday alignment
+            # Find the same weekday in the previous year (may be offset by ±1 day due to leap years)
+            prev_year_base = target_dt.replace(year=target_dt.year - 1)
+            
+            # Find the nearest date with the same weekday as target_dt
+            weekday_diff = target_dt.weekday() - prev_year_base.weekday()
+            if weekday_diff > 3:  # If difference is more than 3 days forward, go back a week
+                weekday_diff -= 7
+            elif weekday_diff < -3:  # If difference is more than 3 days backward, go forward a week
+                weekday_diff += 7
+            
+            prev_year_end_dt = prev_year_base + timedelta(days=weekday_diff)
             prev_year_start_dt = prev_year_end_dt - timedelta(days=6)
+            
+            self.logger.info(
+                f"Current period: {start_dt.strftime('%Y-%m-%d')} ({start_dt.strftime('%A')}) to {target_dt.strftime('%Y-%m-%d')} ({target_dt.strftime('%A')})")
+            self.logger.info(
+                f"Previous year period: {prev_year_start_dt.strftime('%Y-%m-%d')} ({prev_year_start_dt.strftime('%A')}) to {prev_year_end_dt.strftime('%Y-%m-%d')} ({prev_year_end_dt.strftime('%A')})")
 
             # Generate headers
             self._generate_headers(ws, start_dt, target_dt, prev_year_start_dt, prev_year_end_dt)
@@ -498,15 +515,15 @@ class WeeklyStoreTrackingGenerator:
                 cell.border = border
                 cell.alignment = center_alignment
 
-                # Number formatting for specific columns (maintain 5 decimal precision)
-                if col in [5, 6, 7]:  # Turnover rates - 5 decimal places
-                    cell.number_format = '0.00000'
-                elif col in [11, 12]:  # Revenue - 5 decimal places
-                    cell.number_format = '0.00000'
-                elif col in [8, 13]:  # Comparisons - 5 decimal places
-                    cell.number_format = '0.00000'
-                elif col in [9, 10, 14, 15, 16]:  # Scores - 5 decimal places
-                    cell.number_format = '0.00000'
+                # Number formatting for specific columns (2 decimal precision)
+                if col in [5, 6, 7]:  # Turnover rates - 2 decimal places
+                    cell.number_format = '0.00'
+                elif col in [11, 12]:  # Revenue - 2 decimal places
+                    cell.number_format = '0.00'
+                elif col in [8, 13]:  # Comparisons - 2 decimal places
+                    cell.number_format = '0.00'
+                elif col in [9, 10, 14, 15, 16]:  # Scores - 2 decimal places
+                    cell.number_format = '0.00'
 
         # Freeze panes at row 3 (after headers)
         ws.freeze_panes = "A3"
