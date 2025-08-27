@@ -243,10 +243,10 @@ CREATE TABLE dish_price_history (
     store_id INTEGER REFERENCES store(id), -- 外键：门店 (不同店可能价格不同)
     price NUMERIC(10, 2) NOT NULL,     -- 价格
     currency VARCHAR(3) DEFAULT 'CAD', -- 货币类型
-    effective_date DATE NOT NULL,      -- 生效日期
+    effective_month INTEGER NOT NULL CHECK (effective_month >= 1 AND effective_month <= 12), -- 生效月份
+    effective_year INTEGER NOT NULL CHECK (effective_year >= 2020), -- 生效年份
     is_active BOOLEAN DEFAULT TRUE,    -- 是否当前有效价格
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(dish_id, store_id, effective_date) -- 同一菜品同一店同一日期只能有一个价格
+    UNIQUE(dish_id, store_id, effective_month, effective_year) -- 同一菜品同一店同一月份只能有一个价格
 );
 
 -- 物料价格历史表
@@ -256,10 +256,10 @@ CREATE TABLE material_price_history (
     store_id INTEGER REFERENCES store(id), -- 外键：门店 (不同门店可能价格不同)
     price NUMERIC(12, 4) NOT NULL,     -- 价格 (更高精度以支持小单位物料)
     currency VARCHAR(3) DEFAULT 'CAD', -- 货币类型
-    effective_date DATE NOT NULL,      -- 生效日期
+    effective_month INTEGER NOT NULL CHECK (effective_month >= 1 AND effective_month <= 12), -- 生效月份
+    effective_year INTEGER NOT NULL CHECK (effective_year >= 2020), -- 生效年份
     is_active BOOLEAN DEFAULT TRUE,    -- 是否当前有效价格
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(material_id, store_id, effective_date) -- 同一物料同一门店同一日期只能有一个价格
+    UNIQUE(material_id, store_id, effective_month, effective_year) -- 同一物料同一门店同一月份只能有一个价格
 );
 
 -- ========================================
@@ -308,8 +308,6 @@ CREATE TABLE dish_monthly_sale (
     return_amount NUMERIC(12, 4) DEFAULT 0, -- 退菜数量
     free_meal_amount NUMERIC(12, 4) DEFAULT 0, -- 免费餐数量
     gift_amount NUMERIC(12, 4) DEFAULT 0, -- 赠送数量
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(dish_id, store_id, month, year) -- 同一菜品同一门店同一月只能有一条记录
 );
 
@@ -322,8 +320,6 @@ CREATE TABLE monthly_combo_dish_sale (
     month INTEGER NOT NULL CHECK (month >= 1 AND month <= 12), -- 月份 (1-12)
     year INTEGER NOT NULL CHECK (year >= 2020), -- 年份
     sale_amount NUMERIC(12, 4) DEFAULT 0, -- 销售数量 (出品数量 - 退菜数量)
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(combo_id, dish_id, store_id, month, year) -- 同一套餐同一菜品同一门店同一月只能有一条记录
 );
 
@@ -335,8 +331,6 @@ CREATE TABLE material_monthly_usage (
     month INTEGER NOT NULL CHECK (month >= 1 AND month <= 12), -- 月份 (1-12)
     year INTEGER NOT NULL CHECK (year >= 2020), -- 年份
     material_used NUMERIC(12, 4) NOT NULL, -- 实际使用量 (期末库存 - 期初库存)
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(material_id, store_id, month, year) -- 同一物料同一门店同一月只能有一条记录
 );
 
@@ -416,11 +410,11 @@ CREATE INDEX idx_dish_material_material ON dish_material(material_id);
 -- Price history indexes
 CREATE INDEX idx_dish_price_dish_store ON dish_price_history(dish_id, store_id);
 CREATE INDEX idx_dish_price_active ON dish_price_history(is_active);
-CREATE INDEX idx_dish_price_effective ON dish_price_history(effective_date);
+CREATE INDEX idx_dish_price_effective ON dish_price_history(effective_year, effective_month);
 
 CREATE INDEX idx_material_price_material_store ON material_price_history(material_id, store_id);
 CREATE INDEX idx_material_price_active ON material_price_history(is_active);
-CREATE INDEX idx_material_price_effective ON material_price_history(effective_date);
+CREATE INDEX idx_material_price_effective ON material_price_history(effective_year, effective_month);
 
 -- Inventory count indexes
 CREATE INDEX idx_inventory_count_store_date ON inventory_count(store_id, count_date);
@@ -490,17 +484,7 @@ CREATE TRIGGER update_dish_material_updated_at BEFORE UPDATE ON dish_material
 CREATE TRIGGER update_combo_updated_at BEFORE UPDATE ON combo
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_dish_monthly_sale_updated_at BEFORE UPDATE ON dish_monthly_sale
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_monthly_combo_dish_sale_updated_at BEFORE UPDATE ON monthly_combo_dish_sale
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_material_monthly_usage_updated_at BEFORE UPDATE ON material_monthly_usage
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_month_static_data_updated_at BEFORE UPDATE ON month_static_data
-    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- No update triggers needed for monthly tables (using year/month only)
 
 -- ========================================
 -- INITIAL DATA INSERTION
