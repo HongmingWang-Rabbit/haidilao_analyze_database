@@ -764,7 +764,7 @@ BANK_TRANSACTION_RULES: List[Tuple[TransactionMatchRule, Dict]] = [
     (TransactionMatchRule(
         description_pattern=re.compile(r"RENT/LEASE Rent \d+"),
         transaction_type='debit',
-        amount_pattern=3800,
+        amount_pattern=5000,
     ), {
         "品名": TransactionType.RENTAL_FEE.value,
         "付款详情": "七店员工宿舍租赁费",
