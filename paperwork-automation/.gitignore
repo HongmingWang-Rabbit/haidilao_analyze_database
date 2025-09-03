@@ -36,8 +36,8 @@ data/**/*
 output/**/*
 data/**
 output/**
-history/**/*
-history/**
+history_files/**/*
+history_files/**
 input/**/*
 input/**
 
@@ -46,7 +46,7 @@ input/**
 .idea/                    # JetBrains IDEs
 .vscode/                  # VS Code settings (optional)
 *.swp                     # Vim swap files
-.history/                 # Local file history
+.history_files/                 # Local file history
 .pytest_cache/            # pytest cache
 .coverage                 # Code coverage files
 htmlcov/                  # Coverage HTML reports

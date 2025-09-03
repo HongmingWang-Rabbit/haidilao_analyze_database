@@ -12,12 +12,6 @@ Processing Steps:
 4. Update dish sales table
 """
 
-from utils.database import DatabaseManager, DatabaseConfig
-from lib.excel_utils import safe_read_excel, clean_dish_code
-from configs.dish_material.dish_sales_extraction import (
-    DISH_COLUMN_MAPPINGS,
-    DISH_FILE_STOREID_MAPPING
-)
 import argparse
 import logging
 import sys
@@ -25,8 +19,15 @@ from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 import pandas as pd
 
-# Add parent directory to path for imports
+# Add parent directory to path for imports - MUST come before local imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from utils.database import DatabaseManager, DatabaseConfig
+from lib.excel_utils import safe_read_excel, clean_dish_code
+from configs.dish_material.dish_sales_extraction import (
+    DISH_COLUMN_MAPPINGS,
+    DISH_FILE_STOREID_MAPPING
+)
 
 
 # Configure logging
@@ -202,11 +203,34 @@ class DishExtractor:
             if DISH_COLUMN_MAPPINGS.get('short_code'):
                 dtype_spec[DISH_COLUMN_MAPPINGS['short_code']] = str
 
-            # Read the specific sheet "菜品销售汇总表" - no fallback
-            df = safe_read_excel(
-                str(file_path), dtype_spec=dtype_spec, sheet_name='菜品销售汇总表')
-            logger.info(
-                f"Successfully read sheet '菜品销售汇总表' with {len(df)} rows")
+            # Try the standard sheet name first
+            try:
+                df = safe_read_excel(
+                    str(file_path), dtype_spec=dtype_spec, sheet_name='菜品销售汇总表')
+                logger.info(
+                    f"Successfully read sheet '菜品销售汇总表' with {len(df)} rows")
+            except Exception as sheet_error:
+                # If standard sheet not found, try first sheet (default)
+                logger.info(f"Sheet '菜品销售汇总表' not found, trying first sheet...")
+                try:
+                    df = safe_read_excel(str(file_path), dtype_spec=dtype_spec)
+                    logger.info(
+                        f"Successfully read default sheet with {len(df)} rows")
+                    # Check if this looks like June format based on columns
+                    if '出品数量' in df.columns and '菜品单价' in df.columns:
+                        logger.info("Detected June format columns, applying mapping...")
+                        june_column_mapping = {
+                            '规格': '规格名称',  # June uses '规格' instead of '规格名称'
+                            '出品数量': '销售数量',  # June uses '出品数量' instead of '销售数量'
+                            '退菜数量': '退菜数量',  # Same in June
+                            '赠菜数量': '赠送数量',  # June uses '赠菜数量' instead of '赠送数量'
+                            '免单数量': '员餐数量',  # June uses '免单数量' instead of '员餐数量'
+                            '菜品单价': '单价',  # June uses '菜品单价' instead of '单价'
+                        }
+                        df = df.rename(columns=june_column_mapping)
+                except Exception as e:
+                    logger.error(f"Failed to read any sheet from {file_path}: {e}")
+                    raise
 
             # Rename columns based on mapping
             rename_mapping = {}

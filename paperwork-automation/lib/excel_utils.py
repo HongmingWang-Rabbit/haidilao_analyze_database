@@ -69,17 +69,39 @@ def safe_read_excel(
         raise FileNotFoundError(f"Excel file not found: {file_path}")
     
     try:
+        # First check if it's a fake Excel file (actually TSV with UTF-16)
+        # This is common with SAP exports
+        with open(file_path, 'rb') as f:
+            header = f.read(2)
+            if header == b'\xff\xfe':  # UTF-16 LE BOM
+                logging.info(f"Detected UTF-16 encoded file, reading as TSV: {file_path}")
+                df = pd.read_csv(file_path, sep='\t', encoding='utf-16', dtype=dtype_spec or {})
+                logging.info(f"Successfully read {len(df)} rows, {len(df.columns)} columns")
+                return df
+        
+        # Otherwise, determine engine based on file extension
+        file_ext = file_path.suffix.lower()
+        if file_ext == '.xls':
+            engine = 'xlrd'
+        elif file_ext in ['.xlsx', '.xlsm']:
+            engine = 'openpyxl'
+        else:
+            # Let pandas auto-detect
+            engine = None
+            
         # Set default engine and handle dtype specification
         defaults = {
-            'engine': 'openpyxl',
             'dtype': dtype_spec or {}
         }
+        if engine:
+            defaults['engine'] = engine
+            
         defaults.update(kwargs)
         
         if sheet_name:
             defaults['sheet_name'] = sheet_name
             
-        logging.info(f"Reading Excel file: {file_path}, sheet: {sheet_name or 'default'}")
+        logging.info(f"Reading Excel file: {file_path}, sheet: {sheet_name or 'default'}, engine: {engine or 'auto'}")
         df = pd.read_excel(file_path, **defaults)
         
         logging.info(f"Successfully read {len(df)} rows, {len(df.columns)} columns")
@@ -92,7 +114,7 @@ def safe_read_excel(
 
 def clean_dish_code(code: Any) -> Optional[str]:
     """
-    Standardized dish code cleaning (remove .0 suffix from pandas float conversion).
+    Standardized dish code cleaning (remove .0 suffix from pandas float conversion and leading zeros).
     Consolidates identical functions from multiple extraction scripts.
     
     Args:
@@ -110,6 +132,13 @@ def clean_dish_code(code: Any) -> Optional[str]:
     # Remove .0 if it's a whole number (e.g., 90001690.0 -> 90001690)
     if code_str.endswith('.0'):
         code_str = code_str[:-2]
+    
+    # Remove leading zeros but preserve the number as string
+    code_str = code_str.lstrip('0')
+    
+    # Handle case where all digits were zeros
+    if not code_str:
+        code_str = '0'
     
     return code_str if code_str and code_str != '-' else None
 

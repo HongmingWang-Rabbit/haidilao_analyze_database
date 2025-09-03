@@ -271,11 +271,12 @@ CREATE TABLE inventory_count (
     id SERIAL PRIMARY KEY,
     store_id INTEGER REFERENCES store(id), -- 外键：门店
     material_id INTEGER REFERENCES material(id),   -- 外键：物料
-    count_date DATE NOT NULL,             -- 盘点日期
+    month INTEGER NOT NULL CHECK (month >= 1 AND month <= 12), -- 月份
+    year INTEGER NOT NULL CHECK (year >= 2020),  -- 年份
     counted_quantity NUMERIC(12, 4),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR,
-    UNIQUE(store_id, material_id, count_date)
+    UNIQUE(store_id, material_id, month, year)
 );
 
 -- ========================================
@@ -417,7 +418,8 @@ CREATE INDEX idx_material_price_active ON material_price_history(is_active);
 CREATE INDEX idx_material_price_effective ON material_price_history(effective_year, effective_month);
 
 -- Inventory count indexes
-CREATE INDEX idx_inventory_count_store_date ON inventory_count(store_id, count_date);
+CREATE INDEX idx_inventory_count_store_date ON inventory_count(store_id, year, month);
+CREATE INDEX idx_inventory_count_material ON inventory_count(material_id);
 
 -- Combo indexes
 CREATE INDEX idx_combo_code ON combo(combo_code);
@@ -592,7 +594,22 @@ INSERT INTO store_monthly_target (
 -- 加拿大六店 (Store ID: 6)
 (6, '2025-08-01', 3.70, 117.39, 705000, 40.0, 62000),
 -- 加拿大七店 (Store ID: 7)
-(7, '2025-08-01', 4.14, 148.86, 1020000.00, 40.0, 80000)
+(7, '2025-08-01', 4.14, 148.86, 1020000.00, 40.0, 80000),
+
+-- 加拿大一店 (Store ID: 1)
+(1, '2025-09-01', 4.65, 151.98, 1060000, 41.0, 60000),
+-- 加拿大二店 (Store ID: 2) 
+(2, '2025-09-01', 3.72, 140.21, 580000, 40.0, 3000),
+-- 加拿大三店 (Store ID: 3)
+(3, '2025-09-01', 5.3, 124.00, 961600, 40.0, 70000),
+-- 加拿大四店 (Store ID: 4)
+(4, '2025-09-01', 4.00, 130.95, 1050000, 39, 105000),
+-- 加拿大五店 (Store ID: 5)
+(5, '2025-09-01', 5.3, 135.95, 1189300, 39, 120000),
+-- 加拿大六店 (Store ID: 6)
+(6, '2025-09-01', 3.3, 117.39, 730000, 40.0, 10000),
+-- 加拿大七店 (Store ID: 7)
+(7, '2025-09-01', 4.4, 148.86, 1010000.00, 40.0, 50000)
 
 
 ON CONFLICT (store_id, month) DO UPDATE SET
@@ -718,7 +735,43 @@ INSERT INTO store_monthly_time_target (
 (7, '2025-08-01', 1, 1.02),  -- 08:00-13:59
 (7, '2025-08-01', 2, 0.56),  -- 14:00-16:59
 (7, '2025-08-01', 3, 1.90),  -- 17:00-21:59
-(7, '2025-08-01', 4, 0.66)   -- 22:00-(次)07:59
+(7, '2025-08-01', 4, 0.66),   -- 22:00-(次)07:59
+
+-- 加拿大一店 (Store ID: 1) - Total target: 4.20
+(1, '2025-09-01', 1, 0.96),  -- 08:00-13:59
+(1, '2025-09-01', 2, 0.51),  -- 14:00-16:59
+(1, '2025-09-01', 3, 2.34),  -- 17:00-21:59
+(1, '2025-09-01', 4, 0.84),  -- 22:00-(次)07:59
+-- 加拿大二店 (Store ID: 2) - Total target: 3.50
+(2, '2025-09-01', 1, 0.70),  -- 08:00-13:59
+(2, '2025-09-01', 2, 0.30),  -- 14:00-16:59
+(2, '2025-09-01', 3, 2.10),  -- 17:00-21:59
+(2, '2025-09-01', 4, 0.62),  -- 22:00-(次)07:59
+-- 加拿大三店 (Store ID: 3) - Total target: 5.00
+(3, '2025-09-01', 1, 1.35),  -- 08:00-13:59
+(3, '2025-09-01', 2, 0.85),  -- 14:00-16:59
+(3, '2025-09-01', 3, 2.25),  -- 17:00-21:59
+(3, '2025-09-01', 4, 0.85),  -- 22:00-(次)07:59
+-- 加拿大四店 (Store ID: 4) - Total target: 4.00
+(4, '2025-09-01', 1, 0.73),  -- 08:00-13:59
+(4, '2025-09-01', 2, 0.51),  -- 14:00-16:59
+(4, '2025-09-01', 3, 1.79),  -- 17:00-21:59
+(4, '2025-09-01', 4, 0.97),  -- 22:00-(次)07:59
+-- 加拿大五店 (Store ID: 5) - Total target: 5.20
+(5, '2025-09-01', 1, 0.80),  -- 08:00-13:59
+(5, '2025-09-01', 2, 0.90),  -- 14:00-16:59
+(5, '2025-09-01', 3, 2.50),  -- 17:00-21:59
+(5, '2025-09-01', 4, 1.10),  -- 22:00-(次)07:59
+-- 加拿大六店 (Store ID: 6) - Total target: 3.70
+(6, '2025-09-01', 1, 0.60),  -- 08:00-13:59
+(6, '2025-09-01', 2, 0.40),  -- 14:00-16:59
+(6, '2025-09-01', 3, 1.30),  -- 17:00-21:59
+(6, '2025-09-01', 4, 1.00),  -- 22:00-(次)07:59
+-- 加拿大七店 (Store ID: 7) - Total target: 4.14
+(7, '2025-09-01', 1, 1.1),  -- 08:00-13:59
+(7, '2025-09-01', 2, 0.55),  -- 14:00-16:59
+(7, '2025-09-01', 3, 2.1),  -- 17:00-21:59
+(7, '2025-09-01', 4, 0.65)   -- 22:00-(次)07:59
 ON CONFLICT (store_id, month, time_segment_id) DO UPDATE SET
     turnover_rate = EXCLUDED.turnover_rate;
 

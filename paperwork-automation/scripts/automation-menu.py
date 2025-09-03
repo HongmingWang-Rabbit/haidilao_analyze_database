@@ -329,17 +329,18 @@ class AutomationMenu:
         return True
 
     def run_bank_processing(self):
-        """Run daily bank transaction processing"""
-        print("🏦 DAILY BANK TRANSACTION PROCESSING")
+        """Run daily bank transaction processing using new update system"""
+        print("🏦 DAILY BANK STATEMENT UPDATE PROCESSING")
         print("=" * 50)
-        print("This will process all bank files and classify transactions")
-        print("according to our 28 transaction types.")
+        print("This will update the CA全部7家店明细.xlsx workbook with new transactions")
+        print("and automatically classify them according to our transaction rules.")
         print()
 
         # Get target date from user
         print("📅 Enter target date for processing:")
-        print("Format: YYYY-MM-DD (e.g., 2025-07-23)")
+        print("Format: YYYY-MM-DD (e.g., 2025-08-15)")
         print("Press Enter for today's date")
+        print("Note: Processes entire month regardless of day")
 
         date_input = input("\nTarget date: ").strip()
 
@@ -357,27 +358,56 @@ class AutomationMenu:
                 return
 
         print(f"📅 Processing bank transactions for: {target_date}")
+        
+        # Parse month/year for checking files
+        from datetime import datetime
+        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
+        month_folder = target_dt.strftime('%Y-%m')
+        
+        # Quick check if required files exist
+        from pathlib import Path
+        bank_folder = Path("history_files/bank_daily_report") / month_folder
+        if not bank_folder.exists():
+            print(f"\n❌ Bank folder not found: {bank_folder}")
+            print("Please ensure bank files are placed in the correct directory.")
+            input("Press Enter to continue...")
+            return
+
+        ca_file = bank_folder / "CA全部7家店明细.xlsx"
+        if not ca_file.exists():
+            print(f"\n❌ Workbook not found: CA全部7家店明细.xlsx")
+            print(f"   Expected location: {ca_file}")
+            print("This file is required for the update process.")
+            input("Press Enter to continue...")
+            return
+
+        print(f"\n✅ Found required files in {month_folder}/")
 
         # Confirm before processing
-        confirm = input("\nStart bank transaction processing? (y/N): ").lower()
+        confirm = input("\nStart bank statement update processing? (y/N): ").lower()
         if confirm != 'y':
             print("❌ Processing cancelled.")
             input("Press Enter to continue...")
             return
 
         # Run the bank processing command
-        command = f'python -m scripts.process_bank_transactions --target-date {target_date}'
+        command = f'{self.python_cmd} -m scripts.process_bank_updates --target-date {target_date}'
         print(f"🚀 Running: {command}")
 
-        result = self.run_command(command, "Bank Transaction Processing")
+        result = self.run_command(command, "Bank Statement Update Processing")
 
         if result:
-            print("✅ Bank transaction processing completed successfully!")
-            print("📁 Check the output folder for processed results.")
+            print("\n✅ Bank statement processing completed successfully!")
+            print(f"📁 Check output/bank_statements/{month_folder}/ for Updated_CA全部7家店明细.xlsx")
+            print("\n✨ The updated file includes:")
+            print("   • New transactions appended to each bank sheet")
+            print("   • Auto-classified transaction categories (品名)")
+            print("   • Payment details (付款详情) filled in")
+            print("   • Items needing review marked as '待确认'")
         else:
-            print("❌ Bank transaction processing failed.")
+            print("\n❌ Bank statement processing failed.")
 
-        input("Press Enter to continue...")
+        input("\nPress Enter to continue...")
     
     def run_hi_bowl_daily_processing(self):
         """Run Hi-Bowl daily report processing"""
@@ -2392,25 +2422,30 @@ except Exception as e:
         input("Press Enter to continue...")
 
     def process_bank_transactions(self):
-        """Process daily bank transactions from multiple banks"""
-        print("🏦 BANK TRANSACTION PROCESSING")
+        """Process daily bank transactions from multiple banks using new update system"""
+        print("🏦 BANK STATEMENT UPDATE PROCESSING")
         print("=" * 40)
-        print("📋 This will process bank transaction files from:")
-        print("   Input/daily_report/bank_transactions_reports/")
-        print("   • RBC Business Bank Account files (.xlsx)")
+        print("📋 This will process bank statements and update the workbook:")
+        print()
+        print("📂 Source files location:")
+        print("   history_files/bank_daily_report/YYYY-MM/")
         print("   • BMO ReconciliationReport files (.xls)")
+        print("   • RBC Business Bank Account files (.csv)")
         print("   • CIBC TransactionDetail files (.csv)")
+        print("   • CA全部7家店明细.xlsx (existing workbook)")
         print()
         print("🎯 Features:")
-        print("   • Automatic transaction classification")
-        print("   • Filters by target month/year")
-        print("   • Checks for duplicates")
-        print("   • Consolidates into CA全部7家店明细.xlsx")
+        print("   • Extracts transactions from bank files")
+        print("   • Updates CA全部7家店明细.xlsx workbook")
+        print("   • Auto-classifies transactions (品名, 付款详情)")
+        print("   • Marks items needing review as '待确认'")
+        print("   • Formats dates per bank standards")
+        print("   • Preserves existing data, only adds new records")
         print()
 
         # Get target date from user
-        print("📅 Enter target date (filters transactions by month/year):")
-        print("   Format: YYYY-MM-DD (e.g., 2025-07-23)")
+        print("📅 Enter target date (processes entire month):")
+        print("   Format: YYYY-MM-DD (e.g., 2025-08-15)")
         print("   Note: Day doesn't matter - processes entire month")
         print()
 
@@ -2431,29 +2466,40 @@ except Exception as e:
 
         print(f"\n📅 Processing transactions for: {target_date}")
 
-        # Check if input directory exists
-        input_dir = Path("Input/daily_report/bank_transactions_reports")
-        if not input_dir.exists():
-            print(f"❌ Input directory not found: {input_dir}")
+        # Parse month/year for checking files
+        from datetime import datetime
+        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
+        month_folder = target_dt.strftime('%Y-%m')
+        
+        # Check if bank files exist
+        bank_folder = Path("history_files/bank_daily_report") / month_folder
+        if not bank_folder.exists():
+            print(f"❌ Bank folder not found: {bank_folder}")
             print("Please ensure bank files are placed in the correct directory.")
             input("Press Enter to continue...")
             return
 
-        # List available files
-        bank_files = list(input_dir.glob("*"))
-        if not bank_files:
-            print(f"❌ No files found in {input_dir}")
+        # Check for CA全部7家店明细.xlsx
+        ca_file = bank_folder / "CA全部7家店明细.xlsx"
+        if not ca_file.exists():
+            print(f"❌ Workbook not found: CA全部7家店明细.xlsx")
+            print(f"   Expected location: {ca_file}")
+            print("This file is required for the update process.")
             input("Press Enter to continue...")
             return
 
-        print(f"\n📁 Found {len(bank_files)} files in input directory:")
-        for file in bank_files:
+        # List available bank files
+        print(f"\n📁 Files in {bank_folder.name}:")
+        bank_files = list(bank_folder.glob("*"))
+        for file in bank_files[:10]:  # Show first 10 files
             print(f"   • {file.name}")
+        if len(bank_files) > 10:
+            print(f"   ... and {len(bank_files) - 10} more files")
 
         print()
 
         # Confirm processing
-        confirm = input("🚀 Process bank transactions? (y/n): ").lower()
+        confirm = input("🚀 Process bank statements? (y/n): ").lower()
         if confirm != 'y':
             print("Operation cancelled.")
             return
@@ -2464,19 +2510,29 @@ except Exception as e:
             debug_flag = " --debug"
 
         # Build command
-        command = f'{self.python_cmd} -m scripts.process_bank_transactions --target-date {target_date}{debug_flag}'
+        command = f'{self.python_cmd} -m scripts.process_bank_updates --target-date {target_date}{debug_flag}'
 
         print()
-        print("🔄 Starting bank transaction processing...")
-        print("⏱️  This may take a few minutes depending on file sizes.")
+        print("🔄 Starting bank statement update processing...")
+        print("⏱️  This will:")
+        print("   1. Read existing CA全部7家店明细.xlsx")
+        print("   2. Extract new transactions from bank files")
+        print("   3. Compare and identify new records")
+        print("   4. Append new records with classifications")
         print()
 
-        success = self.run_command(command, "Bank Transaction Processing")
+        success = self.run_command(command, "Bank Statement Update Processing")
         if success:
-            print("🎉 Bank transaction processing completed successfully!")
-            print("📄 Check CA全部7家店明细.xlsx for consolidated results.")
+            print()
+            print("🎉 Bank statement update completed successfully!")
+            print(f"📄 Check output/bank_statements/{month_folder}/ for Updated_CA全部7家店明细.xlsx")
+            print()
+            print("✨ New features in the updated file:")
+            print("   • New transactions appended to each sheet")
+            print("   • Transaction categories auto-filled")
+            print("   • Items needing confirmation marked as '待确认'")
         else:
-            print("❌ Bank transaction processing failed. Please check the logs.")
+            print("❌ Bank statement processing failed. Please check the logs.")
 
         input("Press Enter to continue...")
 

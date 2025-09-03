@@ -157,16 +157,17 @@ CREATE TABLE material_price_history (
     UNIQUE(material_id, store_id, effective_month, effective_year)
 );
 
--- Inventory tracking table
+-- Inventory tracking table (monthly counts)
 CREATE TABLE inventory_count (
     id SERIAL PRIMARY KEY,
     store_id INTEGER REFERENCES store(id),
     material_id INTEGER REFERENCES material(id),
-    count_date DATE NOT NULL,
+    month INTEGER NOT NULL CHECK (month >= 1 AND month <= 12),
+    year INTEGER NOT NULL CHECK (year >= 2020),
     counted_quantity NUMERIC(12, 4),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR,
-    UNIQUE(store_id, material_id, count_date)
+    UNIQUE(store_id, material_id, month, year)
 );
 
 -- Combo table
@@ -257,7 +258,8 @@ CREATE INDEX idx_material_price_active ON material_price_history(is_active);
 CREATE INDEX idx_material_price_effective ON material_price_history(effective_year, effective_month);
 
 -- Inventory count indexes
-CREATE INDEX idx_inventory_count_store_date ON inventory_count(store_id, count_date);
+CREATE INDEX idx_inventory_count_store_date ON inventory_count(store_id, year, month);
+CREATE INDEX idx_inventory_count_material ON inventory_count(material_id);
 
 -- Combo indexes
 CREATE INDEX idx_combo_code ON combo(combo_code);
