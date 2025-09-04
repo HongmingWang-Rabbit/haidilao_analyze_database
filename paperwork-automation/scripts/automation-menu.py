@@ -328,6 +328,113 @@ class AutomationMenu:
         print("✅ All required input files found!")
         return True
 
+    def show_bank_processing_menu(self):
+        """Show bank processing submenu with options for transactions and offline payments"""
+        while True:
+            self.clear_screen()
+            self.print_header()
+            print("🏦 BANK PROCESSING MENU")
+            print("=" * 40)
+
+            options = [
+                ("1", "📈 Daily Bank Transaction Processing", "transactions"),
+                ("2", "💳 Extract Offline Payments (待确认)", "offline_payments"),
+                ("b", "← Back to Main Menu", "back")
+            ]
+
+            self.print_menu_section("Select bank processing operation", options)
+
+            choice = input("Enter your choice: ").lower().strip()
+
+            if choice == 'b':
+                break
+            elif choice == '1':
+                self.run_bank_processing()
+            elif choice == '2':
+                self.extract_offline_payments()
+            else:
+                print("❌ Invalid choice. Please try again.")
+                input("Press Enter to continue...")
+
+    def extract_offline_payments(self):
+        """Extract offline payments with 待确认 status from bank statements"""
+        print("💳 OFFLINE PAYMENT EXTRACTION")
+        print("=" * 40)
+        print("This will extract all transactions with '待确认' status")
+        print("from the bank statement files and generate a summary report.")
+        print()
+        
+        # Get target date from user
+        print("📅 Enter target date (YYYY-MM-DD format):")
+        print("Example: 2025-09-02")
+        print()
+        
+        date_input = input("Enter date: ").strip()
+        
+        # Validate date format
+        if not date_input:
+            print("❌ No date provided")
+            input("Press Enter to continue...")
+            return
+        
+        try:
+            from datetime import datetime
+            target_date = datetime.strptime(date_input, '%Y-%m-%d')
+            year_month = target_date.strftime('%Y-%m')
+        except ValueError:
+            print("❌ Invalid date format. Please use YYYY-MM-DD format.")
+            input("Press Enter to continue...")
+            return
+        
+        # Build the path to the bank daily report folder
+        bank_report_dir = self.project_root / "history_files" / "bank_daily_report" / year_month
+        
+        if not bank_report_dir.exists():
+            print(f"❌ Directory not found: {bank_report_dir}")
+            print(f"   Please ensure bank statements for {year_month} are available.")
+            input("Press Enter to continue...")
+            return
+        
+        # Find all Excel files in the directory
+        excel_files = list(bank_report_dir.glob("*.xlsx")) + list(bank_report_dir.glob("*.xls"))
+        
+        if not excel_files:
+            print(f"❌ No Excel files found in: {bank_report_dir}")
+            input("Press Enter to continue...")
+            return
+        
+        print(f"\n📂 Found {len(excel_files)} Excel file(s) in {year_month}:")
+        for file in excel_files[:5]:  # Show first 5 files
+            print(f"   - {file.name}")
+        if len(excel_files) > 5:
+            print(f"   ... and {len(excel_files) - 5} more")
+        
+        # Confirm extraction
+        print(f"\n🔍 This will extract offline payments from all files in {year_month}")
+        confirm = input("Proceed with extraction? (y/N): ").lower()
+        
+        if confirm != 'y':
+            return
+        
+        # Run the extraction script
+        print("\n" + "="*60)
+        
+        # Build file list as space-separated quoted paths
+        file_list = ' '.join([f'"{file}"' for file in excel_files])
+        
+        # Run extraction command
+        command = f'{self.python_cmd} scripts/bank_statement_processing/gathering_all_offline_payments/extract_offline_payments.py {file_list}'
+        
+        success = self.run_command(command, "Extract Offline Payments")
+        
+        if success:
+            print("\n✅ Extraction completed successfully!")
+            print("📁 Output file saved to: output/offline_payments/")
+        else:
+            print("\n❌ Extraction failed. Please check the error messages above.")
+        
+        input("\nPress Enter to continue...")
+
     def run_bank_processing(self):
         """Run daily bank transaction processing using new update system"""
         print("🏦 DAILY BANK STATEMENT UPDATE PROCESSING")
@@ -1232,7 +1339,7 @@ class AutomationMenu:
 
             # Main workflow options
             workflow_options = [
-                ("1", "🏦 Daily Bank Transaction Processing", "bank_processing"),
+                ("1", "🏦 Bank Processing (Transactions & Offline Payments)", "bank_menu"),
                 ("2", "🍜 Hi-Bowl Daily Report Processing", "hi_bowl_processing"),
                 ("3", "🌅 Complete Daily Automation", "daily_automation"),
                 ("4", "📅 Complete Monthly Automation", "monthly_automation"),
@@ -1261,7 +1368,7 @@ class AutomationMenu:
             choice = input("Enter your choice: ").lower().strip()
 
             if choice == '1':
-                self.run_bank_processing()
+                self.show_bank_processing_menu()
             elif choice == '2':
                 self.run_hi_bowl_daily_processing()
             elif choice == '3':

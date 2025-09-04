@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a production-grade automation system for processing Haidilao restaurant operational data from Excel files and generating comprehensive business reports. The system handles daily operational data, time segment analysis, material usage tracking, and generates professional Excel reports for business analysis.
+Production-grade automation system for processing Haidilao restaurant operational data from Excel files and generating comprehensive business reports. The system handles daily operational data, time segment analysis, material usage tracking, and generates professional Excel reports for business analysis.
 
 **System Purpose**: Automate the extraction, processing, and reporting of restaurant operational data for 7 Canadian Haidilao stores plus Hi Bowl franchise, replacing manual Excel-based workflows with automated database-driven reporting.
 
@@ -45,6 +45,13 @@ python3 -m unittest tests.test_yearly_comparison_worksheet -v
 
 # Quick test run (comprehensive test suite)
 python3 tests/run_comprehensive_tests.py
+
+# Run modular tests
+python3 tests/run_modular_tests.py
+
+# Test with test database
+export DB_TEST=true
+python3 -m unittest tests.test_database_operations -v
 ```
 
 ### Report Generation
@@ -56,6 +63,40 @@ python3 scripts/generate_gross_margin_report.py --date YYYY-MM-DD
 python3 scripts/generate_monthly_material_report.py --date YYYY-MM-DD
 python3 scripts/generate_monthly_gross_margin_report.py --date YYYY-MM-DD
 python3 scripts/generate_monthly_beverage_report.py --date YYYY-MM-DD
+
+# Generate inventory and material division reports
+python3 scripts/generate_inventory_count.py
+python3 scripts/generate_materials_use_with_division.py
+```
+
+### Dish Material Extraction
+
+```bash
+# Extract all historical dish material data
+python3 scripts/dish_material/extract_all_historical_data.py
+
+# Individual extraction scripts
+python3 scripts/dish_material/extract_dishes_to_database.py
+python3 scripts/dish_material/extract_materials_to_database.py
+python3 scripts/dish_material/extract_dish_material_mapping.py
+python3 scripts/dish_material/extract_combo_sales_to_database.py
+python3 scripts/dish_material/extract_inventory_to_database.py
+
+# Run all extractions
+python3 scripts/dish_material/run_all_extractions.py
+
+# Generate gross revenue report
+python3 scripts/dish_material/generate_gross_revenue_report.py
+```
+
+### Bank Statement Processing
+
+```bash
+# Process bank transactions from Excel files
+python3 scripts/process_bank_transactions.py
+
+# Bank statement processing scripts (in scripts/bank_statement_processing/)
+# These handle RBC, TD, CIBC, BMO bank statements
 ```
 
 ## High-Level Architecture
@@ -96,12 +137,15 @@ All worksheet generators inherit from `BaseWorksheetGenerator` for consistent st
 # ALWAYS use this pattern to prevent material number precision loss
 from lib.excel_utils import safe_read_excel, get_material_reading_dtype
 
-dtype_spec = get_material_reading_dtype()  # {'物料': str}
+dtype_spec = get_material_reading_dtype()  # Returns {'物料': str}
 df = safe_read_excel(file_path, dtype_spec=dtype_spec)
 
 # Clean dish codes (remove .0 suffix from float conversion)
 from lib.excel_utils import clean_dish_code
 cleaned_code = clean_dish_code(raw_code)
+
+# Handle fake Excel files (TSV with UTF-16 encoding from SAP)
+# safe_read_excel automatically detects and handles these files
 ```
 
 ### Database Operations
@@ -148,9 +192,11 @@ Follow this mandatory pattern:
 # Run single test method
 python3 -m unittest tests.test_business_insight_worksheet.TestBusinessInsightWorksheet.test_worksheet_creation -v
 
-# Run with test database
-export DB_TEST=true
-python3 -m unittest tests.test_database_operations -v
+# Run test class
+python3 -m unittest tests.test_business_insight_worksheet.TestBusinessInsightWorksheet -v
+
+# Run with verbose debugging
+python3 -m unittest tests.test_validation_against_actual_data -v
 ```
 
 ### Database Management
@@ -161,6 +207,13 @@ psql -h localhost -U hongming -d haidilao-paperwork
 
 # Run migrations
 psql -h localhost -U hongming -d haidilao-paperwork -f haidilao-database-querys/migration_script.sql
+
+# Important SQL scripts in haidilao-database-querys/
+# - reset-db.sql: Complete database reset with schema
+# - reset-dish-data.sql: Reset only dish-related tables
+# - create_inventory_views.sql: Create inventory tracking views
+# - create_material_consumption_view.sql: Material consumption analysis
+# - migrate_inventory_to_monthly.sql: Inventory data migration
 
 # Reset database (CAUTION)
 python3 scripts/automation-menu.py  # Then select 'r' for reset
@@ -176,16 +229,21 @@ python3 scripts/automation-menu.py  # Then select 'r' for reset
 
 ## Common Debugging Patterns
 
-### Material Number Precision Issues
+### Material Number Precision Issues (CRITICAL)
 
-If different material numbers appear identical:
+**Problem**: Different material numbers (e.g., 1500680 and 1500681) appear identical after reading Excel.
 
 ```python
-# WRONG - causes precision loss
+# WRONG - causes precision loss (float64 conversion)
 df = pd.read_excel(file_path)  # 1500680 and 1500681 both become 1500680.0
 
-# CORRECT - preserves material numbers
+# CORRECT - preserves material numbers as strings
 df = pd.read_excel(file_path, dtype={'物料': str})
+
+# OR use centralized utility
+from lib.excel_utils import get_material_reading_dtype
+dtype_spec = get_material_reading_dtype()
+df = pd.read_excel(file_path, dtype=dtype_spec)
 ```
 
 ### Target Date Parameter
@@ -208,11 +266,14 @@ When multiple products share a material number:
 
 ### Unicode Column Names
 
-Use escape sequences for reliability:
+Handle Chinese characters properly in column names:
 
 ```python
-# Instead of Chinese characters directly
+# Use escape sequences for reliability when needed
 column_name = '\u7269\u6599'  # 物料
+
+# But modern Python handles UTF-8 directly
+df['物料']  # Works fine in most cases
 ```
 
 ## Performance Targets
@@ -245,6 +306,27 @@ export QBI_USERNAME="your_username"
 export QBI_PASSWORD="your_password"
 ```
 
+## Common Issues and Solutions
+
+### Fake Excel Files (SAP Exports)
+Some files with .xls extension are actually TSV files with UTF-16 encoding. The `safe_read_excel` function automatically detects and handles these.
+
+### Date Handling
+- Always use `--target-date` parameter, avoid CURRENT_DATE
+- Target date should flow through entire automation pipeline
+- Use proper date formatting: YYYY-MM-DD
+
+### Store Name Mapping
+Use constants from `lib/config.py` for consistent store ID mapping:
+- 加拿大一店 through 加拿大七店: IDs 1-7
+- Hi Bowl: ID 101
+
+### Price History Management
+When inserting new prices:
+1. Deactivate existing prices for same entity
+2. Insert new price with is_active=True
+3. Maintain historical records for reporting
+
 ## Development Standards (from .cursorrules)
 
 ### Mandatory Update Requirements
@@ -271,3 +353,5 @@ When adding ANY new feature, you MUST update in this order:
 - **Schema Evolution**: Use migration scripts, never drop tables directly
 - **Transaction Safety**: Always use rollback on errors
 - **Connection Management**: Use context managers and proper cleanup
+- **Batch Operations**: Use `DatabaseOperations.batch_upsert()` for bulk inserts
+- **Conflict Handling**: Specify conflict_columns for upsert operations

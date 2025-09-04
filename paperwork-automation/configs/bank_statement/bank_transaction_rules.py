@@ -767,7 +767,7 @@ BANK_TRANSACTION_RULES: List[Tuple[TransactionMatchRule, Dict]] = [
         amount_pattern=5000,
     ), {
         "品名": TransactionType.RENTAL_FEE.value,
-        "付款详情": "七店员工宿舍租赁费",
+        "付款详情": "七店员 工宿舍租赁费",
         "单据号": True,
         "附件": False,
         "是否登记线下付款表": True,
