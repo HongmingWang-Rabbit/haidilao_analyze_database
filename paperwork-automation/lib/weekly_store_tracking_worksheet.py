@@ -108,26 +108,24 @@ class WeeklyStoreTrackingGenerator:
             "",              # G1 - Empty
             "",              # H1 - Empty
             "",              # I1 - Empty
-            "",              # J1 - Empty
-            "周营业收入-不含税(万加元)",  # K1 - Weekly Revenue Excluding Tax (10k CAD)
+            "周营业收入-不含税(万加元)",  # J1 - Weekly Revenue Excluding Tax (10k CAD)
+            "",              # K1 - Empty
             "",              # L1 - Empty
             "",              # M1 - Empty
-            "",              # N1 - Empty
-            "",              # O1 - Empty
-            "综合得分",       # P1 - Comprehensive Score
-            "综合排名"        # Q1 - Comprehensive Ranking
+            "综合得分",       # N1 - Comprehensive Score
+            "综合排名"        # O1 - Comprehensive Ranking
         ]
 
         for col, header in enumerate(headers_row1, 1):
             ws.cell(row=1, column=col, value=header)
 
         # Merge header cells for better visual grouping
-        ws.merge_cells('F1:J1')  # Merge table turnover rate section (周翻台率-考核)
-        ws.merge_cells('K1:O1')  # Merge revenue section (周营业收入-不含税)
+        ws.merge_cells('F1:I1')  # Merge table turnover rate section (周翻台率-考核)
+        ws.merge_cells('J1:M1')  # Merge revenue section (周营业收入-不含税)
 
         # Center align the merged headers
         ws['F1'].alignment = Alignment(horizontal='center', vertical='center')
-        ws['K1'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['J1'].alignment = Alignment(horizontal='center', vertical='center')
 
         # Row 2 - Sub headers with date ranges
         current_period = f"25年{start_dt.month}月{start_dt.day}日-{target_dt.month}月{target_dt.day}日"
@@ -137,15 +135,13 @@ class WeeklyStoreTrackingGenerator:
         ws.cell(row=2, column=6, value=current_period)  # F2
         ws.cell(row=2, column=7, value=prev_period)  # G2
         ws.cell(row=2, column=8, value="对比")  # H2 - Comparison
-        ws.cell(row=2, column=9, value="基础值得分")  # I2 - Basic Score
-        ws.cell(row=2, column=10, value="精进值得分")  # J2 - Improvement Score
+        ws.cell(row=2, column=9, value="精进值得分")  # I2 - Improvement Score
 
         # Date headers for revenue section (formulas referencing F2, G2)
-        ws.cell(row=2, column=11, value="=F2")  # K2
-        ws.cell(row=2, column=12, value="=G2")  # L2
-        ws.cell(row=2, column=13, value="对比")  # M2 - Comparison
-        ws.cell(row=2, column=14, value="基础值得分")  # N2 - Basic Score
-        ws.cell(row=2, column=15, value="精进值得分")  # O2 - Improvement Score
+        ws.cell(row=2, column=10, value="=F2")  # J2
+        ws.cell(row=2, column=11, value="=G2")  # K2
+        ws.cell(row=2, column=12, value="对比")  # L2 - Comparison
+        ws.cell(row=2, column=13, value="精进值得分")  # M2 - Improvement Score
 
     def _get_store_performance_data(self, start_dt: datetime, target_dt: datetime) -> List[Dict[str, Any]]:
         """
@@ -311,10 +307,10 @@ class WeeklyStoreTrackingGenerator:
         ws.cell(row=row, column=8, value="=F3-G3")
 
         # Add revenue data (sums for regional totals)
-        ws.cell(row=row, column=11, value=sum_current_revenue)  # K3
-        ws.cell(row=row, column=12, value=sum_prev_revenue)     # L3
-        # M3 - Comparison formula
-        ws.cell(row=row, column=13, value="=K3-L3")
+        ws.cell(row=row, column=10, value=sum_current_revenue)  # J3
+        ws.cell(row=row, column=11, value=sum_prev_revenue)     # K3
+        # L3 - Comparison formula
+        ws.cell(row=row, column=12, value="=J3-K3")
 
     def _calculate_comprehensive_scores(self, store_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Calculate comprehensive scores for all stores and sort by ranking."""
@@ -428,37 +424,31 @@ class WeeklyStoreTrackingGenerator:
             ws.cell(row=row, column=8, value=f"=F{row}-G{row}")
 
             # Normalized scoring - EXACT formulas from reference sheet
-            # I - Basic score (Current turnover normalization)
+            # I - Improvement score (Turnover difference normalization)
             ws.cell(row=row, column=9,
-                    value=f"=(F{row}-MIN($F$4:$F$10))/(MAX($F$4:$F$10)-MIN($F$4:$F$10))")
-            # J - Improvement score (Turnover difference normalization)
-            ws.cell(row=row, column=10,
                     value=f"=(H{row}-MIN($H$4:$H$10))/(MAX($H$4:$H$10)-MIN($H$4:$H$10))")
 
             # Revenue data (weekly totals)
-            # K - Current week total revenue
-            ws.cell(row=row, column=11, value=store['current_total_revenue'])
-            # L - Previous year week total revenue
-            ws.cell(row=row, column=12, value=store['prev_total_revenue'])
-            # M - Revenue comparison (Excel formula)
-            ws.cell(row=row, column=13, value=f"=K{row}-L{row}")
+            # J - Current week total revenue
+            ws.cell(row=row, column=10, value=store['current_total_revenue'])
+            # K - Previous year week total revenue
+            ws.cell(row=row, column=11, value=store['prev_total_revenue'])
+            # L - Revenue comparison (Excel formula)
+            ws.cell(row=row, column=12, value=f"=J{row}-K{row}")
 
             # Normalized scoring - EXACT formulas from reference sheet
-            # N - Revenue basic score (Current revenue normalization)
-            ws.cell(row=row, column=14,
-                    value=f"=(K{row}-MIN($K$4:$K$10))/(MAX($K$4:$K$10)-MIN($K$4:$K$10))")
-            # O - Revenue improvement score (Revenue difference normalization)
-            ws.cell(row=row, column=15,
-                    value=f"=(M{row}-MIN($M$4:$M$10))/(MAX($M$4:$M$10)-MIN($M$4:$M$10))")
+            # M - Revenue improvement score (Revenue difference normalization)
+            ws.cell(row=row, column=13,
+                    value=f"=(L{row}-MIN($L$4:$L$10))/(MAX($L$4:$L$10)-MIN($L$4:$L$10))")
 
-            # Comprehensive scoring - EXACT formula from reference sheet
-            # P - Comprehensive score (25% weight each)
-            ws.cell(row=row, column=16,
-                    value=f"=I{row}*0.25+J{row}*0.25+N{row}*0.25+O{row}*0.25")
+            # Comprehensive scoring - Modified formula without basic scores
+            # N - Comprehensive score (50% weight each improvement score)
+            ws.cell(row=row, column=14,
+                    value=f"=I{row}*0.5+M{row}*0.5")
 
             # Ranking - EXACT formula from reference sheet
-            # Q - Ranking (RANK function)
-            ws.cell(row=row, column=17, value=f"=RANK(P{row},$P$4:$P$10)")
+            # O - Ranking (RANK function)
+            ws.cell(row=row, column=15, value=f"=RANK(N{row},$N$4:$N$10)")
 
     def _apply_formatting(self, ws: Worksheet, num_stores: int) -> None:
         """Apply professional formatting to the worksheet."""
@@ -484,15 +474,13 @@ class WeeklyStoreTrackingGenerator:
             'F': 12,  # Current turnover
             'G': 12,  # Previous turnover
             'H': 8,   # Comparison
-            'I': 10,  # Basic score
-            'J': 10,  # Improvement score
-            'K': 15,  # Current revenue
-            'L': 15,  # Previous revenue
-            'M': 8,   # Revenue comparison
-            'N': 10,  # Revenue basic score
-            'O': 10,  # Revenue improvement score
-            'P': 10,  # Comprehensive score
-            'Q': 8    # Ranking
+            'I': 10,  # Improvement score
+            'J': 15,  # Current revenue
+            'K': 15,  # Previous revenue
+            'L': 8,   # Revenue comparison
+            'M': 10,  # Revenue improvement score
+            'N': 10,  # Comprehensive score
+            'O': 8    # Ranking
         }
 
         for col_letter, width in column_widths.items():
@@ -500,7 +488,7 @@ class WeeklyStoreTrackingGenerator:
 
         # Format headers (rows 1-2)
         for row in [1, 2]:
-            for col in range(1, 18):  # A to Q
+            for col in range(1, 16):  # A to O
                 cell = ws.cell(row=row, column=col)
                 cell.font = header_font
                 cell.fill = header_fill
@@ -510,7 +498,7 @@ class WeeklyStoreTrackingGenerator:
         # Format data rows
         data_rows = range(3, 4 + num_stores)  # Regional summary + store data
         for row in data_rows:
-            for col in range(1, 18):
+            for col in range(1, 16):
                 cell = ws.cell(row=row, column=col)
                 cell.border = border
                 cell.alignment = center_alignment
@@ -518,11 +506,11 @@ class WeeklyStoreTrackingGenerator:
                 # Number formatting for specific columns (2 decimal precision)
                 if col in [5, 6, 7]:  # Turnover rates - 2 decimal places
                     cell.number_format = '0.00'
-                elif col in [11, 12]:  # Revenue - 2 decimal places
+                elif col in [10, 11]:  # Revenue - 2 decimal places
                     cell.number_format = '0.00'
-                elif col in [8, 13]:  # Comparisons - 2 decimal places
+                elif col in [8, 12]:  # Comparisons - 2 decimal places
                     cell.number_format = '0.00'
-                elif col in [9, 10, 14, 15, 16]:  # Scores - 2 decimal places
+                elif col in [9, 13, 14]:  # Scores - 2 decimal places
                     cell.number_format = '0.00'
 
         # Freeze panes at row 3 (after headers)

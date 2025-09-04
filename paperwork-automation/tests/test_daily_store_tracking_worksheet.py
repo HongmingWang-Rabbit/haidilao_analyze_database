@@ -91,8 +91,8 @@ class TestDailyStoreTrackingGenerator(unittest.TestCase):
         # Check main headers (row 1)
         expected_headers = [
             "序号", "门店名称", "店经理", "餐位数", "24年全年平均翻台率",
-            "日翻台率-考核", "", "", "", "",
-            "日营业收入-不含税(万加元)", "", "", "", "",
+            "日翻台率-考核", "", "", "",
+            "日营业收入-不含税(万加元)", "", "", "",
             "综合得分", "综合排名"
         ]
 
@@ -105,12 +105,11 @@ class TestDailyStoreTrackingGenerator(unittest.TestCase):
         self.assertEqual(ws.cell(row=2, column=6).value, "25年6月28日")
         self.assertEqual(ws.cell(row=2, column=7).value, "24年6月28日")
         self.assertEqual(ws.cell(row=2, column=8).value, "对比")
-        self.assertEqual(ws.cell(row=2, column=9).value, "基础值得分")
-        self.assertEqual(ws.cell(row=2, column=10).value, "精进值得分")
+        self.assertEqual(ws.cell(row=2, column=9).value, "精进值得分")
 
         # Check formula references
-        self.assertEqual(ws.cell(row=2, column=11).value, "=F2")
-        self.assertEqual(ws.cell(row=2, column=12).value, "=G2")
+        self.assertEqual(ws.cell(row=2, column=10).value, "=F2")
+        self.assertEqual(ws.cell(row=2, column=11).value, "=G2")
 
     def test_store_data_processing(self):
         """Test store data processing and combination."""
@@ -179,7 +178,7 @@ class TestDailyStoreTrackingGenerator(unittest.TestCase):
 
         # Check formulas
         self.assertEqual(ws.cell(row=3, column=8).value, "=F3-G3")
-        self.assertEqual(ws.cell(row=3, column=13).value, "=K3-L3")
+        self.assertEqual(ws.cell(row=3, column=12).value, "=J3-K3")
 
         # Check calculated averages
         expected_avg_current_turnover = (5.73 + 4.05) / 2
@@ -192,9 +191,9 @@ class TestDailyStoreTrackingGenerator(unittest.TestCase):
         self.assertAlmostEqual(
             ws.cell(row=3, column=7).value, expected_avg_prev_turnover, places=2)
         self.assertAlmostEqual(
-            ws.cell(row=3, column=11).value, expected_avg_current_revenue, places=2)
+            ws.cell(row=3, column=10).value, expected_avg_current_revenue, places=2)
         self.assertAlmostEqual(
-            ws.cell(row=3, column=12).value, expected_avg_prev_revenue, places=2)
+            ws.cell(row=3, column=11).value, expected_avg_prev_revenue, places=2)
 
     def test_store_data_addition(self):
         """Test individual store data addition with formulas."""
@@ -221,9 +220,9 @@ class TestDailyStoreTrackingGenerator(unittest.TestCase):
                          6.71)  # Previous turnover
 
         # Check revenue data
-        self.assertEqual(ws.cell(row=4, column=11).value,
+        self.assertEqual(ws.cell(row=4, column=10).value,
                          4.396)  # Current revenue
-        self.assertEqual(ws.cell(row=4, column=12).value,
+        self.assertEqual(ws.cell(row=4, column=11).value,
                          3.964)  # Previous revenue
 
         # Check second store data (row 5)
@@ -244,25 +243,26 @@ class TestDailyStoreTrackingGenerator(unittest.TestCase):
         # Check comparison formulas
         self.assertEqual(ws.cell(row=4, column=8).value,
                          "=F4-G4")  # Turnover comparison
+        self.assertEqual(ws.cell(row=4, column=12).value,
+                         "=J4-K4")  # Revenue comparison
+
+        # Check normalized scoring formulas (only improvement scores now)
+        expected_turnover_improvement = "=(H4-MIN($H$4:$H$5))/(MAX($H$4:$H$5)-MIN($H$4:$H$5))"
+        expected_revenue_improvement = "=(L4-MIN($L$4:$L$5))/(MAX($L$4:$L$5)-MIN($L$4:$L$5))"
+
+        self.assertEqual(ws.cell(row=4, column=9).value,
+                         expected_turnover_improvement)
         self.assertEqual(ws.cell(row=4, column=13).value,
-                         "=K4-L4")  # Revenue comparison
+                         expected_revenue_improvement)
 
-        # Check normalized scoring formulas
-        expected_basic_score = "=(F4-MIN($F$4:$F$5))/(MAX($F$4:$F$5)-MIN($F$4:$F$5))"
-        expected_improvement_score = "=(H4-MIN($H$4:$H$5))/(MAX($H$4:$H$5)-MIN($H$4:$H$5))"
-
-        self.assertEqual(ws.cell(row=4, column=9).value, expected_basic_score)
-        self.assertEqual(ws.cell(row=4, column=10).value,
-                         expected_improvement_score)
-
-        # Check comprehensive scoring formula
-        expected_comprehensive = "=I4*0.25+J4*0.25+N4*0.25+O4*0.25"
-        self.assertEqual(ws.cell(row=4, column=16).value,
+        # Check comprehensive scoring formula (now 50% weight each)
+        expected_comprehensive = "=I4*0.5+M4*0.5"
+        self.assertEqual(ws.cell(row=4, column=14).value,
                          expected_comprehensive)
 
         # Check ranking formula
-        expected_ranking = "=RANK(P4,$P$4:$P$5)"
-        self.assertEqual(ws.cell(row=4, column=17).value, expected_ranking)
+        expected_ranking = "=RANK(N4,$N$4:$N$5)"
+        self.assertEqual(ws.cell(row=4, column=15).value, expected_ranking)
 
     def test_worksheet_formatting(self):
         """Test worksheet formatting and styling."""
@@ -278,7 +278,7 @@ class TestDailyStoreTrackingGenerator(unittest.TestCase):
         # Check column widths
         self.assertEqual(ws.column_dimensions['A'].width, 6)
         self.assertEqual(ws.column_dimensions['B'].width, 15)
-        self.assertEqual(ws.column_dimensions['P'].width, 10)
+        self.assertEqual(ws.column_dimensions['N'].width, 10)
 
         # Check freeze panes
         self.assertEqual(ws.freeze_panes, "A3")
@@ -305,8 +305,8 @@ class TestDailyStoreTrackingGenerator(unittest.TestCase):
         self.assertEqual(ws.cell(row=3, column=6).value,
                          0)  # Average should be 0
         self.assertEqual(ws.cell(row=3, column=7).value, 0)
+        self.assertEqual(ws.cell(row=3, column=10).value, 0)
         self.assertEqual(ws.cell(row=3, column=11).value, 0)
-        self.assertEqual(ws.cell(row=3, column=12).value, 0)
 
     def test_date_formatting_in_headers(self):
         """Test correct date formatting in headers."""
@@ -370,8 +370,8 @@ class TestDailyStoreTrackingGenerator(unittest.TestCase):
     def test_comprehensive_score_calculation_logic(self):
         """Test the logic behind comprehensive score calculation."""
         # The comprehensive score should be:
-        # 25% * Basic Turnover Score + 25% * Improvement Turnover Score +
-        # 25% * Basic Revenue Score + 25% * Improvement Revenue Score
+        # 50% * Improvement Turnover Score + 50% * Improvement Revenue Score
+        # (Basic scores have been removed)
 
         workbook = Workbook()
         ws = workbook.active
@@ -396,14 +396,14 @@ class TestDailyStoreTrackingGenerator(unittest.TestCase):
 
         self.generator._add_store_data(ws, test_data, target_dt, prev_year_dt)
 
-        # Check the comprehensive score formula
-        comprehensive_formula = ws.cell(row=4, column=16).value
+        # Check the comprehensive score formula (now 50% weight each)
+        comprehensive_formula = ws.cell(row=4, column=14).value
         self.assertEqual(comprehensive_formula,
-                         "=I4*0.25+J4*0.25+N4*0.25+O4*0.25")
+                         "=I4*0.5+M4*0.5")
 
-        # Verify each component has equal weight (25%)
-        self.assertIn("*0.25", comprehensive_formula)
-        self.assertEqual(comprehensive_formula.count("*0.25"), 4)
+        # Verify each component has equal weight (50%)
+        self.assertIn("*0.5", comprehensive_formula)
+        self.assertEqual(comprehensive_formula.count("*0.5"), 2)
 
 
 if __name__ == '__main__':
