@@ -177,7 +177,8 @@ class BankExtractor(ABC):
         try:
             if isinstance(date_value, str):
                 # Try common date formats
-                for fmt in ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%b %d, %Y', '%B %d, %Y']:
+                # Added '%d-%m-%Y' format for DD-MM-YYYY (like 03-09-2025)
+                for fmt in ['%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%m/%d/%Y', '%Y/%m/%d', '%m-%d-%Y', '%b %d, %Y', '%B %d, %Y']:
                     try:
                         parsed_date = datetime.strptime(date_value, fmt)
                         return parsed_date.strftime('%Y-%m-%d')  # Changed to YYYY-MM-DD format

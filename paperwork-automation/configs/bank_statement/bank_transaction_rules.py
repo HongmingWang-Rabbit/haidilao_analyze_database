@@ -994,7 +994,7 @@ FIRST DATA CANADA\(J\)''', re.IGNORECASE | re.MULTILINE),
         amount_pattern=('<=', 300)
     ), {
         "品名": TransactionType.ELECTRICITY_FEE.value,
-        "付款详情": "三店员工宿舍电费",
+        "付款详情": "员工宿舍燃气费",
         "单据号": True,
         "附件": False,
         "是否登记线下付款表": False,
@@ -1007,7 +1007,7 @@ FIRST DATA CANADA\(J\)''', re.IGNORECASE | re.MULTILINE),
         amount_pattern=('>=', 500)
     ), {
         "品名": TransactionType.ELECTRICITY_FEE.value,
-        "付款详情": "三店门店燃气费",
+        "付款详情": "门店燃气费",
         "单据号": True,
         "附件": False,
         "是否登记线下付款表": False,
