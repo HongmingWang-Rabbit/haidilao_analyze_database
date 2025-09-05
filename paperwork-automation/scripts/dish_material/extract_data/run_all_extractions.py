@@ -283,7 +283,7 @@ def main():
         # Print database statistics
         try:
             # Add parent directories to path for imports
-            sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+            sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
             from utils.database import DatabaseManager, DatabaseConfig
             
             db_config = DatabaseConfig(is_test=args.test)

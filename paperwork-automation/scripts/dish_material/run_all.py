@@ -10,7 +10,7 @@ import argparse
 import sys
 import subprocess
 from pathlib import Path
-from file_discovery import discover_all_files
+from extract_data.file_discovery import discover_all_files
 
 def run_extraction(script_name, year, month, input_file=None):
     """Run an extraction script."""
@@ -51,7 +51,7 @@ def main():
     # 1. Dishes
     if discovered_files.get('dish_sales'):
         # Use --input-dir for dish extraction (it accepts both file and dir)
-        if not run_extraction('extract_dishes_to_database.py', args.year, args.month,
+        if not run_extraction('extract_data/extract_dishes_to_database.py', args.year, args.month,
                              str(discovered_files['dish_sales'])):
             print("[WARNING] Dish extraction had issues")
             success = False
@@ -60,7 +60,7 @@ def main():
     
     # 2. Materials  
     if discovered_files.get('materials'):
-        if not run_extraction('extract_materials_to_database.py', args.year, args.month,
+        if not run_extraction('extract_data/extract_materials_to_database.py', args.year, args.month,
                              str(discovered_files['materials'])):
             print("[WARNING] Material extraction had issues")
             success = False
@@ -69,7 +69,7 @@ def main():
     
     # 3. Mappings
     if discovered_files.get('dish_material_mapping'):
-        if not run_extraction('extract_dish_material_mapping.py', args.year, args.month,
+        if not run_extraction('extract_data/extract_dish_material_mapping.py', args.year, args.month,
                              str(discovered_files['dish_material_mapping'])):
             print("[WARNING] Mapping extraction had issues")
             success = False
@@ -78,7 +78,7 @@ def main():
     
     # 4. Combo Sales
     if discovered_files.get('combo_sales'):
-        if not run_extraction('extract_combo_sales_to_database.py', args.year, args.month,
+        if not run_extraction('extract_data/extract_combo_sales_to_database.py', args.year, args.month,
                              str(discovered_files['combo_sales'])):
             print("[WARNING] Combo sales extraction had issues")
             success = False
@@ -87,14 +87,14 @@ def main():
     
     # 5. Inventory
     if discovered_files.get('inventory'):
-        if not run_extraction('extract_inventory_to_database.py', args.year, args.month):
+        if not run_extraction('extract_data/extract_inventory_to_database.py', args.year, args.month):
             print("[WARNING] Inventory extraction had issues")
             success = False
     else:
         print("[WARNING] No inventory folders found - skipping inventory extraction")
     
     # 6. Generate Gross Revenue Report
-    if not run_extraction('generate_gross_revenue_report.py', args.year, args.month):
+    if not run_extraction('generate_report/generate_gross_revenue_report.py', args.year, args.month):
         print("[WARNING] Gross revenue report generation had issues")
         success = False
     

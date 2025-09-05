@@ -22,7 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from configs.dish_material.dish_material_mapping import (
     DISH_MATERIAL_COLUMN_MAPPINGS,
@@ -30,6 +30,7 @@ from configs.dish_material.dish_material_mapping import (
 )
 from lib.excel_utils import safe_read_excel, clean_dish_code
 from utils.database import DatabaseManager, DatabaseConfig
+from scripts.dish_material.extract_data.file_discovery import find_dish_material_mapping_file
 
 # Configure logging
 logging.basicConfig(
@@ -68,13 +69,18 @@ class DishMaterialExtractor:
             Dictionary with extraction statistics
         """
         if input_file is None:
-            # Default input file path
-            input_file = f"Input/monthly_report/calculated_dish_material_usage/inventory_calculation_{year}_{month:02d}.xlsx"
-
-        input_path = Path(input_file)
-        if not input_path.exists():
-            logger.error(f"Input file does not exist: {input_path}")
-            return {'error': 'File not found'}
+            # Use file discovery to find the mapping file
+            mapping_file = find_dish_material_mapping_file(year, month, use_history=True)
+            if mapping_file:
+                input_path = mapping_file
+            else:
+                logger.error(f"Could not find dish-material mapping file for {year}-{month:02d}")
+                return {'error': 'No mapping file found'}
+        else:
+            input_path = Path(input_file)
+            if not input_path.exists():
+                logger.error(f"Input file does not exist: {input_path}")
+                return {'error': 'File not found'}
 
         stats = {
             'rows_processed': 0,

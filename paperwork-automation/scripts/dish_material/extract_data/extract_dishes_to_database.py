@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Set, Tuple
 import pandas as pd
 
 # Add parent directory to path for imports - MUST come before local imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from utils.database import DatabaseManager, DatabaseConfig
 from lib.excel_utils import safe_read_excel, clean_dish_code
@@ -28,6 +28,7 @@ from configs.dish_material.dish_sales_extraction import (
     DISH_COLUMN_MAPPINGS,
     DISH_FILE_STOREID_MAPPING
 )
+from scripts.dish_material.extract_data.file_discovery import find_dish_sales_file
 
 
 # Configure logging
@@ -66,13 +67,19 @@ class DishExtractor:
             Dictionary with extraction statistics
         """
         if input_dir is None:
-            # Default input directory structure
-            input_dir = f"Input/monthly_report/{year}_{month:02d}"
-
-        input_path = Path(input_dir)
-        if not input_path.exists():
-            logger.error(f"Input path does not exist: {input_path}")
-            return {'error': 'Path not found'}
+            # Use file discovery to find the dish sales file
+            dish_file = find_dish_sales_file(year, month, use_history=True)
+            if dish_file:
+                # If a single file is found, use its parent directory or the file itself
+                input_path = dish_file if dish_file.is_file() else dish_file
+            else:
+                logger.error(f"Could not find dish sales file for {year}-{month:02d}")
+                return {'error': 'No dish sales file found'}
+        else:
+            input_path = Path(input_dir)
+            if not input_path.exists():
+                logger.error(f"Input path does not exist: {input_path}")
+                return {'error': 'Path not found'}
 
         stats = {
             'files_processed': 0,

@@ -19,10 +19,11 @@ from typing import Dict, List, Optional
 import pandas as pd
 
 # Add parent directory to path for imports - MUST come before local imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from utils.database import DatabaseManager, DatabaseConfig
 from lib.excel_utils import safe_read_excel, clean_dish_code
+from scripts.dish_material.extract_data.file_discovery import find_combo_sales_file
 from configs.dish_material.combo_sales_extraction import (
     COMBO_SALES_COLUMN_MAPPINGS,
     COMBO_STORE_MAPPING,
@@ -64,13 +65,18 @@ class ComboSalesExtractor:
             Dictionary with extraction statistics
         """
         if input_file is None:
-            # Default input file path
-            input_file = f"Input/monthly_report/monthly_combo_sale/combo_sales_{year}_{month:02d}.xlsx"
-
-        input_path = Path(input_file)
-        if not input_path.exists():
-            logger.error(f"Input file does not exist: {input_path}")
-            return {'error': 'File not found'}
+            # Use file discovery to find the combo sales file
+            combo_file = find_combo_sales_file(year, month, use_history=True)
+            if combo_file:
+                input_path = combo_file
+            else:
+                logger.warning(f"Could not find combo sales file for {year}-{month:02d} (this is optional)")
+                return {'error': 'No combo sales file found', 'files_processed': 0}
+        else:
+            input_path = Path(input_file)
+            if not input_path.exists():
+                logger.error(f"Input file does not exist: {input_path}")
+                return {'error': 'File not found'}
 
         stats = {
             'rows_processed': 0,

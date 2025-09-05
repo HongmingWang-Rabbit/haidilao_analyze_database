@@ -21,13 +21,13 @@ import re
 from datetime import datetime
 
 # Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from utils.database import DatabaseManager, DatabaseConfig
-from scripts.dish_material.extract_dishes_to_database import DishExtractor
-from scripts.dish_material.extract_materials_to_database import MaterialExtractor
-from scripts.dish_material.extract_dish_material_mapping import DishMaterialExtractor
-from scripts.dish_material.file_discovery import (
+from scripts.dish_material.extract_data.extract_dishes_to_database import DishExtractor
+from scripts.dish_material.extract_data.extract_materials_to_database import MaterialExtractor
+from scripts.dish_material.extract_data.extract_dish_material_mapping import DishMaterialExtractor
+from scripts.dish_material.extract_data.file_discovery import (
     find_dish_sales_file,
     find_material_file,
     find_dish_material_mapping_file,

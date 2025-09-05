@@ -2,46 +2,87 @@
 
 This folder contains scripts for extracting and managing dish, material, and dish-material mapping (BOM) data for Haidilao restaurants.
 
+## Directory Structure
+
+```
+dish_material/
+├── extract_data/          # Data extraction scripts
+│   ├── extract_dishes_to_database.py
+│   ├── extract_materials_to_database.py
+│   ├── extract_dish_material_mapping.py
+│   ├── extract_combo_sales_to_database.py
+│   ├── extract_inventory_to_database.py
+│   ├── extract_all_historical_data.py
+│   ├── file_discovery.py
+│   └── run_all_extractions.py
+├── generate_report/       # Report generation scripts
+│   └── generate_gross_revenue_report.py
+├── run_all.py            # Simple orchestration script
+└── README.md
+```
+
 ## Scripts Overview
 
-### 1. `extract_dishes_to_database.py`
+### Data Extraction Scripts (`extract_data/`)
+
+#### 1. `extract_data/extract_dishes_to_database.py`
 Extracts dish information from monthly sales Excel files.
 - **Input**: Excel files with sheet "菜品销售汇总表" 
 - **Default Path**: `Input/monthly_report/{year}_{month:02d}/`
 - **Creates**: Dishes, dish types, dish prices, dish sales
 
-### 2. `extract_materials_to_database.py`
+#### 2. `extract_data/extract_materials_to_database.py`
 Extracts material master data from SAP export files.
 - **Input**: export.XLSX file from material detail
 - **Default Path**: `Input/monthly_report/material_detail/export.XLSX`
 - **Creates**: Materials (store-specific), material types, material prices, material usage
 
-### 3. `extract_dish_material_mapping.py`
+#### 3. `extract_data/extract_dish_material_mapping.py`
 Creates BOM (Bill of Materials) relationships between dishes and materials.
 - **Input**: Calculated dish material usage Excel file
 - **Default Path**: `Input/monthly_report/calculated_dish_material_usage/inventory_calculation_*.xlsx`
 - **Creates**: Dish-material mappings with quantities and waste factors
 
-### 4. `run_all.py` (Simple Index)
+#### 4. `extract_data/extract_combo_sales_to_database.py`
+Extracts combo dish sales data.
+- **Input**: Excel files with combo sales information
+- **Creates**: Combo sales records with component dishes
+
+#### 5. `extract_data/extract_inventory_to_database.py`
+Extracts inventory count data from store inventory files.
+- **Input**: Store-specific inventory Excel files
+- **Creates**: Inventory count records by store and date
+
+#### 6. `extract_data/run_all_extractions.py` (Advanced Pipeline)
+Comprehensive extraction pipeline with options to skip steps and use custom inputs.
+```bash
+# Run all extractions
+python extract_data/run_all_extractions.py --year 2025 --month 7
+
+# Skip specific steps
+python extract_data/run_all_extractions.py --year 2025 --month 7 --skip-materials
+
+# Use custom input files
+python extract_data/run_all_extractions.py --year 2025 --month 7 \
+    --material-input "path/to/export.XLSX" \
+    --mapping-input "path/to/mapping.xlsx"
+```
+
+### Report Generation Scripts (`generate_report/`)
+
+#### 1. `generate_report/generate_gross_revenue_report.py`
+Generates gross revenue and profitability reports for dishes.
+- **Input**: Database data from extracted dishes, materials, and mappings
+- **Output**: Profitability analysis with revenue, costs, and margins
+
+### Orchestration Scripts
+
+#### `run_all.py` (Simple Index)
 Runs all three extraction scripts in sequence with default inputs.
 ```bash
 python run_all.py --year 2025 --month 7
 ```
 
-### 5. `run_all_extractions.py` (Advanced Index)
-Comprehensive extraction pipeline with options to skip steps and use custom inputs.
-```bash
-# Run all extractions
-python run_all_extractions.py --year 2025 --month 7
-
-# Skip specific steps
-python run_all_extractions.py --year 2025 --month 7 --skip-materials
-
-# Use custom input files
-python run_all_extractions.py --year 2025 --month 7 \
-    --material-input "path/to/export.XLSX" \
-    --mapping-input "path/to/mapping.xlsx"
-```
 
 ## Extraction Order
 
@@ -103,9 +144,12 @@ python -c "from utils.database import DatabaseManager, DatabaseConfig; ..."
 python run_all.py --year 2025 --month 7
 
 # Or run individually
-python extract_dishes_to_database.py --year 2025 --month 7
-python extract_materials_to_database.py --year 2025 --month 7
-python extract_dish_material_mapping.py --year 2025 --month 7
+python extract_data/extract_dishes_to_database.py --year 2025 --month 7
+python extract_data/extract_materials_to_database.py --year 2025 --month 7
+python extract_data/extract_dish_material_mapping.py --year 2025 --month 7
+
+# Generate gross revenue report
+python generate_report/generate_gross_revenue_report.py --year 2025 --month 7
 ```
 
 ## Output Statistics

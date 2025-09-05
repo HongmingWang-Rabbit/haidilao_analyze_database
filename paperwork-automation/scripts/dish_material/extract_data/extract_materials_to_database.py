@@ -21,7 +21,7 @@ import pandas as pd
 from datetime import datetime
 
 # Add parent directory to path for imports - MUST come before local imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from configs.dish_material.material_extraction import (
     MATERIAL_COLUMN_MAPPINGS, 
@@ -30,6 +30,7 @@ from configs.dish_material.material_extraction import (
 )
 from lib.excel_utils import safe_read_excel, get_material_reading_dtype
 from utils.database import DatabaseManager, DatabaseConfig
+from scripts.dish_material.extract_data.file_discovery import find_material_file
 
 # Configure logging
 logging.basicConfig(
@@ -67,13 +68,18 @@ class MaterialExtractor:
             Dictionary with extraction statistics
         """
         if input_file is None:
-            # Default input file path
-            input_file = "Input/monthly_report/material_detail/export.XLSX"
-        
-        input_path = Path(input_file)
-        if not input_path.exists():
-            logger.error(f"Input file does not exist: {input_path}")
-            return {'error': 'File not found'}
+            # Use file discovery to find the material file
+            material_file = find_material_file(year, month, use_history=True)
+            if material_file:
+                input_path = material_file
+            else:
+                logger.error(f"Could not find material file for {year}-{month:02d}")
+                return {'error': 'No material file found'}
+        else:
+            input_path = Path(input_file)
+            if not input_path.exists():
+                logger.error(f"Input file does not exist: {input_path}")
+                return {'error': 'File not found'}
         
         stats = {
             'rows_processed': 0,

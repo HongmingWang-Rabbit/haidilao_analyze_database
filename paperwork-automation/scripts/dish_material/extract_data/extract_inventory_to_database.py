@@ -21,7 +21,7 @@ import pandas as pd
 from datetime import datetime
 
 # Add parent directory to path for imports - MUST come before local imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from utils.database import DatabaseManager, DatabaseConfig
 from configs.dish_material.inventory_extraction import (
@@ -30,6 +30,7 @@ from configs.dish_material.inventory_extraction import (
     INVENTORY_STORE_CODE_MAPPING,
     INVENTORY_FILE_PATTERN
 )
+from scripts.dish_material.extract_data.file_discovery import find_inventory_files
 
 # Configure logging
 logging.basicConfig(
@@ -67,18 +68,17 @@ class InventoryExtractor:
             Dictionary with extraction statistics
         """
         if input_dir is None:
-            if use_history_files:
-                # Use history files structure
-                base_dir = Path("history_files/monthly_report_inputs")
-                input_dir = base_dir / f"{year}-{month:02d}" / "inventory_checking_result"
-            else:
-                # Default input directory
-                input_dir = Path("Input/monthly_report/inventory_checking_result")
-
-        input_path = Path(input_dir)
-        if not input_path.exists():
-            logger.error(f"Input directory does not exist: {input_path}")
-            return {'error': 'Directory not found'}
+            # Use file discovery to find inventory folders
+            store_folders = find_inventory_files(year, month, use_history=use_history_files)
+            if not store_folders:
+                logger.warning(f"No inventory files found for {year}-{month:02d}")
+                return {'error': 'No inventory files found', 'files_processed': 0}
+        else:
+            input_path = Path(input_dir)
+            if not input_path.exists():
+                logger.error(f"Input directory does not exist: {input_path}")
+                return {'error': 'Directory not found'}
+            store_folders = list(input_path.iterdir())
 
         logger.info(f"Processing inventory for {year}-{month:02d}")
 
@@ -93,7 +93,7 @@ class InventoryExtractor:
         }
 
         # Process each store folder
-        for store_folder in input_path.iterdir():
+        for store_folder in store_folders:
             if not store_folder.is_dir():
                 continue
             
