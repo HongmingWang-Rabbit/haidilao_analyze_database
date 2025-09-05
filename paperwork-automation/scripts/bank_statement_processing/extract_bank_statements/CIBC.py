@@ -72,8 +72,8 @@ def extract_cibc_sheet_infomation(
                               'Amount', 'Bank reference', 'Client reference', 
                               'TOTAL DEBIT AMOUNT', 'TOTAL CREDIT AMOUNT']
             
-            # Verify required columns exist
-            required_columns = ['Ledger date', 'Transaction type', 'Description', 'Amount']
+            # Verify required columns exist - using Value date instead of Ledger date
+            required_columns = ['Value date', 'Transaction type', 'Description', 'Amount']
             missing_columns = [col for col in required_columns if col not in df.columns]
             if missing_columns:
                 logger.error(f"Missing required columns: {missing_columns}")
@@ -92,8 +92,8 @@ def extract_cibc_sheet_infomation(
                               'Transaction type', 'Description', 'Value date', 'Amount', 
                               'Bank reference', 'Client reference', 'TRANSACTION AMOUNT']
             
-            # Verify required columns exist
-            required_columns = ['Ledger date', 'Transaction type', 'Description', 'Amount']
+            # Verify required columns exist - using Value date instead of Ledger date
+            required_columns = ['Value date', 'Transaction type', 'Description', 'Amount']
             missing_columns = [col for col in required_columns if col not in df.columns]
             if missing_columns:
                 logger.error(f"Missing required columns: {missing_columns}")
@@ -112,8 +112,8 @@ def extract_cibc_sheet_infomation(
             try:
                 record = BankRecord()
                 
-                # Parse date from M/D/YYYY format
-                date_value = row['Ledger date']
+                # Parse date from M/D/YYYY format - using Value date
+                date_value = row['Value date']
                 if pd.notna(date_value):
                     # Handle date parsing - CIBC uses M/D/YYYY format
                     record.date = pd.to_datetime(str(date_value), format='%m/%d/%Y', errors='coerce')
