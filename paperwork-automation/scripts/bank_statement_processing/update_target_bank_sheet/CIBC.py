@@ -118,12 +118,12 @@ def append_cibc_records_to_worksheet(wb, sheet_name: str, new_records: List[Bank
     
     # Append each record
     for record in sorted_records:
-        # Column A: Date (format as "28-08-2025")
+        # Column A: Date - write as datetime object so Excel can format it properly
         if record.date:
-            date_str = record.date.strftime("%d-%m-%Y")
-            ws.cell(row=current_row, column=1, value=date_str)
-        else:
+            # Write the datetime object directly, Excel will handle formatting
             ws.cell(row=current_row, column=1, value=record.date)
+        else:
+            ws.cell(row=current_row, column=1, value=None)
         
         # Column B: Transaction details (full description)
         # Replace newlines with spaces for cleaner display
