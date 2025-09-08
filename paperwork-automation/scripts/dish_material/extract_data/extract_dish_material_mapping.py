@@ -182,6 +182,12 @@ class DishMaterialExtractor:
             for col in numeric_columns:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            
+            # Log sample values for debugging
+            if 'waste_percentage' in df.columns:
+                sample_values = df['waste_percentage'].dropna().head(5).tolist()
+                if sample_values:
+                    logger.info(f"Sample waste_percentage values from Excel: {sample_values}")
 
             # Map store names to IDs
             if 'store_name' in df.columns:
@@ -498,9 +504,25 @@ class DishMaterialExtractor:
                     unit_conversion_rate = 1.0
 
                 # Loss rate from waste_percentage (损耗)
+                # The waste_percentage should be converted to loss_rate
+                # If waste_percentage is already in decimal format (e.g., 1.1 for 10% loss), use it directly
+                # If it's in percentage format (e.g., 10 for 10%), convert it
                 loss_rate = 1.0
                 if 'waste_percentage' in row and not pd.isna(row['waste_percentage']):
-                    loss_rate = float(row['waste_percentage'])
+                    waste_val = float(row['waste_percentage'])
+                    # Only process non-zero values
+                    if waste_val != 0:
+                        # If the value is greater than 2, it's likely in percentage format (e.g., 10 for 10%)
+                        # Convert to decimal format (1.1 for 10% loss)
+                        if waste_val > 2:
+                            loss_rate = 1 + (waste_val / 100)
+                        else:
+                            # Already in decimal format (e.g., 1.1 for 10% loss)
+                            loss_rate = waste_val
+                        
+                        # Log the conversion for debugging
+                        if waste_val != loss_rate:
+                            logger.debug(f"Converted waste_percentage {waste_val} to loss_rate {loss_rate} for dish {dish_code}")
 
                 # Check if mapping exists
                 cursor.execute(
@@ -519,6 +541,10 @@ class DishMaterialExtractor:
                         (standard_quantity, loss_rate, unit_conversion_rate, result['id'])
                     )
                     stats['mappings_updated'] += 1
+                    logger.debug(
+                        f"Updated mapping for dish {dish_code} to material {material_number}: "
+                        f"standard_qty={standard_quantity}, loss_rate={loss_rate}, unit_conv={unit_conversion_rate}"
+                    )
                 else:
                     # Create new mapping
                     cursor.execute(
@@ -528,9 +554,10 @@ class DishMaterialExtractor:
                         (dish_id, material_id, store_id, standard_quantity, loss_rate, unit_conversion_rate)
                     )
                     stats['mappings_created'] += 1
-
-                logger.debug(
-                    f"Mapped dish {dish_code} to material {material_number} for store {store_id}")
+                    logger.debug(
+                        f"Created mapping for dish {dish_code} to material {material_number}: "
+                        f"standard_qty={standard_quantity}, loss_rate={loss_rate}, unit_conv={unit_conversion_rate}"
+                    )
 
             except Exception as e:
                 logger.error(
