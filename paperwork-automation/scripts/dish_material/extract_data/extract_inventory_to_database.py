@@ -198,6 +198,13 @@ class InventoryExtractor:
                 # Remove rows with invalid quantities
                 df = df[df['count_quantity'].notna()]
             
+            # Also convert stock_quantity if present
+            if 'stock_quantity' in df.columns:
+                df['stock_quantity'] = pd.to_numeric(df['stock_quantity'], errors='coerce')
+                # Calculate actual usage: stock_quantity - count_quantity
+                df['actual_usage'] = df['stock_quantity'] - df['count_quantity']
+                logger.info(f"Calculated actual usage for {len(df)} materials")
+            
             return df
             
         except Exception as e:
@@ -227,6 +234,10 @@ class InventoryExtractor:
                     continue
                 
                 count_quantity = float(row['count_quantity'])
+                
+                # Get stock_quantity and actual_usage if available
+                stock_quantity = float(row['stock_quantity']) if 'stock_quantity' in row else None
+                actual_usage = float(row['actual_usage']) if 'actual_usage' in row else None
                 
                 # Look up material by code and store
                 material_id = self._get_material_id(cursor, material_code, store_id)
@@ -267,6 +278,20 @@ class InventoryExtractor:
                     )
                     stats['counts_created'] += 1
                     logger.debug(f"Created count for material {material_code}: {count_quantity}")
+                
+                # If we have actual_usage calculated, update material_monthly_usage
+                if actual_usage is not None and stock_quantity is not None:
+                    # Update or insert into material_monthly_usage with the correct actual usage
+                    cursor.execute(
+                        """INSERT INTO material_monthly_usage 
+                           (material_id, store_id, month, year, material_used)
+                           VALUES (%s, %s, %s, %s, %s)
+                           ON CONFLICT (material_id, store_id, month, year) 
+                           DO UPDATE SET 
+                               material_used = EXCLUDED.material_used""",
+                        (material_id, store_id, month, year, actual_usage)
+                    )
+                    logger.debug(f"Updated material_monthly_usage for {material_code}: stock={stock_quantity:.2f}, count={count_quantity:.2f}, usage={actual_usage:.2f}")
                 
             except Exception as e:
                 logger.error(f"Error updating count for material {row.get('material_code', 'UNKNOWN')}: {e}")

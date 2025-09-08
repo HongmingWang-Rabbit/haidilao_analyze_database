@@ -48,34 +48,20 @@ def get_material_usage_data_from_database(db_manager: DatabaseManager, year: int
     with db_manager.get_connection() as conn:
         cursor = conn.cursor()
         
-        # Get actual material usage (monthly usage minus inventory count)
+        # Get actual material usage (directly from material_monthly_usage which now stores the pre-calculated actual usage)
         actual_usage_query = """
-        WITH inventory_data AS (
-            SELECT 
-                ic.material_id,
-                ic.store_id,
-                SUM(ic.counted_quantity) as ending_inventory
-            FROM inventory_count ic
-            WHERE ic.year = %s
-              AND ic.month = %s
-              AND ic.store_id = %s
-            GROUP BY ic.material_id, ic.store_id
-        )
         SELECT 
             m.material_number,
             m.description as material_name,
-            mmu.material_used as monthly_usage,
-            COALESCE(id.ending_inventory, 0) as ending_inventory,
-            mmu.material_used - COALESCE(id.ending_inventory, 0) as actual_usage
+            mmu.material_used as actual_usage
         FROM material_monthly_usage mmu
         JOIN material m ON m.id = mmu.material_id AND m.store_id = mmu.store_id
-        LEFT JOIN inventory_data id ON id.material_id = mmu.material_id AND id.store_id = mmu.store_id
         WHERE mmu.year = %s
           AND mmu.month = %s
           AND mmu.store_id = %s
         """
         
-        cursor.execute(actual_usage_query, (year, month, store_id, year, month, store_id))
+        cursor.execute(actual_usage_query, (year, month, store_id))
         actual_usage_data = cursor.fetchall()
         
         for row in actual_usage_data:
@@ -139,7 +125,7 @@ def get_material_usage_data_from_database(db_manager: DatabaseManager, year: int
             dm.standard_quantity,
             dm.loss_rate,
             dm.unit_conversion_rate as unit_conversion,
-            (ds.quantity_sold * dm.standard_quantity * (1 + COALESCE(dm.loss_rate, 0)) / COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1)) as theory_usage
+            (ds.quantity_sold * dm.standard_quantity * COALESCE(dm.loss_rate, 0) / COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1)) as theory_usage
         FROM dish_sales ds
         JOIN dish d2 ON d2.id = (
             -- Try to find the best matching dish with material mappings
@@ -359,8 +345,8 @@ def write_material_usage_to_sheet(worksheet, db_manager: DatabaseManager, year: 
                     theory_source = (f"{detail['dish_name']} {detail['dish_code']} "
                                    f"实收数量:{detail['quantity_sold']:.0f} "
                                    f"出品分量(kg):{detail['standard_quantity']:.2f} "
-                                   f"损耗:{detail['loss_rate']:.1f} "
-                                   f"物料单位:{detail['unit_conversion']:.1f} "
+                                   f"损耗:{detail['loss_rate']:.2f} "
+                                   f"物料单位:{detail['unit_conversion']:.2f} "
                                    f"计算用量:{detail['usage']:.2f}")
                 else:
                     # Normal format (default)
