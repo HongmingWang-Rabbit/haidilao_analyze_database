@@ -73,6 +73,9 @@ def get_material_usage_data_from_database(db_manager: DatabaseManager, year: int
             }
         
         # Get theoretical usage from dish sales (including combo sales)
+        # IMPORTANT: Only dishes with EXACT size matches in dish_material mappings are included
+        # If a dish size (e.g., 小锅) doesn't have material mappings, it will be excluded
+        # from the calculation rather than using another size's mappings
         theory_usage_query = """
         WITH dish_sales AS (
             -- Regular dish sales
@@ -128,18 +131,16 @@ def get_material_usage_data_from_database(db_manager: DatabaseManager, year: int
             (ds.quantity_sold * dm.standard_quantity * COALESCE(dm.loss_rate, 0) / COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1)) as theory_usage
         FROM dish_sales ds
         JOIN dish d2 ON d2.id = (
-            -- Try to find the best matching dish with material mappings
+            -- Find EXACT matching dish with material mappings (must match size exactly)
             SELECT d3.id
             FROM dish d3
             WHERE d3.full_code = ds.original_full_code 
+              AND (
+                  (d3.size = ds.dish_size) OR 
+                  (d3.size IS NULL AND ds.dish_size IS NULL)
+              )
               AND d3.id IN (SELECT dish_id FROM dish_material WHERE store_id = %s)
-            ORDER BY 
-              -- Prefer exact size match
-              CASE WHEN d3.size = ds.dish_size THEN 0 
-                   WHEN d3.size IS NULL AND ds.dish_size IS NULL THEN 0
-                   ELSE 1 
-              END,
-              d3.id
+            ORDER BY d3.id
             LIMIT 1
         )
         JOIN dish_material dm ON dm.dish_id = d2.id AND dm.store_id = %s
