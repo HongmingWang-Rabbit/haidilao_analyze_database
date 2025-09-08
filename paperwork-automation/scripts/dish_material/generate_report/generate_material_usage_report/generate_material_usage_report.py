@@ -31,7 +31,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def generate_material_usage_report(year: int, month: int, output_dir: str = None, test_db: bool = False):
+def generate_material_usage_report(year: int, month: int, output_dir: str = None, test_db: bool = False, debug: bool = False):
     """
     Generate material usage comparison report for all stores.
     
@@ -40,6 +40,7 @@ def generate_material_usage_report(year: int, month: int, output_dir: str = None
         month: Target month (1-12)
         output_dir: Output directory for the Excel file
         test_db: Use test database if True
+        debug: If True, include detailed calculation info in the output
     """
     # Set up output directory
     if output_dir is None:
@@ -80,7 +81,8 @@ def generate_material_usage_report(year: int, month: int, output_dir: str = None
                 year=year,
                 month=month,
                 store_id=store_id,
-                store_name=store_name
+                store_name=store_name,
+                debug=debug
             )
             
             stores_processed += 1
@@ -135,6 +137,11 @@ def main():
         action='store_true',
         help='Use test database'
     )
+    parser.add_argument(
+        '--debug',
+        action='store_true',
+        help='Include detailed calculation info (quantity sold, standard quantity, loss rate, etc.)'
+    )
     
     args = parser.parse_args()
     
@@ -150,6 +157,7 @@ def main():
     print(f"Year: {args.year}")
     print(f"Month: {args.month}")
     print(f"Database: {'Test' if args.test else 'Production'}")
+    print(f"Debug Mode: {'Enabled' if args.debug else 'Disabled'}")
     print("="*60 + "\n")
     
     # Generate report
@@ -157,7 +165,8 @@ def main():
         year=args.year,
         month=args.month,
         output_dir=args.output_dir,
-        test_db=args.test
+        test_db=args.test,
+        debug=args.debug
     )
     
     # Print result
