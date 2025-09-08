@@ -193,6 +193,16 @@ class DishMaterialExtractor:
             if 'store_name' in df.columns:
                 df['store_id'] = df['store_name'].map(
                     DISH_MATERIAL_STOREID_MAPPING)
+                
+                # Log store mapping results
+                store_counts = df.groupby('store_id').size()
+                logger.info(f"Store ID mapping results: {store_counts.to_dict()}")
+                
+                # Check for unmapped stores
+                unmapped = df[df['store_id'].isna()]
+                if not unmapped.empty:
+                    unmapped_stores = unmapped['store_name'].unique()
+                    logger.warning(f"Unmapped store names: {unmapped_stores}")
 
             return df
 
@@ -421,6 +431,9 @@ class DishMaterialExtractor:
     def _create_dish_material_mappings(self, conn, df: pd.DataFrame, year: int, month: int, stats: Dict):
         """Step 4: Create or update dish-material mappings."""
         cursor = conn.cursor()
+        
+        # Track mappings per store for debugging
+        store_mapping_stats = {}
 
         # Group by unique dish-material-store combinations
         required_cols = ['dish_code', 'material_number', 'store_id']
@@ -541,8 +554,14 @@ class DishMaterialExtractor:
                         (standard_quantity, loss_rate, unit_conversion_rate, result['id'])
                     )
                     stats['mappings_updated'] += 1
+                    
+                    # Track per store
+                    if store_id not in store_mapping_stats:
+                        store_mapping_stats[store_id] = {'created': 0, 'updated': 0}
+                    store_mapping_stats[store_id]['updated'] += 1
+                    
                     logger.debug(
-                        f"Updated mapping for dish {dish_code} to material {material_number}: "
+                        f"Updated mapping for dish {dish_code} to material {material_number} (store {store_id}): "
                         f"standard_qty={standard_quantity}, loss_rate={loss_rate}, unit_conv={unit_conversion_rate}"
                     )
                 else:
@@ -554,8 +573,14 @@ class DishMaterialExtractor:
                         (dish_id, material_id, store_id, standard_quantity, loss_rate, unit_conversion_rate)
                     )
                     stats['mappings_created'] += 1
+                    
+                    # Track per store
+                    if store_id not in store_mapping_stats:
+                        store_mapping_stats[store_id] = {'created': 0, 'updated': 0}
+                    store_mapping_stats[store_id]['created'] += 1
+                    
                     logger.debug(
-                        f"Created mapping for dish {dish_code} to material {material_number}: "
+                        f"Created mapping for dish {dish_code} to material {material_number} (store {store_id}): "
                         f"standard_qty={standard_quantity}, loss_rate={loss_rate}, unit_conv={unit_conversion_rate}"
                     )
 
@@ -563,6 +588,12 @@ class DishMaterialExtractor:
                 logger.error(
                     f"Error creating mapping for dish {row.get('dish_code', 'UNKNOWN')}: {e}")
                 stats['errors'] += 1
+        
+        # Log summary per store
+        logger.info("Mapping statistics per store:")
+        for store_id in sorted(store_mapping_stats.keys()):
+            store_stats = store_mapping_stats[store_id]
+            logger.info(f"  Store {store_id}: {store_stats['created']} created, {store_stats['updated']} updated")
 
 
 def main():
