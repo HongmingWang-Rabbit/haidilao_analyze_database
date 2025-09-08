@@ -309,9 +309,9 @@ class HiBowlDailyProcessor:
         # Calculate discount amounts (they come as negative values in the data)
         # Only use 折扣金额（合计） for the total discount amount
         discount_total = abs(df['discount_amount'].sum())
-        summary['total_discount_with_tax'] = discount_total
+        summary['total_discount_with_tax'] = discount_total * 1.13
         # Assuming the discount amount includes 13% tax (GST + QST in Quebec)
-        summary['total_discount_without_tax'] = discount_total / 1.13
+        summary['total_discount_without_tax'] = discount_total 
 
         summary['total_tips'] = df['tips'].sum()
 
@@ -366,8 +366,8 @@ class HiBowlDailyProcessor:
             '22:00-07:59': (22, 8)  # Overnight segment
         }
 
-        # Get hour from open time (do this ONCE outside the loop)
-        df['open_hour'] = df['open_datetime'].dt.hour
+        # Get hour from close time (do this ONCE outside the loop)
+        df['close_hour'] = df['close_datetime'].dt.hour
 
         # Log revenue calculation method
         logger.info("Calculating revenue by deducting 订单税金Tax from 订单税前实收金额Totals")
@@ -387,12 +387,12 @@ class HiBowlDailyProcessor:
 
             if start_hour < end_hour:
                 # Normal case (same day)
-                segment_mask = (df['open_hour'] >= start_hour) & (
-                    df['open_hour'] < end_hour)
+                segment_mask = (df['close_hour'] >= start_hour) & (
+                    df['close_hour'] < end_hour)
             else:
                 # Overnight case (22:00-07:59)
-                segment_mask = (df['open_hour'] >= start_hour) | (
-                    df['open_hour'] < 8)
+                segment_mask = (df['close_hour'] >= start_hour) | (
+                    df['close_hour'] < 8)
 
             # Calculate revenue for this segment (before tax only)
             # Include refunded orders as they already have negative amounts

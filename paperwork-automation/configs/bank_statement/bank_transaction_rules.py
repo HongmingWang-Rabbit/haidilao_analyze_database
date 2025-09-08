@@ -701,6 +701,18 @@ BANK_TRANSACTION_RULES: List[Tuple[TransactionMatchRule, Dict]] = [
         "是否登记支票使用表": False,
     }),
 
+        (TransactionMatchRule(
+        description_pattern=re.compile(r"^VI\d+\s+\d+$"),
+        transaction_type='credit'
+    ), {
+        "品名": TransactionType.INCOME_RECEIVED.value,
+        "付款详情": "Moneris进账",
+        "单据号": False,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
     (TransactionMatchRule(
         description_pattern=re.compile(r"^EF\d+\s+\d+$"),
         transaction_type='credit'
@@ -1068,7 +1080,7 @@ FIRST DATA CANADA\(J\)''', re.IGNORECASE | re.MULTILINE),
         "是否登记支票使用表": False,
     }),
 
-        (TransactionMatchRule(
+    (TransactionMatchRule(
         description_pattern="VW CREDIT CAN   LNS/PRE",
         transaction_type='debit',
         amount_pattern=192.95
@@ -1078,6 +1090,19 @@ FIRST DATA CANADA\(J\)''', re.IGNORECASE | re.MULTILINE),
         "单据号": True,
         "附件": False,
         "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern="ACURA FINANCE   LNS/PRE",
+        transaction_type='debit',
+        amount_pattern=396.37
+    ), {
+        "品名": TransactionType.RENTAL_FEE.value,
+        "付款详情": "三店经理汽车租赁费",
+        "单据号": True,
+        "附件": False,
+        "是否登记线下付款表": False,
         "是否登记支票使用表": False,
     }),
 
