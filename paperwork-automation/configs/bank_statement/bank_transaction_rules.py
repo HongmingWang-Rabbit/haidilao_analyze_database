@@ -1166,4 +1166,16 @@ FIRST DATA CANADA\(J\)''', re.IGNORECASE | re.MULTILINE),
         "是否登记线下付款表": True,
         "是否登记支票使用表": False,
     }),
+
+    (TransactionMatchRule(
+        description_pattern="BELL CANADA",
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.INTERNET_FEE.value,
+        "付款详情": "门店bell网络费用",
+        "单据号": True,
+        "附件": False,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
 ]
