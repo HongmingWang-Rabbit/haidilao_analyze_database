@@ -1178,4 +1178,29 @@ FIRST DATA CANADA\(J\)''', re.IGNORECASE | re.MULTILINE),
         "是否登记线下付款表": True,
         "是否登记支票使用表": False,
     }),
+
+    (TransactionMatchRule(
+        description_pattern="CASH MGMT   INT BOM/B/M",
+        transaction_type='credit'
+    ), {
+        "品名": TransactionType.INTEREST.value,
+        "付款详情": "银行存款利息",
+        "单据号": False,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),    
+    
+    (TransactionMatchRule(
+        description_pattern="TECHNOCHIM      MSP/DIV",
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.LEASE_FEE.value,
+        "付款详情": "洗碗机租赁费",
+        "单据号": True,
+        "附件": False,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
 ]

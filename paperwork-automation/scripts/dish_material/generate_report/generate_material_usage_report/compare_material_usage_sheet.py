@@ -304,19 +304,19 @@ def write_material_usage_to_sheet(worksheet, db_manager: DatabaseManager, year: 
     # Add title and info at the top FIRST
     title_cell = worksheet.cell(row=1, column=1, value=f"{store_name} - 物料理论与实际消耗对比")
     title_cell.font = Font(size=14, bold=True)
-    worksheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=7)
+    worksheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=9)
     title_cell.alignment = Alignment(horizontal='center')
     
     date_cell = worksheet.cell(row=2, column=1, value=f"{year}年{month}月")
     date_cell.font = Font(size=12)
-    worksheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=7)
+    worksheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=9)
     date_cell.alignment = Alignment(horizontal='center')
     
     # Leave a blank row
     header_row = 4
     
     # Set headers
-    headers = ['物料名称', '物料号', '理论消耗来源', '总理论消耗', '实际消耗', '差异', '金额差异', '备注']
+    headers = ['物料名称', '物料号', '理论消耗来源', '总理论消耗', '实际消耗', '数量差异', '差异%', '金额差异', '备注']
     
     # Style for headers
     header_font = Font(bold=True)
@@ -415,7 +415,16 @@ def write_material_usage_to_sheet(worksheet, db_manager: DatabaseManager, year: 
         actual_usage_cell.alignment = Alignment(vertical='center', horizontal='right')
         actual_usage_cell.border = thin_border
         
-        # Difference percentage (merged)
+        # Exact quantity difference (merged) - NEW COLUMN
+        quantity_diff = material_data['actual_usage'] - material_data['theory_usage']
+        quantity_diff_cell = worksheet.cell(row=current_row, column=6, value=round(quantity_diff, 2))
+        if num_details > 1:
+            worksheet.merge_cells(start_row=current_row, start_column=6, 
+                                end_row=current_row + num_details - 1, end_column=6)
+        quantity_diff_cell.alignment = Alignment(vertical='center', horizontal='right')
+        quantity_diff_cell.border = thin_border
+        
+        # Difference percentage (merged) - MOVED TO COLUMN 7
         difference = None
         if material_data['theory_usage'] != 0:
             difference = (material_data['actual_usage'] - material_data['theory_usage']) / material_data['theory_usage']
@@ -423,43 +432,43 @@ def write_material_usage_to_sheet(worksheet, db_manager: DatabaseManager, year: 
         else:
             diff_text = "N/A"
         
-        diff_cell = worksheet.cell(row=current_row, column=6, value=diff_text)
+        diff_cell = worksheet.cell(row=current_row, column=7, value=diff_text)
         if num_details > 1:
-            worksheet.merge_cells(start_row=current_row, start_column=6, 
-                                end_row=current_row + num_details - 1, end_column=6)
+            worksheet.merge_cells(start_row=current_row, start_column=7, 
+                                end_row=current_row + num_details - 1, end_column=7)
         diff_cell.alignment = Alignment(vertical='center', horizontal='center')
         diff_cell.border = thin_border
         
         # We'll apply the highlight fill later with the alternating row colors
         
-        # Amount difference column (merged) - difference amount * material price
+        # Amount difference column (merged) - difference amount * material price - MOVED TO COLUMN 8
         amount_diff = 0.0
         if 'material_price' in material_data:
             usage_diff = material_data['actual_usage'] - material_data['theory_usage']
             amount_diff = usage_diff * material_data['material_price']
         
-        amount_diff_cell = worksheet.cell(row=current_row, column=7, value=round(amount_diff, 2))
-        if num_details > 1:
-            worksheet.merge_cells(start_row=current_row, start_column=7, 
-                                end_row=current_row + num_details - 1, end_column=7)
-        amount_diff_cell.alignment = Alignment(vertical='center', horizontal='right')
-        amount_diff_cell.border = thin_border
-        
-        # Notes column (merged, empty for manual input)
-        notes_cell = worksheet.cell(row=current_row, column=8, value="")
+        amount_diff_cell = worksheet.cell(row=current_row, column=8, value=round(amount_diff, 2))
         if num_details > 1:
             worksheet.merge_cells(start_row=current_row, start_column=8, 
                                 end_row=current_row + num_details - 1, end_column=8)
+        amount_diff_cell.alignment = Alignment(vertical='center', horizontal='right')
+        amount_diff_cell.border = thin_border
+        
+        # Notes column (merged, empty for manual input) - MOVED TO COLUMN 9
+        notes_cell = worksheet.cell(row=current_row, column=9, value="")
+        if num_details > 1:
+            worksheet.merge_cells(start_row=current_row, start_column=9, 
+                                end_row=current_row + num_details - 1, end_column=9)
         notes_cell.border = thin_border
         
         # Apply borders and alternating fills to all cells
         fill_to_use = even_row_fill if material_index % 2 == 0 else odd_row_fill
         for row in range(current_row, current_row + num_details):
-            for col in range(1, 9):  # Now 9 columns with the new amount difference column
+            for col in range(1, 10):  # Now 10 columns with both exact and percentage difference
                 cell = worksheet.cell(row=row, column=col)
                 cell.border = thin_border
-                # Apply alternating fill, but use highlight for large differences in column 6
-                if col == 6 and difference is not None and abs(difference) > 0.2:
+                # Apply alternating fill, but use highlight for large differences in column 7 (percentage)
+                if col == 7 and difference is not None and abs(difference) > 0.2:
                     # Highlight large differences with pink
                     cell.fill = PatternFill(start_color="FFB6C1", end_color="FFB6C1", fill_type="solid")
                 else:
@@ -470,7 +479,7 @@ def write_material_usage_to_sheet(worksheet, db_manager: DatabaseManager, year: 
         material_index += 1  # Increment for next material record
     
     # Auto-adjust column widths
-    column_widths = [30, 15, 50, 15, 15, 10, 15, 20]  # Added width for amount difference column
+    column_widths = [30, 15, 50, 15, 15, 15, 10, 15, 20]  # Added width for exact difference column
     for i, width in enumerate(column_widths, 1):
         worksheet.column_dimensions[get_column_letter(i)].width = width
     
