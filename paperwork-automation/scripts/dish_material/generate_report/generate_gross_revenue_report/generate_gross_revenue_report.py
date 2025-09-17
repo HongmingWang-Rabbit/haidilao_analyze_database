@@ -25,6 +25,9 @@ from scripts.dish_material.generate_report.generate_gross_revenue_report.store_r
 from scripts.dish_material.generate_report.generate_gross_revenue_report.all_stores_summary_sheet import (
     write_all_stores_summary_sheet
 )
+from scripts.dish_material.generate_report.generate_gross_revenue_report.category_comparison_sheet import (
+    write_category_comparison_sheet
+)
 
 # Configure logging
 logging.basicConfig(
@@ -74,6 +77,17 @@ def generate_gross_revenue_report(year: int, month: int, output_dir: str = None,
         month=month
     )
     logger.info("Successfully created summary sheet")
+    
+    # Second, create the category comparison sheet
+    logger.info("Creating category comparison sheet")
+    category_sheet = workbook.create_sheet(title="分类毛利对比", index=1)
+    write_category_comparison_sheet(
+        worksheet=category_sheet,
+        db_manager=db_manager,
+        year=year,
+        month=month
+    )
+    logger.info("Successfully created category comparison sheet")
     
     # Generate sheets for each store
     stores_processed = 0
