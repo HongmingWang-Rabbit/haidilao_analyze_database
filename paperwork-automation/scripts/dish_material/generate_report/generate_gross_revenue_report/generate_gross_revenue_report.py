@@ -22,6 +22,9 @@ from lib.config import STORE_ID_TO_NAME_MAPPING
 from scripts.dish_material.generate_report.generate_gross_revenue_report.store_revenue_sheet import (
     write_store_revenue_sheet
 )
+from scripts.dish_material.generate_report.generate_gross_revenue_report.all_stores_summary_sheet import (
+    write_all_stores_summary_sheet
+)
 
 # Configure logging
 logging.basicConfig(
@@ -60,6 +63,17 @@ def generate_gross_revenue_report(year: int, month: int, output_dir: str = None,
     # Remove default sheet
     if "Sheet" in workbook.sheetnames:
         workbook.remove(workbook["Sheet"])
+    
+    # First, create the summary sheet for all stores
+    logger.info("Creating all stores summary sheet")
+    summary_sheet = workbook.create_sheet(title="全店铺实际毛利汇总", index=0)
+    write_all_stores_summary_sheet(
+        worksheet=summary_sheet,
+        db_manager=db_manager,
+        year=year,
+        month=month
+    )
+    logger.info("Successfully created summary sheet")
     
     # Generate sheets for each store
     stores_processed = 0
