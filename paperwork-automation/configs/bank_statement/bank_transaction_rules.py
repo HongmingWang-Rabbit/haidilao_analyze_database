@@ -1110,7 +1110,7 @@ FIRST DATA CANADA\(J\)''', re.IGNORECASE | re.MULTILINE),
         description_pattern="PROVINCE OF BC  PRO/PRO",
         transaction_type='debit',
     ), {
-        "品名": TransactionType.RENTAL_FEE.value,
+        "品名": TransactionType.TAX_FEE.value,
         "付款详情": "上月PST",
         "单据号": True,
         "附件": False,

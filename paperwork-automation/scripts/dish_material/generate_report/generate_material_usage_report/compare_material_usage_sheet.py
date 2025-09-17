@@ -79,9 +79,7 @@ def get_material_usage_data_from_database(db_manager: DatabaseManager, year: int
             }
         
         # Get theoretical usage from dish sales (including combo sales)
-        # IMPORTANT: Only dishes with EXACT size matches in dish_material mappings are included
-        # If a dish size (e.g., 小锅) doesn't have material mappings, it will be excluded
-        # from the calculation rather than using another size's mappings
+        # IMPORTANT: For combos without short codes, match by full code and use smallest standard_quantity
         theory_usage_query = """
         WITH dish_sales AS (
             -- Regular dish sales
@@ -136,25 +134,54 @@ def get_material_usage_data_from_database(db_manager: DatabaseManager, year: int
             dm.unit_conversion_rate as unit_conversion,
             (ds.quantity_sold * dm.standard_quantity * COALESCE(dm.loss_rate, 0) / COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1)) as theory_usage
         FROM dish_sales ds
-        JOIN dish d2 ON d2.id = (
-            -- Find EXACT matching dish with material mappings (must match size exactly)
-            SELECT d3.id
-            FROM dish d3
-            WHERE d3.full_code = ds.original_full_code 
-              AND (
-                  (d3.size = ds.dish_size) OR 
-                  (d3.size IS NULL AND ds.dish_size IS NULL)
-              )
-              AND d3.id IN (SELECT dish_id FROM dish_material WHERE store_id = %s)
-            ORDER BY d3.id
-            LIMIT 1
+        JOIN dish d2 ON d2.id = COALESCE(
+            (
+                -- First try: For combos without short code, match by full code and select smallest standard_quantity
+                -- For regular dishes or combos with short code, match exactly
+                SELECT d3.id
+                FROM dish d3
+                LEFT JOIN dish_material dm_check ON dm_check.dish_id = d3.id AND dm_check.store_id = %s
+                WHERE 
+                    CASE 
+                        -- For combos without short code, match by full code only
+                        WHEN ds.is_combo AND (ds.dish_short_code IS NULL OR ds.dish_short_code = '') THEN
+                            d3.full_code = ds.original_full_code
+                        -- For everything else, exact match including size
+                        ELSE
+                            d3.full_code = ds.original_full_code 
+                            AND (
+                                (d3.size = ds.dish_size) OR 
+                                (d3.size IS NULL AND ds.dish_size IS NULL)
+                            )
+                    END
+                  AND d3.id IN (SELECT dish_id FROM dish_material WHERE store_id = %s)
+                ORDER BY 
+                    -- For combos without short code, order by smallest standard_quantity first
+                    CASE WHEN ds.is_combo AND (ds.dish_short_code IS NULL OR ds.dish_short_code = '') 
+                         THEN dm_check.standard_quantity 
+                         ELSE NULL 
+                    END ASC NULLS LAST,
+                    d3.id
+                LIMIT 1
+            ),
+            -- Second try: For combos, try to find ANY dish with material mappings that starts with same base code
+            (
+                SELECT d4.id
+                FROM dish d4
+                JOIN dish_material dm2 ON dm2.dish_id = d4.id AND dm2.store_id = %s
+                WHERE ds.is_combo 
+                  AND (ds.dish_short_code IS NULL OR ds.dish_short_code = '')
+                  AND LEFT(d4.full_code, 6) = LEFT(ds.original_full_code, 6)  -- Match first 6 digits
+                ORDER BY dm2.standard_quantity ASC, d4.id
+                LIMIT 1
+            )
         )
         JOIN dish_material dm ON dm.dish_id = d2.id AND dm.store_id = %s
         JOIN material m ON m.id = dm.material_id AND m.store_id = %s
         ORDER BY m.material_number, ds.dish_short_code, ds.is_combo
         """
         
-        cursor.execute(theory_usage_query, (year, month, store_id, year, month, store_id, store_id, store_id, store_id))
+        cursor.execute(theory_usage_query, (year, month, store_id, year, month, store_id, store_id, store_id, store_id, store_id, store_id))
         theory_usage_data = cursor.fetchall()
         
         for row in theory_usage_data:
