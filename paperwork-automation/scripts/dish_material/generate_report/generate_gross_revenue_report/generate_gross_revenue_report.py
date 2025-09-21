@@ -28,6 +28,9 @@ from scripts.dish_material.generate_report.generate_gross_revenue_report.all_sto
 from scripts.dish_material.generate_report.generate_gross_revenue_report.category_comparison_sheet import (
     write_category_comparison_sheet
 )
+from scripts.dish_material.generate_report.generate_gross_revenue_report.twelve_month_trend_sheet import (
+    write_twelve_month_trend_sheet
+)
 
 # Configure logging
 logging.basicConfig(
@@ -88,6 +91,17 @@ def generate_gross_revenue_report(year: int, month: int, output_dir: str = None,
         month=month
     )
     logger.info("Successfully created category comparison sheet")
+    
+    # Third, create the 12-month trend sheet
+    logger.info("Creating 12-month trend sheet")
+    trend_sheet = workbook.create_sheet(title="12月趋势分析", index=2)
+    write_twelve_month_trend_sheet(
+        worksheet=trend_sheet,
+        db_manager=db_manager,
+        year=year,
+        month=month
+    )
+    logger.info("Successfully created 12-month trend sheet")
     
     # Generate sheets for each store
     stores_processed = 0
