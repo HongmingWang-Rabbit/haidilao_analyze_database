@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Generate comparison sheet showing gross profit margins by dish category across stores.
+Generate comparison sheet showing gross profit margins by dish broad type category across stores.
+Uses the broad_type field from the dish table for categorization.
+Uses actual material usage from material_monthly_usage table for cost calculations.
 Includes month-over-month and year-over-year comparisons.
 """
 
@@ -26,8 +28,9 @@ logger = logging.getLogger(__name__)
 
 def get_category_gross_margin_data(db_manager: DatabaseManager, year: int, month: int) -> Dict:
     """
-    Get gross margin data by dish category for all stores.
+    Get gross margin data by dish broad type category for all stores.
     Includes current month, last month, and last year comparisons.
+    Uses actual material usage distributed proportionally based on theoretical usage.
     
     Args:
         db_manager: Database manager instance
@@ -38,7 +41,7 @@ def get_category_gross_margin_data(db_manager: DatabaseManager, year: int, month
         Dict with structure:
         {
             store_id: {
-                category: {
+                broad_type: {
                     'current': margin_percentage,
                     'last_month': margin_percentage,
                     'last_year': margin_percentage
@@ -61,35 +64,20 @@ def get_category_gross_margin_data(db_manager: DatabaseManager, year: int, month
     with db_manager.get_connection() as conn:
         cursor = conn.cursor()
         
-        # Query to get gross margin by category for all three periods
+        # Query to get gross margin by broad type category using actual material usage distributed by theoretical proportions
         query = """
-        WITH category_margins AS (
+        WITH dish_sales AS (
+            -- Get dish sales for each period
             SELECT 
                 dms.store_id,
-                dt.name as category,
+                dms.dish_id,
+                d.broad_type,
                 dms.year,
                 dms.month,
-                -- Revenue
-                SUM((COALESCE(dms.sale_amount, 0) - COALESCE(dms.return_amount, 0)) * COALESCE(dph.price, 0)) as revenue,
-                -- Material cost (theoretical)
-                SUM(
-                    (COALESCE(dms.sale_amount, 0) - COALESCE(dms.return_amount, 0)) *
-                    COALESCE((
-                        SELECT SUM(dm.standard_quantity * COALESCE(dm.loss_rate, 0) / 
-                                  COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1) * 
-                                  COALESCE(mph.price, 0))
-                        FROM dish_material dm
-                        JOIN material m ON m.id = dm.material_id AND m.store_id = dm.store_id
-                        LEFT JOIN material_price_history mph ON mph.material_id = m.id 
-                            AND mph.store_id = m.store_id
-                            AND mph.is_active = TRUE
-                        WHERE dm.dish_id = d.id AND dm.store_id = dms.store_id
-                    ), 0)
-                ) as material_cost
+                (COALESCE(dms.sale_amount, 0) - COALESCE(dms.return_amount, 0)) as net_quantity,
+                COALESCE(dph.price, 0) as dish_price
             FROM dish_monthly_sale dms
             JOIN dish d ON d.id = dms.dish_id
-            LEFT JOIN dish_child_type dct ON dct.id = d.dish_child_type_id
-            LEFT JOIN dish_type dt ON dt.id = dct.dish_type_id
             LEFT JOIN dish_price_history dph ON dph.dish_id = d.id 
                 AND dph.store_id = dms.store_id
                 AND dph.is_active = TRUE
@@ -102,8 +90,98 @@ def get_category_gross_margin_data(db_manager: DatabaseManager, year: int, month
                 (dms.year = %s AND dms.month = %s)
             )
             AND dms.store_id != 101  -- Exclude Hi Bowl
-            AND dt.name IS NOT NULL
-            GROUP BY dms.store_id, dt.name, dms.year, dms.month
+        ),
+        theoretical_material_usage AS (
+            -- Calculate theoretical material usage by dish
+            SELECT 
+                ds.store_id,
+                ds.year,
+                ds.month,
+                ds.dish_id,
+                dm.material_id,
+                SUM(ds.net_quantity * COALESCE(dm.standard_quantity, 0) * (1 + COALESCE(dm.loss_rate, 0))) as theoretical_usage
+            FROM dish_sales ds
+            LEFT JOIN dish_material dm ON dm.dish_id = ds.dish_id AND dm.store_id = ds.store_id
+            WHERE dm.material_id IS NOT NULL
+            GROUP BY ds.store_id, ds.year, ds.month, ds.dish_id, dm.material_id
+        ),
+        total_theoretical_by_material AS (
+            -- Get total theoretical usage per material
+            SELECT 
+                store_id,
+                year,
+                month,
+                material_id,
+                SUM(theoretical_usage) as total_theoretical
+            FROM theoretical_material_usage
+            GROUP BY store_id, year, month, material_id
+        ),
+        actual_material_usage AS (
+            -- Get actual material usage from material_monthly_usage
+            SELECT 
+                mmu.store_id,
+                mmu.year,
+                mmu.month,
+                mmu.material_id,
+                COALESCE(mmu.material_used, 0) as actual_usage,
+                COALESCE(mph.price, 0) as material_price
+            FROM material_monthly_usage mmu
+            JOIN material m ON m.id = mmu.material_id AND m.store_id = mmu.store_id
+            LEFT JOIN material_price_history mph ON mph.material_id = m.id 
+                AND mph.store_id = m.store_id
+                AND mph.is_active = TRUE
+            WHERE (
+                -- Current month
+                (mmu.year = %s AND mmu.month = %s) OR
+                -- Last month
+                (mmu.year = %s AND mmu.month = %s) OR
+                -- Last year same month
+                (mmu.year = %s AND mmu.month = %s)
+            )
+        ),
+        dish_actual_cost AS (
+            -- Distribute actual cost to dishes based on theoretical usage proportions
+            SELECT 
+                tmu.store_id,
+                tmu.year,
+                tmu.month,
+                tmu.dish_id,
+                SUM(
+                    CASE 
+                        WHEN ttm.total_theoretical > 0 THEN 
+                            (tmu.theoretical_usage / ttm.total_theoretical) * amu.actual_usage * amu.material_price
+                        ELSE 0
+                    END
+                ) as dish_material_cost
+            FROM theoretical_material_usage tmu
+            JOIN total_theoretical_by_material ttm 
+                ON tmu.store_id = ttm.store_id 
+                AND tmu.year = ttm.year 
+                AND tmu.month = ttm.month 
+                AND tmu.material_id = ttm.material_id
+            LEFT JOIN actual_material_usage amu 
+                ON tmu.store_id = amu.store_id 
+                AND tmu.year = amu.year 
+                AND tmu.month = amu.month 
+                AND tmu.material_id = amu.material_id
+            GROUP BY tmu.store_id, tmu.year, tmu.month, tmu.dish_id
+        ),
+        category_aggregation AS (
+            -- Aggregate by category
+            SELECT 
+                ds.store_id,
+                COALESCE(ds.broad_type, '其他') as category,
+                ds.year,
+                ds.month,
+                SUM(ds.net_quantity * ds.dish_price) as revenue,
+                SUM(COALESCE(dac.dish_material_cost, 0)) as material_cost
+            FROM dish_sales ds
+            LEFT JOIN dish_actual_cost dac 
+                ON ds.store_id = dac.store_id 
+                AND ds.year = dac.year 
+                AND ds.month = dac.month 
+                AND ds.dish_id = dac.dish_id
+            GROUP BY ds.store_id, COALESCE(ds.broad_type, '其他'), ds.year, ds.month
         )
         SELECT 
             store_id,
@@ -113,17 +191,21 @@ def get_category_gross_margin_data(db_manager: DatabaseManager, year: int, month
             revenue,
             material_cost,
             CASE 
-                WHEN revenue > 0 THEN ((revenue - material_cost) / revenue) * 100
+                WHEN revenue > 0 THEN 
+                    ((revenue - material_cost) / revenue) * 100
                 ELSE 0
             END as gross_margin
-        FROM category_margins
+        FROM category_aggregation
         ORDER BY store_id, category, year DESC, month DESC
         """
         
         cursor.execute(query, (
-            year, month,  # Current month
-            last_month_year, last_month,  # Last month
-            last_year, month  # Last year
+            year, month,  # Current month for dish_sales
+            last_month_year, last_month,  # Last month for dish_sales
+            last_year, month,  # Last year for dish_sales
+            year, month,  # Current month for actual_material_usage
+            last_month_year, last_month,  # Last month for actual_material_usage
+            last_year, month  # Last year for actual_material_usage
         ))
         
         raw_data = cursor.fetchall()
@@ -161,36 +243,37 @@ def get_category_gross_margin_data(db_manager: DatabaseManager, year: int, month
 
 def get_all_categories(db_manager: DatabaseManager) -> List[str]:
     """
-    Get all unique dish categories (dish types) from the database.
+    Get all unique dish broad type categories from the database.
     
     Args:
         db_manager: Database manager instance
     
     Returns:
-        List of category names (dish type names)
+        List of broad type category names
     """
     with db_manager.get_connection() as conn:
         cursor = conn.cursor()
         
         query = """
-        SELECT dt.name as category
-        FROM dish_type dt
-        WHERE dt.is_active = TRUE
-        ORDER BY 
+        SELECT DISTINCT 
+            COALESCE(broad_type, '其他') as category,
             CASE 
-                WHEN dt.name LIKE '%锅底%' THEN 1
-                WHEN dt.name LIKE '%肉%' THEN 2
-                WHEN dt.name LIKE '%素菜%' THEN 3
-                WHEN dt.name LIKE '%小吃%' THEN 4
-                WHEN dt.name LIKE '%酒%' OR dt.name LIKE '%饮%' THEN 5
-                WHEN dt.name LIKE '%套餐%' THEN 6
+                WHEN COALESCE(broad_type, '其他') LIKE '%锅底%' THEN 1
+                WHEN COALESCE(broad_type, '其他') LIKE '%荤%' OR COALESCE(broad_type, '其他') LIKE '%肉%' THEN 2
+                WHEN COALESCE(broad_type, '其他') LIKE '%素菜%' THEN 3
+                WHEN COALESCE(broad_type, '其他') LIKE '%小吃%' THEN 4
+                WHEN COALESCE(broad_type, '其他') LIKE '%酒%' OR COALESCE(broad_type, '其他') LIKE '%饮%' THEN 5
+                WHEN COALESCE(broad_type, '其他') LIKE '%套餐%' THEN 6
+                WHEN COALESCE(broad_type, '其他') = '其他' THEN 8
                 ELSE 7
-            END,
-            dt.name
+            END as sort_order
+        FROM dish
+        WHERE is_active = TRUE
+        ORDER BY sort_order, category
         """
         
         cursor.execute(query)
-        categories = [row['category'] for row in cursor.fetchall()]
+        categories = [row['category'] for row in cursor.fetchall() if row['category']]
     
     return categories
 
@@ -206,7 +289,7 @@ def write_category_comparison_sheet(worksheet, db_manager: DatabaseManager, year
         month: Month for the data
     """
     # Add title
-    title_cell = worksheet.cell(row=1, column=1, value="各店铺分类毛利对比分析")
+    title_cell = worksheet.cell(row=1, column=1, value="各店铺菜品大类毛利对比分析")
     title_cell.font = Font(size=14, bold=True)
     title_cell.alignment = Alignment(horizontal='center')
     
@@ -439,6 +522,13 @@ def write_category_comparison_sheet(worksheet, db_manager: DatabaseManager, year
     worksheet.cell(row=legend_row + 1, column=2).fill = green_fill
     worksheet.cell(row=legend_row + 1, column=3, value="-3.0%")
     worksheet.cell(row=legend_row + 1, column=3).fill = red_fill
+    
+    # Add note about actual material usage
+    note_row = legend_row + 3
+    note_text = "注：物料成本为实际库存消耗数据（按理论用量比例分配到各菜品后汇总），非理论计算值"
+    note_cell = worksheet.cell(row=note_row, column=1, value=note_text)
+    note_cell.font = Font(italic=True, size=10, color="666666")
+    worksheet.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=10)
     
     logger.info("Completed writing category comparison sheet")
 

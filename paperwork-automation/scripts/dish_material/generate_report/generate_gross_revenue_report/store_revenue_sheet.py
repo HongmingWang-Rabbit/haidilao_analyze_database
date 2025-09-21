@@ -22,6 +22,53 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 
+def get_actual_material_usage(db_manager: DatabaseManager, year: int, month: int, store_id: int) -> Dict[str, Dict]:
+    """
+    Get actual material usage and cost from material_monthly_usage table.
+    
+    Args:
+        db_manager: Database manager instance
+        year: Year for the data
+        month: Month for the data
+        store_id: Store ID
+    
+    Returns:
+        Dict mapping material_number to dict with usage and total_cost
+    """
+    actual_usage = {}
+    
+    with db_manager.get_connection() as conn:
+        cursor = conn.cursor()
+        
+        query = """
+        SELECT 
+            m.material_number,
+            mmu.material_used,
+            COALESCE(mph.price, 0) as material_price,
+            mmu.material_used * COALESCE(mph.price, 0) as actual_cost
+        FROM material_monthly_usage mmu
+        JOIN material m ON m.id = mmu.material_id AND m.store_id = mmu.store_id
+        LEFT JOIN material_price_history mph ON mph.material_id = m.id 
+            AND mph.store_id = m.store_id
+            AND mph.is_active = TRUE
+        WHERE mmu.year = %s
+          AND mmu.month = %s
+          AND mmu.store_id = %s
+        """
+        
+        cursor.execute(query, (year, month, store_id))
+        
+        for row in cursor.fetchall():
+            if row['material_number'] and row['material_used']:
+                actual_usage[row['material_number']] = {
+                    'usage': float(row['material_used']),
+                    'price': float(row['material_price']) if row['material_price'] else 0,
+                    'total_cost': float(row['actual_cost']) if row['actual_cost'] else 0
+                }
+    
+    return actual_usage
+
+
 def get_dish_revenue_data(db_manager: DatabaseManager, year: int, month: int, store_id: int, debug: bool = False) -> List[Dict]:
     """
     Get dish revenue and material cost data for gross profit calculation.
@@ -209,12 +256,12 @@ def write_store_revenue_sheet(worksheet, db_manager: DatabaseManager, year: int,
     # Add title
     title_cell = worksheet.cell(row=1, column=1, value=f"{store_name} - 毛利润分析")
     title_cell.font = Font(size=14, bold=True)
-    worksheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=11 if debug else 9)
+    worksheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=12 if debug else 10)
     title_cell.alignment = Alignment(horizontal='center')
     
     date_cell = worksheet.cell(row=2, column=1, value=f"{year}年{month}月")
     date_cell.font = Font(size=12)
-    worksheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=11 if debug else 9)
+    worksheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=12 if debug else 10)
     date_cell.alignment = Alignment(horizontal='center')
     
     # Leave a blank row
@@ -222,9 +269,9 @@ def write_store_revenue_sheet(worksheet, db_manager: DatabaseManager, year: int,
     
     # Set headers based on debug flag
     if debug:
-        headers = ['菜品名称', '菜品编号', '菜品短编号', '规格', '菜品价格', '销售数量', '销售金额', '使用物料', '总成本', '实际毛利', '毛利百分比']
+        headers = ['菜品名称', '菜品编号', '菜品短编号', '规格', '菜品价格', '销售数量', '销售金额', '使用物料', '理论总成本', '实际总成本', '毛利', '毛利百分比']
     else:
-        headers = ['菜品名称', '规格', '菜品价格', '销售数量', '销售金额', '使用物料', '总成本', '实际毛利', '毛利百分比']
+        headers = ['菜品名称', '规格', '菜品价格', '销售数量', '销售金额', '使用物料', '理论总成本', '实际总成本', '毛利', '毛利百分比']
     
     # Style for headers
     header_font = Font(bold=True)
@@ -254,6 +301,25 @@ def write_store_revenue_sheet(worksheet, db_manager: DatabaseManager, year: int,
     # Get data
     data = get_dish_revenue_data(db_manager, year, month, store_id, debug)
     
+    # Get actual material usage for the store
+    actual_material_usage = get_actual_material_usage(db_manager, year, month, store_id)
+    
+    # Calculate total actual material cost for the store
+    total_actual_material_cost = sum(mat_info['total_cost'] for mat_info in actual_material_usage.values())
+    
+    # Calculate total theoretical usage for each material across all dishes
+    # This helps us distribute actual costs proportionally
+    material_theoretical_totals = {}
+    for dish_info in data:
+        if dish_info['is_combo'] and dish_info['dish_price'] == 0:
+            continue
+        for material in dish_info['materials']:
+            material_number = material['material_number']
+            if material_number not in material_theoretical_totals:
+                material_theoretical_totals[material_number] = 0
+            # Add this dish's theoretical usage of the material
+            material_theoretical_totals[material_number] += material['usage_per_dish'] * dish_info['quantity_sold']
+    
     current_row = header_row + 1
     dish_index = 0
     
@@ -261,6 +327,35 @@ def write_store_revenue_sheet(worksheet, db_manager: DatabaseManager, year: int,
         # Skip combo dishes with no price (they're part of combo packages)
         if dish_info['is_combo'] and dish_info['dish_price'] == 0:
             continue
+        
+        # Calculate actual cost for each material in this dish
+        dish_actual_cost = 0
+        for material in dish_info['materials']:
+            material_number = material['material_number']
+            if material_number in actual_material_usage and material_number in material_theoretical_totals:
+                # Get actual usage and cost for this material at store level
+                actual_info = actual_material_usage[material_number]
+                
+                # Calculate this dish's proportion of the material usage
+                dish_theoretical_usage = material['usage_per_dish'] * dish_info['quantity_sold']
+                total_theoretical_usage = material_theoretical_totals[material_number]
+                
+                if total_theoretical_usage > 0:
+                    # Proportion of actual cost = (dish's theoretical usage / total theoretical usage) * actual cost
+                    proportion = dish_theoretical_usage / total_theoretical_usage
+                    material['actual_cost'] = actual_info['total_cost'] * proportion
+                    material['actual_usage'] = actual_info['usage'] * proportion
+                else:
+                    material['actual_cost'] = 0
+                    material['actual_usage'] = 0
+                
+                dish_actual_cost += material['actual_cost']
+            else:
+                material['actual_usage'] = 0
+                material['actual_cost'] = 0
+        
+        # Set the dish's actual total cost
+        dish_info['actual_total_cost'] = dish_actual_cost
             
         num_materials = max(len(dish_info['materials']), 1)
         
@@ -331,14 +426,16 @@ def write_store_revenue_sheet(worksheet, db_manager: DatabaseManager, year: int,
                     # Detailed format with all info
                     # Calculate total material amount used (usage per dish × quantity sold)
                     total_material_used = material['usage_per_dish'] * dish_info['quantity_sold']
+                    actual_usage = material.get('actual_usage', 0)
                     material_text = (f"{material['material_name']} ({material['material_number']}) "
                                    f"单价:{material['material_price']:.2f} "
-                                   f"单份用量:{material['usage_per_dish']:.3f} "
-                                   f"总用量:{total_material_used:.2f} "
-                                   f"成本:{material['total_cost']:.2f}")
+                                   f"理论用量:{total_material_used:.2f} "
+                                   f"实际用量:{actual_usage:.2f} "
+                                   f"理论成本:{material['total_cost']:.2f} "
+                                   f"实际成本:{material.get('actual_cost', 0):.2f}")
                 else:
-                    # Simple format
-                    material_text = f"{material['material_name']}: {material['total_cost']:.2f}"
+                    # Simple format - show both theoretical and proportioned actual costs
+                    material_text = f"{material['material_name']}: 理论{material['total_cost']:.2f} 实际{material.get('actual_cost', 0):.2f}"
                 
                 worksheet.cell(row=current_row + i, column=current_col, value=material_text)
                 worksheet.cell(row=current_row + i, column=current_col).border = thin_border
@@ -347,7 +444,7 @@ def write_store_revenue_sheet(worksheet, db_manager: DatabaseManager, year: int,
             worksheet.cell(row=current_row, column=current_col).border = thin_border
         current_col += 1
         
-        # Total cost (new column)
+        # Theoretical total cost column
         cell = worksheet.cell(row=current_row, column=current_col, value=round(dish_info['total_material_cost'], 2))
         if num_materials > 1:
             worksheet.merge_cells(start_row=current_row, start_column=current_col,
@@ -355,25 +452,35 @@ def write_store_revenue_sheet(worksheet, db_manager: DatabaseManager, year: int,
         cell.alignment = Alignment(vertical='center', horizontal='right')
         current_col += 1
         
-        # Gross profit
-        cell = worksheet.cell(row=current_row, column=current_col, value=round(dish_info['gross_profit'], 2))
+        # Actual total cost column (now showing calculated proportional cost)
+        cell = worksheet.cell(row=current_row, column=current_col, value=round(dish_info.get('actual_total_cost', 0), 2))
         if num_materials > 1:
             worksheet.merge_cells(start_row=current_row, start_column=current_col,
                                 end_row=current_row + num_materials - 1, end_column=current_col)
         cell.alignment = Alignment(vertical='center', horizontal='right')
         current_col += 1
         
-        # Profit margin percentage
-        cell = worksheet.cell(row=current_row, column=current_col, value=f"{dish_info['profit_margin']:.1f}%")
+        # Gross profit (using actual cost now that we have it)
+        actual_gross_profit = dish_info['sales_amount'] - dish_info.get('actual_total_cost', 0)
+        cell = worksheet.cell(row=current_row, column=current_col, value=round(actual_gross_profit, 2))
+        if num_materials > 1:
+            worksheet.merge_cells(start_row=current_row, start_column=current_col,
+                                end_row=current_row + num_materials - 1, end_column=current_col)
+        cell.alignment = Alignment(vertical='center', horizontal='right')
+        current_col += 1
+        
+        # Profit margin percentage (using actual cost)
+        actual_profit_margin = (actual_gross_profit / dish_info['sales_amount'] * 100) if dish_info['sales_amount'] > 0 else 0
+        cell = worksheet.cell(row=current_row, column=current_col, value=f"{actual_profit_margin:.1f}%")
         if num_materials > 1:
             worksheet.merge_cells(start_row=current_row, start_column=current_col,
                                 end_row=current_row + num_materials - 1, end_column=current_col)
         cell.alignment = Alignment(vertical='center', horizontal='center')
         
-        # Apply fill color based on profit margin
-        if dish_info['profit_margin'] < 50:
+        # Apply fill color based on actual profit margin
+        if actual_profit_margin < 50:
             cell.fill = PatternFill(start_color="FFB6C1", end_color="FFB6C1", fill_type="solid")  # Light red
-        elif dish_info['profit_margin'] > 70:
+        elif actual_profit_margin > 70:
             cell.fill = PatternFill(start_color="90EE90", end_color="90EE90", fill_type="solid")  # Light green
         
         # Apply borders and alternating fills
@@ -383,7 +490,7 @@ def write_store_revenue_sheet(worksheet, db_manager: DatabaseManager, year: int,
                 cell = worksheet.cell(row=row, column=col)
                 cell.border = thin_border
                 # Don't override profit margin color
-                if col != len(headers) or (dish_info['profit_margin'] >= 50 and dish_info['profit_margin'] <= 70):
+                if col != len(headers) or (actual_profit_margin >= 50 and actual_profit_margin <= 70):
                     cell.fill = fill_to_use
         
         current_row += num_materials
@@ -396,32 +503,36 @@ def write_store_revenue_sheet(worksheet, db_manager: DatabaseManager, year: int,
     
     # Calculate totals
     total_sales = sum(d['sales_amount'] for d in data if not (d['is_combo'] and d['dish_price'] == 0))
-    total_material_cost = sum(d['total_material_cost'] for d in data if not (d['is_combo'] and d['dish_price'] == 0))
-    total_profit = total_sales - total_material_cost
-    avg_margin = (total_profit / total_sales * 100) if total_sales > 0 else 0
+    total_theoretical_cost = sum(d['total_material_cost'] for d in data if not (d['is_combo'] and d['dish_price'] == 0))
+    # Sum up the proportioned actual costs from all dishes
+    total_actual_cost = sum(d.get('actual_total_cost', 0) for d in data if not (d['is_combo'] and d['dish_price'] == 0))
+    actual_total_profit = total_sales - total_actual_cost
+    actual_avg_margin = (actual_total_profit / total_sales * 100) if total_sales > 0 else 0
     
-    # Place totals in appropriate columns (adjusted for new 总成本 column)
+    # Place totals in appropriate columns (adjusted for both theoretical and actual cost columns)
     if debug:
         worksheet.cell(row=summary_row, column=7, value=round(total_sales, 2))
-        worksheet.cell(row=summary_row, column=9, value=round(total_material_cost, 2))  # Total cost
-        worksheet.cell(row=summary_row, column=10, value=round(total_profit, 2))
-        worksheet.cell(row=summary_row, column=11, value=f"{avg_margin:.1f}%")
+        worksheet.cell(row=summary_row, column=9, value=round(total_theoretical_cost, 2))  # Theoretical total cost
+        worksheet.cell(row=summary_row, column=10, value=round(total_actual_cost, 2))  # Actual total cost
+        worksheet.cell(row=summary_row, column=11, value=round(actual_total_profit, 2))
+        worksheet.cell(row=summary_row, column=12, value=f"{actual_avg_margin:.1f}%")
     else:
         worksheet.cell(row=summary_row, column=5, value=round(total_sales, 2))
-        worksheet.cell(row=summary_row, column=7, value=round(total_material_cost, 2))  # Total cost
-        worksheet.cell(row=summary_row, column=8, value=round(total_profit, 2))
-        worksheet.cell(row=summary_row, column=9, value=f"{avg_margin:.1f}%")
+        worksheet.cell(row=summary_row, column=7, value=round(total_theoretical_cost, 2))  # Theoretical total cost
+        worksheet.cell(row=summary_row, column=8, value=round(total_actual_cost, 2))  # Actual total cost
+        worksheet.cell(row=summary_row, column=9, value=round(actual_total_profit, 2))
+        worksheet.cell(row=summary_row, column=10, value=f"{actual_avg_margin:.1f}%")
     
     # Apply bold font to summary row
     for col in range(1, len(headers) + 1):
         worksheet.cell(row=summary_row, column=col).font = Font(bold=True)
         worksheet.cell(row=summary_row, column=col).border = thin_border
     
-    # Auto-adjust column widths (adjusted for new 总成本 column)
+    # Auto-adjust column widths (adjusted for both theoretical and actual cost columns)
     if debug:
-        column_widths = [30, 15, 15, 10, 10, 10, 12, 50, 12, 12, 12]
+        column_widths = [30, 15, 15, 10, 10, 10, 12, 60, 12, 12, 12, 12]
     else:
-        column_widths = [30, 10, 10, 10, 12, 50, 12, 12, 12]
+        column_widths = [30, 10, 10, 10, 12, 60, 12, 12, 12, 12]
     
     for i, width in enumerate(column_widths, 1):
         worksheet.column_dimensions[get_column_letter(i)].width = width

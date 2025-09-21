@@ -197,6 +197,7 @@ CREATE TABLE dish (
     specification VARCHAR,               -- 规格 (e.g., "单锅", "拼锅", "四宫格")
     unit VARCHAR DEFAULT '份',           -- 菜品单位
     serving_size_kg NUMERIC(8, 4),      -- 出品分量(kg)
+    broad_type VARCHAR,                  -- 菜品8大类描述 (e.g., "荤菜类", "素菜类", "锅底类", "酒水类", "小吃类")
     is_active BOOLEAN DEFAULT TRUE,     -- 是否活跃
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

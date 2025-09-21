@@ -112,12 +112,12 @@ def generate_gross_revenue_report(year: int, month: int, output_dir: str = None,
         logger.info(f"Processing {store_name} (Store ID: {store_id})")
         
         try:
-            # Create a sheet for this store with "理论毛利" suffix
+            # Create a sheet for this store
             # Shorten sheet names
             sheet_name = store_name
             if "\u52a0\u62ff\u5927" in sheet_name:
                 sheet_name = sheet_name.replace("\u52a0\u62ff\u5927", "CA")
-            sheet_name = f"{sheet_name}\u7406\u8bba\u6bdb\u5229"
+            sheet_name = f"{sheet_name}\u6bdb\u5229"
             worksheet = workbook.create_sheet(title=sheet_name)
             
             # Write revenue data to the sheet

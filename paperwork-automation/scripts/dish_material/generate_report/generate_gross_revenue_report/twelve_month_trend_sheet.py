@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Generate 12-month trend sheet showing gross profit margins by category over time.
+Generate 12-month trend sheet showing actual gross profit margins over time.
+Uses actual material usage from material_monthly_usage table (same as all stores summary).
 """
 
 import sys
@@ -12,7 +13,6 @@ from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
-from openpyxl.chart import LineChart, Reference
 
 # Add parent directory to path for imports
 project_root = Path(__file__).resolve().parent.parent.parent.parent.parent
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 def get_12_month_trend_data(db_manager: DatabaseManager, end_year: int, end_month: int) -> Dict:
     """
-    Get 12 months of overall gross margin data for all stores.
+    Get 12 months of overall gross margin data for all stores using actual material usage.
     
     Args:
         db_manager: Database manager instance
@@ -52,33 +52,17 @@ def get_12_month_trend_data(db_manager: DatabaseManager, end_year: int, end_mont
     with db_manager.get_connection() as conn:
         cursor = conn.cursor()
         
-        # Query to get overall gross margin for 12 months
+        # Query to get overall gross margin for 12 months using actual material usage
         query = """
-        WITH monthly_margins AS (
+        WITH store_revenue AS (
+            -- Get total revenue from dish sales for each month
             SELECT 
                 dms.store_id,
                 dms.year,
                 dms.month,
-                -- Total Revenue
-                SUM((COALESCE(dms.sale_amount, 0) - COALESCE(dms.return_amount, 0)) * COALESCE(dph.price, 0)) as revenue,
-                -- Total Material cost (theoretical)
-                SUM(
-                    (COALESCE(dms.sale_amount, 0) - COALESCE(dms.return_amount, 0)) *
-                    COALESCE((
-                        SELECT SUM(dm.standard_quantity * COALESCE(dm.loss_rate, 0) / 
-                                  COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1) * 
-                                  COALESCE(mph.price, 0))
-                        FROM dish_material dm
-                        JOIN material m ON m.id = dm.material_id AND m.store_id = dm.store_id
-                        LEFT JOIN material_price_history mph ON mph.material_id = m.id 
-                            AND mph.store_id = m.store_id
-                            AND mph.is_active = TRUE
-                        WHERE dm.dish_id = d.id AND dm.store_id = dms.store_id
-                    ), 0)
-                ) as material_cost
+                SUM((COALESCE(dms.sale_amount, 0) - COALESCE(dms.return_amount, 0)) * COALESCE(dph.price, 0)) as total_revenue
             FROM dish_monthly_sale dms
-            JOIN dish d ON d.id = dms.dish_id
-            LEFT JOIN dish_price_history dph ON dph.dish_id = d.id 
+            LEFT JOIN dish_price_history dph ON dph.dish_id = dms.dish_id 
                 AND dph.store_id = dms.store_id
                 AND dph.is_active = TRUE
             WHERE (
@@ -88,22 +72,50 @@ def get_12_month_trend_data(db_manager: DatabaseManager, end_year: int, end_mont
             )
             AND dms.store_id != 101  -- Exclude Hi Bowl
             GROUP BY dms.store_id, dms.year, dms.month
+        ),
+        material_usage AS (
+            -- Get actual material usage from material_monthly_usage for each month
+            SELECT 
+                mmu.store_id,
+                mmu.year,
+                mmu.month,
+                SUM(COALESCE(mmu.material_used, 0) * COALESCE(mph.price, 0)) as total_material_cost
+            FROM material_monthly_usage mmu
+            JOIN material m ON m.id = mmu.material_id AND m.store_id = mmu.store_id
+            LEFT JOIN material_price_history mph ON mph.material_id = m.id 
+                AND mph.store_id = m.store_id
+                AND mph.is_active = TRUE
+            WHERE (
+                (mmu.year = %s AND mmu.month >= %s) OR
+                (mmu.year > %s AND mmu.year < %s) OR
+                (mmu.year = %s AND mmu.month <= %s)
+            )
+            GROUP BY mmu.store_id, mmu.year, mmu.month
         )
         SELECT 
-            store_id,
-            year,
-            month,
-            revenue,
-            material_cost,
+            sr.store_id,
+            sr.year,
+            sr.month,
+            COALESCE(sr.total_revenue, 0) as revenue,
+            COALESCE(mu.total_material_cost, 0) as material_cost,
             CASE 
-                WHEN revenue > 0 THEN ((revenue - material_cost) / revenue) * 100
+                WHEN COALESCE(sr.total_revenue, 0) > 0 THEN 
+                    ((COALESCE(sr.total_revenue, 0) - COALESCE(mu.total_material_cost, 0)) / COALESCE(sr.total_revenue, 0)) * 100
                 ELSE 0
             END as gross_margin
-        FROM monthly_margins
-        ORDER BY store_id, year, month
+        FROM store_revenue sr
+        LEFT JOIN material_usage mu ON mu.store_id = sr.store_id 
+            AND mu.year = sr.year 
+            AND mu.month = sr.month
+        ORDER BY sr.store_id, sr.year, sr.month
         """
         
         cursor.execute(query, (
+            # For store_revenue CTE
+            start_date.year, start_date.month,  # Start year and month
+            start_date.year, end_date.year,     # Years in between
+            end_date.year, end_date.month,      # End year and month
+            # For material_usage CTE
             start_date.year, start_date.month,  # Start year and month
             start_date.year, end_date.year,     # Years in between
             end_date.year, end_date.month       # End year and month
@@ -139,7 +151,7 @@ def write_twelve_month_trend_sheet(worksheet, db_manager: DatabaseManager, year:
         month: Ending month for the data
     """
     # Add title
-    title_cell = worksheet.cell(row=1, column=1, value="12个月整体毛利趋势分析")
+    title_cell = worksheet.cell(row=1, column=1, value="12个月实际毛利趋势分析")
     title_cell.font = Font(size=14, bold=True)
     title_cell.alignment = Alignment(horizontal='center')
     
@@ -313,82 +325,7 @@ def write_twelve_month_trend_sheet(worksheet, db_manager: DatabaseManager, year:
     legend_cell.alignment = Alignment(horizontal='left')
     worksheet.merge_cells(start_row=legend_row, start_column=1, end_row=legend_row, end_column=8)
     
-    # Add line chart
-    chart_row = legend_row + 3
-    
-    # Create simple visible data for chart (no hidden rows)
-    # Place it right below the main table
-    chart_data_row = avg_row + 5
-    
-    # Write title
-    worksheet.cell(row=chart_data_row, column=1, value="图表数据（毛利率%）")
-    worksheet.cell(row=chart_data_row, column=1).font = Font(bold=True, italic=True)
-    
-    # Headers
-    worksheet.cell(row=chart_data_row + 1, column=1, value="门店/月份")
-    for col_idx, year_month in enumerate(months, start=2):
-        month_str = f"{year_month[1]:02d}"  # Just show month number for simplicity
-        worksheet.cell(row=chart_data_row + 1, column=col_idx, value=month_str)
-    
-    # Write raw margin data (not percentage changes)
-    store_ids = sorted(trend_data.keys())
-    for row_idx, store_id in enumerate(store_ids):
-        store_name = STORE_ID_TO_NAME_MAPPING.get(store_id, f"Store {store_id}")
-        worksheet.cell(row=chart_data_row + 2 + row_idx, column=1, value=store_name)
-        
-        for col_idx, year_month in enumerate(months):
-            margin = trend_data[store_id].get(year_month, 0)
-            # Write the actual margin value (not the change)
-            worksheet.cell(row=chart_data_row + 2 + row_idx, column=col_idx + 2, value=margin)
-    
-    # Calculate averages
-    avg_data_row = chart_data_row + 2 + len(store_ids)
-    worksheet.cell(row=avg_data_row, column=1, value="平均")
-    
-    for col_idx in range(len(months)):
-        total = 0
-        count = 0
-        for row_idx in range(len(store_ids)):
-            val = worksheet.cell(row=chart_data_row + 2 + row_idx, column=col_idx + 2).value
-            if val is not None and val > 0:
-                total += val
-                count += 1
-        avg = total / count if count > 0 else 0
-        worksheet.cell(row=avg_data_row, column=col_idx + 2, value=avg)
-    
-    # Create chart using the simplest possible approach
-    chart = LineChart()
-    chart.title = "12个月毛利率趋势"
-    chart.y_axis.title = "毛利率 (%)"
-    chart.x_axis.title = "月份"
-    
-    # Define the data range INCLUDING headers and row labels
-    # This is the most reliable way
-    data_with_headers = Reference(
-        worksheet,
-        min_col=1,  # Include store names column
-        min_row=chart_data_row + 1,  # Include header row
-        max_col=1 + len(months),  # All months
-        max_row=avg_data_row  # Include all stores and average
-    )
-    
-    # Add data - titles_from_data=True uses first column as series names
-    # from_rows=True means each row is a series
-    chart.add_data(data_with_headers, titles_from_data=True, from_rows=True)
-    
-    # Categories are the column headers (months)
-    month_headers = Reference(
-        worksheet,
-        min_col=2,  # Start from first month column
-        min_row=chart_data_row + 1,  # The header row
-        max_col=1 + len(months)  # All months
-    )
-    chart.set_categories(month_headers)
-    
-    # Add chart to worksheet
-    worksheet.add_chart(chart, f"A{chart_row}")
-    
-    logger.info("Completed writing 12-month trend sheet with line chart")
+    logger.info("Completed writing 12-month trend sheet")
 
 
 if __name__ == "__main__":

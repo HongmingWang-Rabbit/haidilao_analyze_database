@@ -4,9 +4,10 @@ Index script to run all dish-material extraction scripts in sequence.
 
 This script runs the following extractions in order:
 1. Dish extraction - Extracts dishes from sales data
-2. Material extraction - Extracts materials from export.XLSX 
-3. Dish-Material mapping - Creates BOM relationships between dishes and materials
-4. Inventory extraction - Extracts inventory counts from store inventory files
+2. Dish broad type extraction - Updates dish broad type categories from general type files
+3. Material extraction - Extracts materials from export.XLSX 
+4. Dish-Material mapping - Creates BOM relationships between dishes and materials
+5. Inventory extraction - Extracts inventory counts from store inventory files
 
 Usage:
     python run_all_extractions.py --year 2025 --month 7
@@ -113,6 +114,11 @@ def main():
         action='store_true',
         help='Skip inventory extraction'
     )
+    parser.add_argument(
+        '--skip-broad-type',
+        action='store_true',
+        help='Skip dish broad type extraction'
+    )
     
     # Optional file paths for custom input files
     parser.add_argument(
@@ -218,10 +224,26 @@ def main():
     else:
         logger.info("Skipping dish extraction")
     
-    # Step 2: Extract materials
+    # Step 2: Extract dish broad types
+    if not args.skip_broad_type:
+        print("\n" + "-"*60)
+        print("STEP 2: EXTRACTING DISH BROAD TYPES")
+        print("-"*60)
+        
+        # Build target date from year and month
+        target_date = f"{args.year:04d}-{args.month:02d}-01"
+        broad_type_args = ['--target-date', target_date]
+        
+        if not run_script('extract_dish_broad_type.py', broad_type_args):
+            logger.warning("Dish broad type extraction failed - this is optional")
+            # Don't fail the whole pipeline for this optional step
+    else:
+        logger.info("Skipping dish broad type extraction")
+    
+    # Step 3: Extract materials
     if not args.skip_materials:
         print("\n" + "-"*60)
-        print("STEP 2: EXTRACTING MATERIALS")
+        print("STEP 3: EXTRACTING MATERIALS")
         print("-"*60)
         
         material_args = common_args.copy()
@@ -235,10 +257,10 @@ def main():
     else:
         logger.info("Skipping material extraction")
     
-    # Step 3: Extract dish-material mappings
+    # Step 4: Extract dish-material mappings
     if not args.skip_mapping:
         print("\n" + "-"*60)
-        print("STEP 3: EXTRACTING DISH-MATERIAL MAPPINGS")
+        print("STEP 4: EXTRACTING DISH-MATERIAL MAPPINGS")
         print("-"*60)
         
         mapping_args = common_args.copy()
@@ -250,10 +272,10 @@ def main():
     else:
         logger.info("Skipping dish-material mapping extraction")
     
-    # Step 4: Extract inventory counts
+    # Step 5: Extract inventory counts
     if not args.skip_inventory:
         print("\n" + "-"*60)
-        print("STEP 4: EXTRACTING INVENTORY COUNTS")
+        print("STEP 5: EXTRACTING INVENTORY COUNTS")
         print("-"*60)
         
         inventory_args = common_args.copy()
@@ -305,8 +327,12 @@ def main():
                 cursor.execute('SELECT COUNT(*) FROM inventory_count')
                 inventory_count = cursor.fetchone()['count']
                 
+                cursor.execute('SELECT COUNT(*) FROM dish WHERE broad_type IS NOT NULL')
+                dishes_with_broad_type = cursor.fetchone()['count']
+                
                 print(f"\nDatabase Statistics:")
                 print(f"  Dishes:               {dish_count:,}")
+                print(f"  Dishes with Broad Type: {dishes_with_broad_type:,}")
                 print(f"  Materials:            {material_count:,}")
                 print(f"  Dish-Material Links:  {mapping_count:,}")
                 print(f"  Inventory Counts:     {inventory_count:,}")
