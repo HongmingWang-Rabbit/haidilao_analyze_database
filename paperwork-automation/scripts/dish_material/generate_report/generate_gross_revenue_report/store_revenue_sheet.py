@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 def get_actual_material_usage(db_manager: DatabaseManager, year: int, month: int, store_id: int) -> Dict[str, Dict]:
     """
     Get actual material usage and cost from material_monthly_usage table.
+    Only includes materials with material_use_type = '成本类' (cost-type materials).
     
     Args:
         db_manager: Database manager instance
@@ -54,6 +55,7 @@ def get_actual_material_usage(db_manager: DatabaseManager, year: int, month: int
         WHERE mmu.year = %s
           AND mmu.month = %s
           AND mmu.store_id = %s
+          AND mmu.material_use_type = '成本类'  -- Only include cost-type materials
         """
         
         cursor.execute(query, (year, month, store_id))

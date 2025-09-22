@@ -333,6 +333,7 @@ CREATE TABLE material_monthly_usage (
     month INTEGER NOT NULL CHECK (month >= 1 AND month <= 12), -- 月份 (1-12)
     year INTEGER NOT NULL CHECK (year >= 2020), -- 年份
     material_used NUMERIC(12, 4) NOT NULL, -- 实际使用量 (期末库存 - 期初库存)
+    material_use_type VARCHAR(100), -- 物料使用类型 (来自material_detail的大类字段)
     UNIQUE(material_id, store_id, month, year) -- 同一物料同一门店同一月只能有一条记录
 );
 

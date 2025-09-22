@@ -31,6 +31,21 @@ from scripts.dish_material.generate_report.generate_gross_revenue_report.categor
 from scripts.dish_material.generate_report.generate_gross_revenue_report.twelve_month_trend_sheet import (
     write_twelve_month_trend_sheet
 )
+from scripts.dish_material.generate_report.generate_gross_revenue_report.material_cost_change_sheet import (
+    MaterialCostChangeSheet
+)
+from scripts.dish_material.generate_report.generate_gross_revenue_report.discount_analysis_sheet import (
+    DiscountAnalysisSheet
+)
+from scripts.dish_material.generate_report.generate_gross_revenue_report.dish_price_change_sheet import (
+    DishPriceChangeSheet
+)
+from scripts.dish_material.generate_report.generate_gross_revenue_report.gross_margin_analysis_sheet import (
+    GrossMarginAnalysisSheet
+)
+from scripts.dish_material.generate_report.generate_gross_revenue_report.gross_margin_yoy_sheet import (
+    GrossMarginYoYSheet
+)
 
 # Configure logging
 logging.basicConfig(
@@ -102,6 +117,42 @@ def generate_gross_revenue_report(year: int, month: int, output_dir: str = None,
         month=month
     )
     logger.info("Successfully created 12-month trend sheet")
+
+    # Fourth, create the material cost change sheet
+    logger.info("Creating material cost change sheet")
+    target_date = f"{year}-{month:02d}-01"
+    from datetime import datetime
+    from dateutil.relativedelta import relativedelta
+    last_day = datetime(year, month, 1) + relativedelta(months=1) - relativedelta(days=1)
+    target_date = last_day.strftime("%Y-%m-%d")
+
+    material_cost_sheet = MaterialCostChangeSheet(db_manager, target_date)
+    material_cost_sheet.generate_sheet(workbook)
+    logger.info("Successfully created material cost change sheet")
+
+    # Fifth, create the discount analysis sheet
+    logger.info("Creating discount analysis sheet")
+    discount_sheet = DiscountAnalysisSheet(db_manager, target_date)
+    discount_sheet.generate_sheet(workbook)
+    logger.info("Successfully created discount analysis sheet")
+
+    # Sixth, create the dish price change sheet
+    logger.info("Creating dish price change sheet")
+    dish_price_sheet = DishPriceChangeSheet(db_manager, target_date)
+    dish_price_sheet.generate_sheet(workbook)
+    logger.info("Successfully created dish price change sheet")
+
+    # Seventh, create the gross margin analysis sheet
+    logger.info("Creating gross margin analysis sheet")
+    margin_analysis_sheet = GrossMarginAnalysisSheet(db_manager, target_date)
+    margin_analysis_sheet.generate_sheet(workbook)
+    logger.info("Successfully created gross margin analysis sheet")
+
+    # Eighth, create the gross margin YoY analysis sheet
+    logger.info("Creating gross margin YoY analysis sheet")
+    margin_yoy_sheet = GrossMarginYoYSheet(db_manager, target_date)
+    margin_yoy_sheet.generate_sheet(workbook)
+    logger.info("Successfully created gross margin YoY analysis sheet")
     
     # Generate sheets for each store
     stores_processed = 0

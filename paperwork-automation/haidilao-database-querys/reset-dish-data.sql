@@ -214,6 +214,7 @@ CREATE TABLE material_monthly_usage (
     month INTEGER NOT NULL CHECK (month >= 1 AND month <= 12),
     year INTEGER NOT NULL CHECK (year >= 2020),
     material_used NUMERIC(12, 4) NOT NULL,
+    material_use_type VARCHAR(100), -- 物料使用类型 (来自material_detail的大类字段)
     UNIQUE(material_id, store_id, month, year)
 );
 

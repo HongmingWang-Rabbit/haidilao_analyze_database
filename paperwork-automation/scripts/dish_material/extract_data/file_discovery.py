@@ -100,6 +100,7 @@ def find_material_file(year: int, month: int, use_history: bool = None) -> Optio
     
     # First try specific month file
     month_patterns = [
+        f"{year}-{month:02d}.XLSX",  # Historical format: 2024-05.XLSX
         f"export{year}-{month:02d}.XLSX",
         f"export{year}-{month}.XLSX",
         f"export_{year}_{month:02d}.XLSX",

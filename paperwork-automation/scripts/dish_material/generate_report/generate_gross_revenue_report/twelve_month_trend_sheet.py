@@ -74,7 +74,7 @@ def get_12_month_trend_data(db_manager: DatabaseManager, end_year: int, end_mont
             GROUP BY dms.store_id, dms.year, dms.month
         ),
         material_usage AS (
-            -- Get actual material usage from material_monthly_usage for each month
+            -- Get actual material usage from material_monthly_usage for each month (only 成本类)
             SELECT 
                 mmu.store_id,
                 mmu.year,
@@ -90,6 +90,7 @@ def get_12_month_trend_data(db_manager: DatabaseManager, end_year: int, end_mont
                 (mmu.year > %s AND mmu.year < %s) OR
                 (mmu.year = %s AND mmu.month <= %s)
             )
+            AND mmu.material_use_type = '成本类'  -- Only include cost-type materials
             GROUP BY mmu.store_id, mmu.year, mmu.month
         )
         SELECT 

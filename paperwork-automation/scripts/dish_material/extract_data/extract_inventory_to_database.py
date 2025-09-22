@@ -30,7 +30,7 @@ from configs.dish_material.inventory_extraction import (
     INVENTORY_STORE_CODE_MAPPING,
     INVENTORY_FILE_PATTERN
 )
-from scripts.dish_material.extract_data.file_discovery import find_inventory_files
+from scripts.dish_material.extract_data.file_discovery import find_inventory_files, find_material_file
 
 # Configure logging
 logging.basicConfig(
@@ -47,6 +47,7 @@ class InventoryExtractor:
         """Initialize the inventory extractor."""
         self.db_manager = db_manager
         self.materials_cache = {}  # Cache for material lookups
+        self.material_types = {}  # Cache for material types from material_detail
 
     def extract_inventory_for_month(
         self,
@@ -81,6 +82,9 @@ class InventoryExtractor:
             store_folders = list(input_path.iterdir())
 
         logger.info(f"Processing inventory for {year}-{month:02d}")
+        
+        # Load material types from material_detail file
+        self.material_types = self._load_material_types(year, month, use_history_files)
 
         stats = {
             'files_processed': 0,
@@ -281,22 +285,69 @@ class InventoryExtractor:
                 
                 # If we have actual_usage calculated, update material_monthly_usage
                 if actual_usage is not None and stock_quantity is not None:
-                    # Update or insert into material_monthly_usage with the correct actual usage
+                    # Get material type from the loaded mapping
+                    material_type = self.material_types.get(material_code, None)
+                    
+                    # Update or insert into material_monthly_usage with the correct actual usage and type
                     cursor.execute(
                         """INSERT INTO material_monthly_usage 
-                           (material_id, store_id, month, year, material_used)
-                           VALUES (%s, %s, %s, %s, %s)
+                           (material_id, store_id, month, year, material_used, material_use_type)
+                           VALUES (%s, %s, %s, %s, %s, %s)
                            ON CONFLICT (material_id, store_id, month, year) 
                            DO UPDATE SET 
-                               material_used = EXCLUDED.material_used""",
-                        (material_id, store_id, month, year, actual_usage)
+                               material_used = EXCLUDED.material_used,
+                               material_use_type = EXCLUDED.material_use_type""",
+                        (material_id, store_id, month, year, actual_usage, material_type)
                     )
-                    logger.debug(f"Updated material_monthly_usage for {material_code}: stock={stock_quantity:.2f}, count={count_quantity:.2f}, usage={actual_usage:.2f}")
+                    logger.debug(f"Updated material_monthly_usage for {material_code}: stock={stock_quantity:.2f}, count={count_quantity:.2f}, usage={actual_usage:.2f}, type={material_type}")
                 
             except Exception as e:
                 logger.error(f"Error updating count for material {row.get('material_code', 'UNKNOWN')}: {e}")
                 stats['errors'] += 1
 
+    def _load_material_types(self, year: int, month: int, use_history_files: bool = True) -> Dict[str, str]:
+        """
+        Load material types from material_detail file.
+        
+        Returns:
+            Dictionary mapping material_number to material_use_type (大类)
+        """
+        material_types = {}
+        
+        # Find the material_detail file
+        material_file = find_material_file(year, month, use_history=use_history_files)
+        if not material_file or not material_file.exists():
+            logger.warning(f"Material detail file not found for {year}-{month:02d}")
+            return material_types
+        
+        try:
+            logger.info(f"Loading material types from {material_file}")
+            
+            # Read the Excel file with proper dtype to preserve material numbers
+            df = pd.read_excel(material_file, dtype={'物料': str})
+            
+            # Check if required columns exist
+            if '物料' not in df.columns or '大类' not in df.columns:
+                logger.warning(f"Required columns (物料, 大类) not found in {material_file}")
+                return material_types
+            
+            # Build the mapping
+            for _, row in df.iterrows():
+                material_number = str(row['物料']).strip() if pd.notna(row['物料']) else None
+                material_type = str(row['大类']).strip() if pd.notna(row['大类']) else None
+                
+                if material_number and material_type:
+                    # Remove leading zeros to match with inventory material codes
+                    material_number = material_number.lstrip('0') or '0'
+                    material_types[material_number] = material_type
+            
+            logger.info(f"Loaded {len(material_types)} material types from material_detail")
+            
+        except Exception as e:
+            logger.error(f"Error reading material detail file: {e}")
+        
+        return material_types
+    
     def _get_material_id(self, cursor, material_code: str, store_id: int) -> Optional[int]:
         """Get material ID from cache or database."""
         cache_key = (material_code, store_id)

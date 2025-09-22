@@ -56,7 +56,7 @@ def get_all_stores_summary_data(db_manager: DatabaseManager, year: int, month: i
             GROUP BY dms.store_id
         ),
         material_usage AS (
-            -- Get actual material usage from material_monthly_usage
+            -- Get actual material usage from material_monthly_usage (only 成本类)
             SELECT 
                 mmu.store_id,
                 SUM(COALESCE(mmu.material_used, 0) * COALESCE(mph.price, 0)) as total_material_cost
@@ -67,6 +67,7 @@ def get_all_stores_summary_data(db_manager: DatabaseManager, year: int, month: i
                 AND mph.is_active = TRUE
             WHERE mmu.year = %s
               AND mmu.month = %s
+              AND mmu.material_use_type = '成本类'  -- Only include cost-type materials
             GROUP BY mmu.store_id
         )
         SELECT 
@@ -239,7 +240,7 @@ def write_all_stores_summary_sheet(worksheet, db_manager: DatabaseManager, year:
     # Add note about data source
     note_row = summary_row + 2
     note_cell = worksheet.cell(row=note_row, column=1, 
-                              value="注：物料使用金额为实际库存消耗数据，非理论计算值")
+                              value="注：物料使用金额为实际库存消耗数据（仅成本类物料），非理论计算值")
     note_cell.font = Font(italic=True, size=10, color="666666")
     worksheet.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=5)
     

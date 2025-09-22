@@ -117,7 +117,7 @@ def get_category_gross_margin_data(db_manager: DatabaseManager, year: int, month
             GROUP BY store_id, year, month, material_id
         ),
         actual_material_usage AS (
-            -- Get actual material usage from material_monthly_usage
+            -- Get actual material usage from material_monthly_usage (only 成本类)
             SELECT 
                 mmu.store_id,
                 mmu.year,
@@ -138,6 +138,7 @@ def get_category_gross_margin_data(db_manager: DatabaseManager, year: int, month
                 -- Last year same month
                 (mmu.year = %s AND mmu.month = %s)
             )
+            AND mmu.material_use_type = '成本类'  -- Only include cost-type materials
         ),
         dish_actual_cost AS (
             -- Distribute actual cost to dishes based on theoretical usage proportions
@@ -525,7 +526,7 @@ def write_category_comparison_sheet(worksheet, db_manager: DatabaseManager, year
     
     # Add note about actual material usage
     note_row = legend_row + 3
-    note_text = "注：物料成本为实际库存消耗数据（按理论用量比例分配到各菜品后汇总），非理论计算值"
+    note_text = "注：物料成本为实际库存消耗数据（仅成本类物料，按理论用量比例分配到各菜品后汇总），非理论计算值"
     note_cell = worksheet.cell(row=note_row, column=1, value=note_text)
     note_cell.font = Font(italic=True, size=10, color="666666")
     worksheet.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=10)
