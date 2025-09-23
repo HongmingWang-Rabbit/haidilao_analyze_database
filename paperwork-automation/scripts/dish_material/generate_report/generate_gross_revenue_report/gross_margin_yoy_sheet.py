@@ -144,7 +144,10 @@ class GrossMarginYoYSheet:
                 FROM dish d
             )
             SELECT
-                SUM((cd.current_price - lyd.last_year_price) * cd.sale_amount) as price_impact
+                SUM(CASE
+                    WHEN lyd.last_year_price > 0 THEN (cd.current_price - lyd.last_year_price) * cd.sale_amount
+                    ELSE 0
+                END) as price_impact
             FROM current_dishes cd
             LEFT JOIN last_year_dishes lyd ON cd.id = lyd.id
             WHERE cd.sale_amount > 0

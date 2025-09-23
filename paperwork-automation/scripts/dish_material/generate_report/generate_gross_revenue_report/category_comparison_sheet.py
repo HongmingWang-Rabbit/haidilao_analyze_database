@@ -31,12 +31,12 @@ def get_category_gross_margin_data(db_manager: DatabaseManager, year: int, month
     Get gross margin data by dish broad type category for all stores.
     Includes current month, last month, and last year comparisons.
     Uses actual material usage distributed proportionally based on theoretical usage.
-    
+
     Args:
         db_manager: Database manager instance
         year: Target year
         month: Target month
-    
+
     Returns:
         Dict with structure:
         {
@@ -44,7 +44,13 @@ def get_category_gross_margin_data(db_manager: DatabaseManager, year: int, month
                 broad_type: {
                     'current': margin_percentage,
                     'last_month': margin_percentage,
-                    'last_year': margin_percentage
+                    'last_year': margin_percentage,
+                    'current_revenue': revenue_amount,
+                    'current_cost': cost_amount,
+                    'last_month_revenue': revenue_amount,
+                    'last_month_cost': cost_amount,
+                    'last_year_revenue': revenue_amount,
+                    'last_year_cost': cost_amount
                 }
             }
         }
@@ -228,16 +234,28 @@ def get_category_gross_margin_data(db_manager: DatabaseManager, year: int, month
                 result[store_id][category] = {
                     'current': 0,
                     'last_month': 0,
-                    'last_year': 0
+                    'last_year': 0,
+                    'current_revenue': 0,
+                    'current_cost': 0,
+                    'last_month_revenue': 0,
+                    'last_month_cost': 0,
+                    'last_year_revenue': 0,
+                    'last_year_cost': 0
                 }
             
-            # Assign margin to appropriate period
+            # Assign data to appropriate period
             if period_year == year and period_month == month:
                 result[store_id][category]['current'] = margin
+                result[store_id][category]['current_revenue'] = float(row['revenue']) if row['revenue'] else 0
+                result[store_id][category]['current_cost'] = float(row['material_cost']) if row['material_cost'] else 0
             elif period_year == last_month_year and period_month == last_month:
                 result[store_id][category]['last_month'] = margin
+                result[store_id][category]['last_month_revenue'] = float(row['revenue']) if row['revenue'] else 0
+                result[store_id][category]['last_month_cost'] = float(row['material_cost']) if row['material_cost'] else 0
             elif period_year == last_year and period_month == month:
                 result[store_id][category]['last_year'] = margin
+                result[store_id][category]['last_year_revenue'] = float(row['revenue']) if row['revenue'] else 0
+                result[store_id][category]['last_year_cost'] = float(row['material_cost']) if row['material_cost'] else 0
     
     return result
 
@@ -431,68 +449,74 @@ def write_category_comparison_sheet(worksheet, db_manager: DatabaseManager, year
         
         data_row += 1
     
-    # Add average row
+    # Add total row (changed from average to total)
     avg_row = data_row + 1
-    worksheet.cell(row=avg_row, column=1, value="平均")
+    worksheet.cell(row=avg_row, column=1, value="全店合计")
     worksheet.cell(row=avg_row, column=1).font = Font(bold=True)
     worksheet.cell(row=avg_row, column=1).border = thin_border
     
-    # Calculate and write averages for each category
+    # Calculate and write totals for each category (using total revenue/cost, not average of percentages)
     current_col = 2
     for category in categories:
-        # Calculate averages
-        current_vals = []
-        last_month_vals = []
-        last_year_vals = []
-        
+        # Calculate totals across all stores
+        total_current_revenue = 0
+        total_current_cost = 0
+        total_last_month_revenue = 0
+        total_last_month_cost = 0
+        total_last_year_revenue = 0
+        total_last_year_cost = 0
+
         for store_id in margin_data:
             if category in margin_data[store_id]:
-                current_vals.append(margin_data[store_id][category].get('current', 0))
-                last_month_vals.append(margin_data[store_id][category].get('last_month', 0))
-                last_year_vals.append(margin_data[store_id][category].get('last_year', 0))
-        
-        # Current month average
-        avg_current = sum(current_vals) / len(current_vals) if current_vals else 0
-        cell = worksheet.cell(row=avg_row, column=current_col, value=f"{avg_current:.1f}%")
+                total_current_revenue += margin_data[store_id][category].get('current_revenue', 0)
+                total_current_cost += margin_data[store_id][category].get('current_cost', 0)
+                total_last_month_revenue += margin_data[store_id][category].get('last_month_revenue', 0)
+                total_last_month_cost += margin_data[store_id][category].get('last_month_cost', 0)
+                total_last_year_revenue += margin_data[store_id][category].get('last_year_revenue', 0)
+                total_last_year_cost += margin_data[store_id][category].get('last_year_cost', 0)
+
+        # Current month total margin
+        total_current_margin = ((total_current_revenue - total_current_cost) / total_current_revenue * 100) if total_current_revenue > 0 else 0
+        cell = worksheet.cell(row=avg_row, column=current_col, value=f"{total_current_margin:.1f}%")
         cell.font = Font(bold=True)
         cell.alignment = Alignment(horizontal='right')
         cell.border = thin_border
-        
-        # Last month average
-        avg_last_month = sum(last_month_vals) / len(last_month_vals) if last_month_vals else 0
-        cell = worksheet.cell(row=avg_row, column=current_col + 1, value=f"{avg_last_month:.1f}%")
+
+        # Last month total margin
+        total_last_month_margin = ((total_last_month_revenue - total_last_month_cost) / total_last_month_revenue * 100) if total_last_month_revenue > 0 else 0
+        cell = worksheet.cell(row=avg_row, column=current_col + 1, value=f"{total_last_month_margin:.1f}%")
         cell.font = Font(bold=True)
         cell.alignment = Alignment(horizontal='right')
         cell.border = thin_border
-        
-        # Last year average
-        avg_last_year = sum(last_year_vals) / len(last_year_vals) if last_year_vals else 0
-        cell = worksheet.cell(row=avg_row, column=current_col + 2, value=f"{avg_last_year:.1f}%")
+
+        # Last year total margin
+        total_last_year_margin = ((total_last_year_revenue - total_last_year_cost) / total_last_year_revenue * 100) if total_last_year_revenue > 0 else 0
+        cell = worksheet.cell(row=avg_row, column=current_col + 2, value=f"{total_last_year_margin:.1f}%")
         cell.font = Font(bold=True)
         cell.alignment = Alignment(horizontal='right')
         cell.border = thin_border
-        
-        # Average MoM change
-        if avg_last_month != 0:
-            avg_mom = avg_current - avg_last_month
-            cell = worksheet.cell(row=avg_row, column=current_col + 3, value=f"{avg_mom:+.1f}%")
-            if avg_mom > 0:
+
+        # Total MoM change (based on total margins, not average)
+        if total_last_month_margin != 0 or total_last_month_revenue > 0:
+            total_mom = total_current_margin - total_last_month_margin
+            cell = worksheet.cell(row=avg_row, column=current_col + 3, value=f"{total_mom:+.1f}%")
+            if total_mom > 0:
                 cell.fill = green_fill
-            elif avg_mom < 0:
+            elif total_mom < 0:
                 cell.fill = red_fill
         else:
             cell = worksheet.cell(row=avg_row, column=current_col + 3, value="N/A")
         cell.font = Font(bold=True)
         cell.alignment = Alignment(horizontal='right')
         cell.border = thin_border
-        
-        # Average YoY change
-        if avg_last_year != 0:
-            avg_yoy = avg_current - avg_last_year
-            cell = worksheet.cell(row=avg_row, column=current_col + 4, value=f"{avg_yoy:+.1f}%")
-            if avg_yoy > 0:
+
+        # Total YoY change (based on total margins, not average)
+        if total_last_year_margin != 0 or total_last_year_revenue > 0:
+            total_yoy = total_current_margin - total_last_year_margin
+            cell = worksheet.cell(row=avg_row, column=current_col + 4, value=f"{total_yoy:+.1f}%")
+            if total_yoy > 0:
                 cell.fill = green_fill
-            elif avg_yoy < 0:
+            elif total_yoy < 0:
                 cell.fill = red_fill
         else:
             cell = worksheet.cell(row=avg_row, column=current_col + 4, value="N/A")
@@ -524,12 +548,12 @@ def write_category_comparison_sheet(worksheet, db_manager: DatabaseManager, year
     worksheet.cell(row=legend_row + 1, column=3, value="-3.0%")
     worksheet.cell(row=legend_row + 1, column=3).fill = red_fill
     
-    # Add note about actual material usage
+    # Add note about actual material usage and calculation method
     note_row = legend_row + 3
-    note_text = "注：物料成本为实际库存消耗数据（仅成本类物料，按理论用量比例分配到各菜品后汇总），非理论计算值"
+    note_text = "注：1) 物料成本为实际库存消耗数据（仅成本类物料，按理论用量比例分配到各菜品后汇总）；2) 全店合计为各店总收入和总成本计算的毛利率，非各店毛利率的平均值"
     note_cell = worksheet.cell(row=note_row, column=1, value=note_text)
     note_cell.font = Font(italic=True, size=10, color="666666")
-    worksheet.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=10)
+    worksheet.merge_cells(start_row=note_row, start_column=1, end_row=note_row, end_column=12)
     
     logger.info("Completed writing category comparison sheet")
 

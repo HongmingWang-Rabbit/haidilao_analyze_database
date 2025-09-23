@@ -32,8 +32,8 @@ class DishPriceChangeSheet:
             'last_year': (last_year_start, last_year_end)
         }
 
-    def _get_dish_prices_and_sales(self, date_range: tuple, store_id: int) -> Dict[str, Dict[str, Any]]:
-        """Get dish prices and sales for a specific date range and store"""
+    def _get_dish_prices_and_sales(self, date_range: tuple, store_id: int) -> Dict[int, Dict[str, Any]]:
+        """Get dish prices and sales for a specific date range and store - using dish ID for unique identification"""
         start_date, end_date = date_range
         year = start_date.year
         month = start_date.month
@@ -41,6 +41,7 @@ class DishPriceChangeSheet:
         query = """
             WITH dish_data AS (
                 SELECT
+                    d.id as dish_id,
                     d.full_code as dish_code,
                     d.name as dish_name,
                     dms.sale_amount as total_quantity,
@@ -62,6 +63,7 @@ class DishPriceChangeSheet:
                     AND dms.month = %s
             )
             SELECT
+                dish_id,
                 dish_code,
                 dish_name,
                 avg_price,
@@ -79,7 +81,9 @@ class DishPriceChangeSheet:
 
                     dish_data = {}
                     for row in results:
-                        dish_data[row['dish_code']] = {
+                        # Use dish_id as the key instead of dish_code
+                        dish_data[row['dish_id']] = {
+                            'dish_code': row['dish_code'],
                             'dish_name': row['dish_name'],
                             'avg_price': float(row['avg_price']) if row['avg_price'] else 0,
                             'total_quantity': float(row['total_quantity']) if row['total_quantity'] else 0,
@@ -99,14 +103,14 @@ class DishPriceChangeSheet:
         last_month_data = self._get_dish_prices_and_sales(date_ranges['last_month'], store_id)
         last_year_data = self._get_dish_prices_and_sales(date_ranges['last_year'], store_id)
 
-        # Get all dishes that appear in any of the three periods
-        all_dishes = set(current_data.keys()) | set(last_month_data.keys()) | set(last_year_data.keys())
+        # Get all dish IDs that appear in any of the three periods
+        all_dish_ids = set(current_data.keys()) | set(last_month_data.keys()) | set(last_year_data.keys())
 
         store_rows = []
-        for dish_code in all_dishes:
-            current = current_data.get(dish_code, {})
-            last_month = last_month_data.get(dish_code, {})
-            last_year = last_year_data.get(dish_code, {})
+        for dish_id in all_dish_ids:
+            current = current_data.get(dish_id, {})
+            last_month = last_month_data.get(dish_id, {})
+            last_year = last_year_data.get(dish_id, {})
 
             # Skip if no current data
             if not current:
@@ -119,6 +123,7 @@ class DishPriceChangeSheet:
             current_revenue = current.get('total_revenue', 0)
 
             # Calculate price changes
+            # Only include actual price changes, not new dishes
             mom_price_change = current_price - last_month_price if last_month_price else 0
             yoy_price_change = current_price - last_year_price if last_year_price else 0
 
@@ -126,10 +131,14 @@ class DishPriceChangeSheet:
             mom_revenue_impact = mom_price_change * current_quantity
             yoy_revenue_impact = yoy_price_change * current_quantity
 
+            # Get dish code and name from whichever period has data
+            dish_code = current.get('dish_code', last_month.get('dish_code', last_year.get('dish_code', '')))
+            dish_name = current.get('dish_name', last_month.get('dish_name', last_year.get('dish_name', '')))
+
             row = {
                 '门店': store_name,
                 '菜品编码': dish_code,
-                '菜品名称': current.get('dish_name', last_month.get('dish_name', last_year.get('dish_name', ''))),
+                '菜品名称': dish_name,
                 '本期单价': current_price,
                 '上期单价': last_month_price,
                 '去年同期单价': last_year_price,

@@ -144,7 +144,10 @@ class GrossMarginAnalysisSheet:
                 FROM dish d
             )
             SELECT
-                SUM((cd.current_price - ld.last_price) * cd.sale_amount) as price_impact
+                SUM(CASE
+                    WHEN ld.last_price > 0 THEN (cd.current_price - ld.last_price) * cd.sale_amount
+                    ELSE 0
+                END) as price_impact
             FROM current_dishes cd
             LEFT JOIN last_dishes ld ON cd.id = ld.id
             WHERE cd.sale_amount > 0
