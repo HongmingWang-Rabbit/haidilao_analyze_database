@@ -126,6 +126,7 @@ class GrossMarginAnalysisSheet:
                 WHERE dms.store_id = %s
                     AND dms.year = %s
                     AND dms.month = %s
+                    AND d.full_code != '14120001'
             ),
             last_dishes AS (
                 SELECT
@@ -195,11 +196,11 @@ class GrossMarginAnalysisSheet:
             ),
             last_materials AS (
                 SELECT
-                    m.id as material_id,
+                    mmu.material_id,
                     COALESCE(
                         (SELECT mph.price
                          FROM material_price_history mph
-                         WHERE mph.material_id = m.id
+                         WHERE mph.material_id = mmu.material_id
                            AND mph.store_id = %s
                            AND ((mph.effective_year < %s) OR
                                 (mph.effective_year = %s AND mph.effective_month <= %s))
@@ -207,11 +208,17 @@ class GrossMarginAnalysisSheet:
                          LIMIT 1),
                         0
                     ) as last_price
-                FROM material m
-                WHERE m.store_id = %s
+                FROM material_monthly_usage mmu
+                WHERE mmu.store_id = %s
+                    AND mmu.year = %s
+                    AND mmu.month = %s
             )
             SELECT
-                SUM((cm.current_price - lm.last_price) * cm.material_used) as price_impact
+                SUM(CASE
+                    WHEN lm.material_id IS NOT NULL AND lm.last_price > 0
+                    THEN (cm.current_price - lm.last_price) * cm.material_used
+                    ELSE 0
+                END) as price_impact
             FROM current_materials cm
             LEFT JOIN last_materials lm ON cm.material_id = lm.material_id
             WHERE cm.material_used > 0
@@ -224,7 +231,7 @@ class GrossMarginAnalysisSheet:
                                  (store_id, current_year, current_year, current_mon,
                                   store_id, current_year, current_mon,
                                   store_id, last_year, last_year, last_mon,
-                                  store_id))
+                                  store_id, last_year, last_mon))
                     result = cursor.fetchone()
 
                     return float(result['price_impact']) if result['price_impact'] else 0

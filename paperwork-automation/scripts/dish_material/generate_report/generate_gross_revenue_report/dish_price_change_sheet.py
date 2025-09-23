@@ -135,6 +135,10 @@ class DishPriceChangeSheet:
             dish_code = current.get('dish_code', last_month.get('dish_code', last_year.get('dish_code', '')))
             dish_name = current.get('dish_name', last_month.get('dish_name', last_year.get('dish_name', '')))
 
+            # Skip dish code 14120001
+            if dish_code == '14120001':
+                continue
+
             row = {
                 '门店': store_name,
                 '菜品编码': dish_code,
