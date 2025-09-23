@@ -1094,6 +1094,19 @@ FIRST DATA CANADA\(J\)''', re.IGNORECASE | re.MULTILINE),
     }),
 
     (TransactionMatchRule(
+        description_pattern="MAZDA FINANCE   RLS/LOY",
+        transaction_type='debit',
+        amount_pattern=399.1
+    ), {
+        "品名": TransactionType.INSURANCE_FEE.value,
+        "付款详情": "马自达租赁费",
+        "单据号": True,
+        "附件": False,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
         description_pattern="ACURA FINANCE   LNS/PRE",
         transaction_type='debit',
         amount_pattern=396.37
