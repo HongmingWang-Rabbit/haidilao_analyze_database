@@ -33,10 +33,22 @@ class GrossMarginYoYSheet:
         year = start_date.year
         month = start_date.month
 
-        # Get revenue from daily_report
+        # Get revenue from dish_monthly_sale (same as summary sheet)
         revenue_query = """
             SELECT
-                SUM(CAST(revenue_tax_not_included AS DECIMAL(15,2))) as total_revenue,
+                SUM((COALESCE(dms.sale_amount, 0) - COALESCE(dms.return_amount, 0)) * COALESCE(dph.price, 0)) as total_revenue
+            FROM dish_monthly_sale dms
+            LEFT JOIN dish_price_history dph ON dph.dish_id = dms.dish_id
+                AND dph.store_id = dms.store_id
+                AND dph.is_active = TRUE
+            WHERE dms.store_id = %s
+                AND dms.year = %s
+                AND dms.month = %s
+        """
+
+        # Get discount from daily_report (separate query)
+        discount_query = """
+            SELECT
                 SUM(CAST(discount_total AS DECIMAL(15,2))) as total_discount
             FROM daily_report
             WHERE store_id = %s
@@ -44,41 +56,36 @@ class GrossMarginYoYSheet:
                 AND date <= %s
         """
 
-        # Get material cost
+        # Get material cost (only 成本类 materials, same as summary sheet)
         material_cost_query = """
             SELECT
-                SUM(CAST(mmu.material_used AS DECIMAL(15,2)) *
-                    COALESCE(
-                        (SELECT mph.price
-                         FROM material_price_history mph
-                         WHERE mph.material_id = mmu.material_id
-                           AND mph.store_id = %s
-                           AND ((mph.effective_year < %s) OR
-                                (mph.effective_year = %s AND mph.effective_month <= %s))
-                         ORDER BY mph.effective_year DESC, mph.effective_month DESC
-                         LIMIT 1),
-                        0
-                    )
-                ) as total_material_cost
+                SUM(COALESCE(mmu.material_used, 0) * COALESCE(mph.price, 0)) as total_material_cost
             FROM material_monthly_usage mmu
+            JOIN material m ON m.id = mmu.material_id AND m.store_id = mmu.store_id
+            LEFT JOIN material_price_history mph ON mph.material_id = m.id
+                AND mph.store_id = m.store_id
+                AND mph.is_active = TRUE
             WHERE mmu.store_id = %s
                 AND mmu.year = %s
                 AND mmu.month = %s
+                AND mmu.material_use_type = '成本类'  -- Only include cost-type materials
         """
 
         try:
             with self.db_manager.get_connection() as conn:
                 with conn.cursor() as cursor:
                     # Get revenue data
-                    cursor.execute(revenue_query, (store_id, start_date, end_date))
+                    cursor.execute(revenue_query, (store_id, year, month))
                     revenue_result = cursor.fetchone()
-
                     total_revenue = float(revenue_result['total_revenue']) if revenue_result['total_revenue'] else 0
-                    total_discount = float(revenue_result['total_discount']) if revenue_result['total_discount'] else 0
+
+                    # Get discount data from daily_report
+                    cursor.execute(discount_query, (store_id, start_date, end_date))
+                    discount_result = cursor.fetchone()
+                    total_discount = float(discount_result['total_discount']) if discount_result and discount_result['total_discount'] else 0
 
                     # Get material cost
-                    cursor.execute(material_cost_query,
-                                 (store_id, year, year, month, store_id, year, month))
+                    cursor.execute(material_cost_query, (store_id, year, month))
                     cost_result = cursor.fetchone()
 
                     total_cost = float(cost_result['total_material_cost']) if cost_result['total_material_cost'] else 0
@@ -250,16 +257,18 @@ class GrossMarginYoYSheet:
                 -- Calculate theoretical material usage based on dishes sold
                 SELECT
                     dm.material_id,
-                    SUM(dms.sale_amount * dm.standard_quantity) as theoretical_qty
+                    SUM(dms.sale_amount * dm.standard_quantity * COALESCE(dm.loss_rate, 0) /
+                        COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1)) as theoretical_qty
                 FROM dish_monthly_sale dms
                 INNER JOIN dish_material dm ON dms.dish_id = dm.dish_id
                 WHERE dms.store_id = %s
                     AND dms.year = %s
                     AND dms.month = %s
+                    AND dm.store_id = %s
                 GROUP BY dm.material_id
             ),
             actual_usage AS (
-                -- Get actual material usage
+                -- Get actual material usage (only cost-type materials)
                 SELECT
                     material_id,
                     material_used as actual_qty
@@ -267,6 +276,7 @@ class GrossMarginYoYSheet:
                 WHERE store_id = %s
                     AND year = %s
                     AND month = %s
+                    AND material_use_type = '成本类'  -- Only cost-type materials
             ),
             material_prices AS (
                 -- Get material prices
@@ -288,18 +298,19 @@ class GrossMarginYoYSheet:
             )
             SELECT
                 SUM(
-                    GREATEST(0, COALESCE(au.actual_qty, 0) - COALESCE(tu.theoretical_qty, 0)) * mp.price
+                    (COALESCE(au.actual_qty, 0) - COALESCE(tu.theoretical_qty, 0)) * mp.price
                 ) as loss_amount
             FROM material_prices mp
             LEFT JOIN theoretical_usage tu ON mp.material_id = tu.material_id
             LEFT JOIN actual_usage au ON mp.material_id = au.material_id
+            WHERE tu.material_id IS NOT NULL OR au.material_id IS NOT NULL  -- Only materials with either theoretical or actual usage
         """
 
         try:
             with self.db_manager.get_connection() as conn:
                 with conn.cursor() as cursor:
                     cursor.execute(query,
-                                 (store_id, year, month,
+                                 (store_id, year, month, store_id,
                                   store_id, year, month,
                                   store_id, year, year, month,
                                   store_id))
