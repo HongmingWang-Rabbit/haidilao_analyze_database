@@ -342,31 +342,51 @@ class GrossMarginAnalysisSheet:
         dish_loss_impact = self._calculate_dish_loss_impact(store_id, current_month)
         dish_loss_impact_last = self._calculate_dish_loss_impact(store_id, last_month)
 
-        # Calculate restored margins (what margin would be without the change)
+        # Calculate restored margins using the Excel formulas
+        # These show what the margin would have been without each specific change
         revenue = current_data['revenue']
+        current_margin_decimal = current_data['gross_margin'] / 100  # Convert to decimal
+        last_margin_decimal = last_month_data['gross_margin'] / 100
+
         if revenue > 0:
-            # Dish price restored margin (if dishes hadn't changed price)
-            dish_restored_revenue = revenue - dish_price_impact
-            dish_restored_margin = ((dish_restored_revenue - current_data['cost']) / dish_restored_revenue * 100) if dish_restored_revenue > 0 else 0
+            # Dish price restored margin: =IFERROR(1-(1-C5)*U5/(U5-F5),0)
+            # Where C5=current margin, U5=current revenue, F5=dish price impact
+            if (revenue - dish_price_impact) != 0:
+                dish_restored_margin = (1 - (1 - current_margin_decimal) * revenue / (revenue - dish_price_impact)) * 100
+            else:
+                dish_restored_margin = 0
             dish_margin_impact = current_data['gross_margin'] - dish_restored_margin
 
-            # Material price restored margin (if materials hadn't changed price)
-            material_restored_cost = current_data['cost'] - material_price_impact
-            material_restored_margin = ((revenue - material_restored_cost) / revenue * 100)
+            # Material price restored margin: =IFERROR(1-((1-C5)*U5-I5)/U5,0)
+            # Where I5=material price impact (negative means cost increase)
+            material_restored_margin = (1 - ((1 - current_margin_decimal) * revenue - material_price_impact) / revenue) * 100
             material_margin_impact = current_data['gross_margin'] - material_restored_margin
 
             # Discount restored margins
-            current_discount_restored_revenue = revenue + current_data['discount']
-            current_discount_restored_margin = ((current_discount_restored_revenue - current_data['cost']) / current_discount_restored_revenue * 100) if current_discount_restored_revenue > 0 else 0
+            # For discount, we need to calculate the discount percentage first
+            discount_pct_current = current_data['discount'] / revenue if revenue > 0 else 0
+            discount_pct_last = last_month_data['discount'] / last_month_data['revenue'] if last_month_data['revenue'] > 0 else 0
 
-            last_discount_restored_revenue = last_month_data['revenue'] + last_month_data['discount']
-            last_discount_restored_margin = ((last_discount_restored_revenue - last_month_data['cost']) / last_discount_restored_revenue * 100) if last_discount_restored_revenue > 0 else 0
+            # Current restored: =1-(1-C5)*U5/(U5/(1-L5)) where L5=current discount %
+            if discount_pct_current < 1:
+                current_discount_restored_margin = (1 - (1 - current_margin_decimal) * revenue / (revenue / (1 - discount_pct_current))) * 100
+            else:
+                current_discount_restored_margin = 0
 
-            discount_margin_impact = current_data['gross_margin'] - current_discount_restored_margin
+            # Last month restored: =1-(1-D5)*V5/(V5/(1-M5)) where M5=last discount %
+            if discount_pct_last < 1 and last_month_data['revenue'] > 0:
+                last_discount_restored_margin = (1 - (1 - last_margin_decimal) * last_month_data['revenue'] /
+                                                (last_month_data['revenue'] / (1 - discount_pct_last))) * 100
+            else:
+                last_discount_restored_margin = 0
 
-            # Dish loss restored margin
-            loss_restored_cost = current_data['cost'] - dish_loss_impact
-            loss_restored_margin = ((revenue - loss_restored_cost) / revenue * 100)
+            # Discount margin impact: the difference between the two restored margins
+            # This shows the impact of discount change on margin
+            discount_margin_impact = current_discount_restored_margin - last_discount_restored_margin
+
+            # Dish loss restored margin: =IFERROR(1-((1-C5)*U5-R5)/U5,0)
+            # Where R5=dish loss impact
+            loss_restored_margin = (1 - ((1 - current_margin_decimal) * revenue - dish_loss_impact) / revenue) * 100
             loss_margin_impact = current_data['gross_margin'] - loss_restored_margin
         else:
             dish_restored_margin = 0

@@ -813,7 +813,7 @@ INSERT INTO month_static_data (month, cad_usd_rate) VALUES
 ('2025-06-01', 0.695265),  -- June 2025 CAD/USD rate
 ('2025-07-01', 0.695265),  -- July 2025 CAD/USD rate 
 ('2025-08-01', 0.695265),  -- Aug 2025 CAD/USD rate 
-('2025-09-01', 0.695265),  -- Sep 2025 CAD/USD rate 
+('2025-09-01', 0.72),  -- Sep 2025 CAD/USD rate 
 ('2025-10-01', 0.695265),  -- Oct 2025 CAD/USD rate 
 ('2025-11-01', 0.695265),  -- Nov 2025 CAD/USD rate 
 ('2025-12-01', 0.695265)   -- Dec 2025 CAD/USD rate 
