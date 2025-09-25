@@ -1215,5 +1215,29 @@ FIRST DATA CANADA\(J\)''', re.IGNORECASE | re.MULTILINE),
         "是否登记线下付款表": True,
         "是否登记支票使用表": False,
     }),
+    
+    (TransactionMatchRule(
+        description_pattern=re.compile(r'PCRQ\s+\d+\s+BUS/ENT', re.IGNORECASE),
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.TAX_FEE.value,
+        "付款详情": "PST",
+        "单据号": False,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
 
+        
+    (TransactionMatchRule(
+        description_pattern=re.compile(r'GST-P\s+\d+\s+BUS/ENT', re.IGNORECASE),
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.TAX_FEE.value,
+        "付款详情": "GST",
+        "单据号": False,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
 ]
