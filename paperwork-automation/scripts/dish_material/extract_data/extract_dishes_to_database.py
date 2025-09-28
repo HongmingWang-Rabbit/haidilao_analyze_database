@@ -259,7 +259,7 @@ class DishExtractor:
 
             # Convert numeric columns
             numeric_columns = ['dish_price_this_month', 'sale_amount',
-                               'return_amount', 'free_amount', 'gift_amount']
+                               'return_amount', 'free_amount', 'gift_amount', 'tax_amount']
             for col in numeric_columns:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
@@ -534,7 +534,7 @@ class DishExtractor:
 
         # Sales columns
         sales_columns = ['sale_amount', 'return_amount',
-                         'free_amount', 'gift_amount']
+                         'free_amount', 'gift_amount', 'tax_amount']
         available_sales_columns = [
             col for col in sales_columns if col in df.columns]
 
@@ -587,21 +587,23 @@ class DishExtractor:
                 # Map free_amount to free_meal_amount in database
                 free_meal_amount = row.get('free_amount', 0)
                 gift_amount = row.get('gift_amount', 0)
+                tax_amount = row.get('tax_amount', 0)
 
                 # Insert or update sales record
                 cursor.execute(
-                    """INSERT INTO dish_monthly_sale 
-                       (dish_id, store_id, month, year, sale_amount, return_amount, 
-                        free_meal_amount, gift_amount)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                       ON CONFLICT (dish_id, store_id, month, year) 
-                       DO UPDATE SET 
+                    """INSERT INTO dish_monthly_sale
+                       (dish_id, store_id, month, year, sale_amount, return_amount,
+                        free_meal_amount, gift_amount, tax_amount)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT (dish_id, store_id, month, year)
+                       DO UPDATE SET
                            sale_amount = EXCLUDED.sale_amount,
                            return_amount = EXCLUDED.return_amount,
                            free_meal_amount = EXCLUDED.free_meal_amount,
-                           gift_amount = EXCLUDED.gift_amount""",
+                           gift_amount = EXCLUDED.gift_amount,
+                           tax_amount = EXCLUDED.tax_amount""",
                     (dish_id, store_id, month, year, sale_amount, return_amount,
-                     free_meal_amount, gift_amount)
+                     free_meal_amount, gift_amount, tax_amount)
                 )
                 stats['sales_inserted'] += 1
                 logger.debug(

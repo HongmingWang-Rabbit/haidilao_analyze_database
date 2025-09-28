@@ -180,8 +180,8 @@ class ComboSalesExtractor:
                 logger.info(f"Filtered to {len(df)} rows for {year}-{month:02d}")
 
             # Convert numeric columns
-            numeric_columns = ['combo_price', 'dish_price', 'sale_quantity', 
-                             'return_quantity', 'net_quantity', 'actual_revenue']
+            numeric_columns = ['combo_price', 'dish_price', 'sale_quantity',
+                             'return_quantity', 'net_quantity', 'actual_revenue', 'tax']
             for col in numeric_columns:
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
@@ -305,7 +305,7 @@ class ComboSalesExtractor:
             logger.error("Missing required columns for sales records")
             return
 
-        # Aggregate quantities (sale - return = net)
+        # Aggregate quantities (sale - return = net) and tax
         agg_dict = {}
         if 'net_quantity' in df.columns:
             agg_dict['net_quantity'] = 'sum'
@@ -316,6 +316,10 @@ class ComboSalesExtractor:
             logger.error("No quantity columns found")
             return
 
+        # Add tax aggregation if present
+        if 'tax' in df.columns:
+            agg_dict['tax'] = 'sum'
+
         sales_data = df.groupby(grouping_cols).agg(agg_dict).reset_index()
 
         for _, row in sales_data.iterrows():
@@ -324,6 +328,7 @@ class ComboSalesExtractor:
                 dish_code = row['dish_code']
                 store_id = int(row['store_id'])
                 sale_amount = float(row['net_quantity'])
+                tax_amount = float(row.get('tax', 0))
 
                 # Get combo ID
                 combo_id = self.combos_cache.get(combo_code)
@@ -360,18 +365,18 @@ class ComboSalesExtractor:
                     # Update existing record
                     cursor.execute(
                         """UPDATE monthly_combo_dish_sale
-                           SET sale_amount = %s
+                           SET sale_amount = %s, tax_amount = %s
                            WHERE id = %s""",
-                        (sale_amount, result['id'])
+                        (sale_amount, tax_amount, result['id'])
                     )
                     stats['sales_updated'] += 1
                 else:
                     # Create new record
                     cursor.execute(
                         """INSERT INTO monthly_combo_dish_sale
-                           (combo_id, dish_id, store_id, month, year, sale_amount)
-                           VALUES (%s, %s, %s, %s, %s, %s)""",
-                        (combo_id, dish_id, store_id, month, year, sale_amount)
+                           (combo_id, dish_id, store_id, month, year, sale_amount, tax_amount)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                        (combo_id, dish_id, store_id, month, year, sale_amount, tax_amount)
                     )
                     stats['sales_created'] += 1
 

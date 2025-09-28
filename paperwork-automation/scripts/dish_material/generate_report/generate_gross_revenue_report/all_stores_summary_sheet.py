@@ -43,12 +43,15 @@ def get_all_stores_summary_data(db_manager: DatabaseManager, year: int, month: i
         # Query to get total revenue and actual material usage for each store
         query = """
         WITH store_revenue AS (
-            -- Get total revenue from dish sales
-            SELECT 
+            -- Get total revenue from dish sales (deducting tax)
+            SELECT
                 dms.store_id,
-                SUM((COALESCE(dms.sale_amount, 0) - COALESCE(dms.return_amount, 0)) * COALESCE(dph.price, 0)) as total_revenue
+                SUM(
+                    (COALESCE(dms.sale_amount, 0) - COALESCE(dms.return_amount, 0)) * COALESCE(dph.price, 0)
+                    - COALESCE(dms.tax_amount, 0)
+                ) as total_revenue
             FROM dish_monthly_sale dms
-            LEFT JOIN dish_price_history dph ON dph.dish_id = dms.dish_id 
+            LEFT JOIN dish_price_history dph ON dph.dish_id = dms.dish_id
                 AND dph.store_id = dms.store_id
                 AND dph.is_active = TRUE
             WHERE dms.year = %s

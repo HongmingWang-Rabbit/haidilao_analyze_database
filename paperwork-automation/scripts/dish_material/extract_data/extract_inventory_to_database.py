@@ -93,6 +93,7 @@ class InventoryExtractor:
             'materials_not_found': 0,
             'counts_created': 0,
             'counts_updated': 0,
+            'material_types_updated': 0,
             'errors': 0
         }
 
@@ -283,23 +284,41 @@ class InventoryExtractor:
                     stats['counts_created'] += 1
                     logger.debug(f"Created count for material {material_code}: {count_quantity}")
                 
-                # If we have actual_usage calculated, update material_monthly_usage
+                # Always get material type from the loaded mapping
+                material_type = self.material_types.get(material_code, None)
+
+                # Always update material_monthly_usage to ensure material_use_type is populated
                 if actual_usage is not None and stock_quantity is not None:
-                    # Get material type from the loaded mapping
-                    material_type = self.material_types.get(material_code, None)
-                    
-                    # Update or insert into material_monthly_usage with the correct actual usage and type
+                    # We have usage data - update both material_used and material_use_type
                     cursor.execute(
-                        """INSERT INTO material_monthly_usage 
+                        """INSERT INTO material_monthly_usage
                            (material_id, store_id, month, year, material_used, material_use_type)
                            VALUES (%s, %s, %s, %s, %s, %s)
-                           ON CONFLICT (material_id, store_id, month, year) 
-                           DO UPDATE SET 
+                           ON CONFLICT (material_id, store_id, month, year)
+                           DO UPDATE SET
                                material_used = EXCLUDED.material_used,
                                material_use_type = EXCLUDED.material_use_type""",
                         (material_id, store_id, month, year, actual_usage, material_type)
                     )
                     logger.debug(f"Updated material_monthly_usage for {material_code}: stock={stock_quantity:.2f}, count={count_quantity:.2f}, usage={actual_usage:.2f}, type={material_type}")
+                    if material_type:
+                        stats['material_types_updated'] += 1
+                else:
+                    # We don't have usage data - but still update material_use_type
+                    # Only create/update the record if we have a material_type to set
+                    if material_type:
+                        cursor.execute(
+                            """INSERT INTO material_monthly_usage
+                               (material_id, store_id, month, year, material_used, material_use_type)
+                               VALUES (%s, %s, %s, %s, %s, %s)
+                               ON CONFLICT (material_id, store_id, month, year)
+                               DO UPDATE SET
+                                   material_use_type = COALESCE(EXCLUDED.material_use_type, material_monthly_usage.material_use_type),
+                                   material_used = COALESCE(material_monthly_usage.material_used, 0)""",
+                            (material_id, store_id, month, year, 0, material_type)
+                        )
+                        logger.debug(f"Updated material_use_type for {material_code}: type={material_type} (no usage data available)")
+                        stats['material_types_updated'] += 1
                 
             except Exception as e:
                 logger.error(f"Error updating count for material {row.get('material_code', 'UNKNOWN')}: {e}")
@@ -445,6 +464,7 @@ def main():
     print(f"Materials Not Found:   {stats.get('materials_not_found', 0)}")
     print(f"Counts Created:        {stats.get('counts_created', 0)}")
     print(f"Counts Updated:        {stats.get('counts_updated', 0)}")
+    print(f"Material Types Set:    {stats.get('material_types_updated', 0)}")
     print(f"Errors:                {stats.get('errors', 0)}")
     print("="*50)
 

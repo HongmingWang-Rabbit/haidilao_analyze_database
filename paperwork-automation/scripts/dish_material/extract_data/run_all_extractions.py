@@ -245,10 +245,11 @@ def main():
         print("\n" + "-"*60)
         print("STEP 3: EXTRACTING MATERIALS")
         print("-"*60)
-        
+
         material_args = common_args.copy()
-        material_args.extend(['--input-file', args.material_input])
-        
+        if args.material_input:
+            material_args.extend(['--input-file', args.material_input])
+
         if not run_script('extract_materials_to_database.py', material_args):
             logger.error("Material extraction failed")
             success = False
@@ -264,26 +265,42 @@ def main():
         print("-"*60)
         
         mapping_args = common_args.copy()
-        mapping_args.extend(['--input-file', args.mapping_input])
-        
+        if args.mapping_input:
+            mapping_args.extend(['--input-file', args.mapping_input])
+
         if not run_script('extract_dish_material_mapping.py', mapping_args):
             logger.error("Dish-material mapping extraction failed")
             success = False
     else:
         logger.info("Skipping dish-material mapping extraction")
     
-    # Step 5: Extract inventory counts
+    # Step 5: Extract material usage and types
+    # This should run BEFORE inventory to ensure material_use_type is populated
+    if not args.skip_materials:  # Only run if materials were extracted
+        print("\n" + "-"*60)
+        print("STEP 5: EXTRACTING MATERIAL USAGE AND TYPES")
+        print("-"*60)
+
+        usage_args = common_args.copy()
+
+        if not run_script('extract_material_usage_to_database.py', usage_args):
+            logger.warning("Material usage extraction failed - this is optional")
+            # Don't fail the pipeline for this step
+    else:
+        logger.info("Skipping material usage extraction (materials were skipped)")
+
+    # Step 6: Extract inventory counts
     if not args.skip_inventory:
         print("\n" + "-"*60)
-        print("STEP 5: EXTRACTING INVENTORY COUNTS")
+        print("STEP 6: EXTRACTING INVENTORY COUNTS")
         print("-"*60)
-        
+
         inventory_args = common_args.copy()
-        
+
         # Check if inventory files exist for this month
         if discovered_files.get('inventory'):
             logger.info(f"Found {len(discovered_files['inventory'])} inventory files")
-            
+
             if not run_script('extract_inventory_to_database.py', inventory_args):
                 logger.error("Inventory extraction failed")
                 success = False
@@ -293,7 +310,7 @@ def main():
             logger.warning("No inventory files found for this month")
     else:
         logger.info("Skipping inventory extraction")
-    
+
     # Print summary
     print("\n" + "="*60)
     print("EXTRACTION PIPELINE SUMMARY")

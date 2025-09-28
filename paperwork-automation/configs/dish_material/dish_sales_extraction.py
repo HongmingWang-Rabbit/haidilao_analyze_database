@@ -13,6 +13,7 @@ DISH_COLUMN_MAPPINGS = {
     "return_amount": "退菜数量",
     "free_amount": "免单数量",
     "gift_amount": "赠菜数量",
+    "tax_amount": "税额",  # Tax amount column
 }
 
 DISH_FILE_STOREID_MAPPING = {

@@ -74,17 +74,18 @@ def get_category_gross_margin_data(db_manager: DatabaseManager, year: int, month
         query = """
         WITH dish_sales AS (
             -- Get dish sales for each period
-            SELECT 
+            SELECT
                 dms.store_id,
                 dms.dish_id,
                 d.broad_type,
                 dms.year,
                 dms.month,
                 (COALESCE(dms.sale_amount, 0) - COALESCE(dms.return_amount, 0)) as net_quantity,
-                COALESCE(dph.price, 0) as dish_price
+                COALESCE(dph.price, 0) as dish_price,
+                COALESCE(dms.tax_amount, 0) as tax_amount
             FROM dish_monthly_sale dms
             JOIN dish d ON d.id = dms.dish_id
-            LEFT JOIN dish_price_history dph ON dph.dish_id = d.id 
+            LEFT JOIN dish_price_history dph ON dph.dish_id = d.id
                 AND dph.store_id = dms.store_id
                 AND dph.is_active = TRUE
             WHERE (
@@ -180,7 +181,7 @@ def get_category_gross_margin_data(db_manager: DatabaseManager, year: int, month
                 COALESCE(ds.broad_type, '其他') as category,
                 ds.year,
                 ds.month,
-                SUM(ds.net_quantity * ds.dish_price) as revenue,
+                SUM(ds.net_quantity * ds.dish_price - ds.tax_amount) as revenue,
                 SUM(COALESCE(dac.dish_material_cost, 0)) as material_cost
             FROM dish_sales ds
             LEFT JOIN dish_actual_cost dac 

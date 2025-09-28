@@ -193,6 +193,7 @@ CREATE TABLE dish_monthly_sale (
     return_amount NUMERIC(12, 4) DEFAULT 0,
     free_meal_amount NUMERIC(12, 4) DEFAULT 0,
     gift_amount NUMERIC(12, 4) DEFAULT 0,
+    tax_amount NUMERIC(12, 4) DEFAULT 0,
     UNIQUE(dish_id, store_id, month, year)
 );
 
@@ -204,6 +205,7 @@ CREATE TABLE monthly_combo_dish_sale (
     month INTEGER NOT NULL CHECK (month >= 1 AND month <= 12),
     year INTEGER NOT NULL CHECK (year >= 2020),
     sale_amount NUMERIC(12, 4) DEFAULT 0,
+    tax_amount NUMERIC(12, 4) DEFAULT 0,
     UNIQUE(combo_id, dish_id, store_id, month, year)
 );
 

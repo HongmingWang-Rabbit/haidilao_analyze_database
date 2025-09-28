@@ -94,7 +94,7 @@ def get_dish_revenue_data(db_manager: DatabaseManager, year: int, month: int, st
         query = """
         WITH dish_sales AS (
             -- Regular dish sales
-            SELECT 
+            SELECT
                 dms.dish_id,
                 d.name as dish_name,
                 d.full_code as dish_full_code,
@@ -102,6 +102,7 @@ def get_dish_revenue_data(db_manager: DatabaseManager, year: int, month: int, st
                 d.size as dish_size,
                 COALESCE(dms.sale_amount, 0) - COALESCE(dms.return_amount, 0) as quantity_sold,
                 COALESCE(dph.price, 0) as dish_price,
+                COALESCE(dms.tax_amount, 0) as tax_amount,
                 FALSE as is_combo
             FROM dish_monthly_sale dms
             JOIN dish d ON d.id = dms.dish_id
@@ -116,7 +117,7 @@ def get_dish_revenue_data(db_manager: DatabaseManager, year: int, month: int, st
             UNION ALL
             
             -- Combo dish sales
-            SELECT 
+            SELECT
                 mcds.dish_id,
                 CONCAT(d.name, '(套餐-', c.name, ')') as dish_name,
                 d.full_code as dish_full_code,
@@ -124,6 +125,7 @@ def get_dish_revenue_data(db_manager: DatabaseManager, year: int, month: int, st
                 d.size as dish_size,
                 mcds.sale_amount as quantity_sold,
                 0 as dish_price,  -- Combo dishes don't have individual prices
+                COALESCE(mcds.tax_amount, 0) as tax_amount,
                 TRUE as is_combo
             FROM monthly_combo_dish_sale mcds
             JOIN dish d ON d.id = mcds.dish_id
@@ -143,6 +145,7 @@ def get_dish_revenue_data(db_manager: DatabaseManager, year: int, month: int, st
                 ds.dish_size,
                 ds.quantity_sold,
                 ds.dish_price,
+                ds.tax_amount,
                 ds.is_combo,
                 m.id as material_id,
                 m.material_number,
@@ -170,6 +173,7 @@ def get_dish_revenue_data(db_manager: DatabaseManager, year: int, month: int, st
             dish_size,
             quantity_sold,
             dish_price,
+            tax_amount,
             is_combo,
             material_id,
             material_number,
@@ -203,8 +207,9 @@ def get_dish_revenue_data(db_manager: DatabaseManager, year: int, month: int, st
                     'dish_size': row['dish_size'],
                     'quantity_sold': float(row['quantity_sold']) if row['quantity_sold'] else 0,
                     'dish_price': float(row['dish_price']) if row['dish_price'] else 0,
+                    'tax_amount': float(row['tax_amount']) if row['tax_amount'] else 0,
                     'is_combo': row['is_combo'],
-                    'sales_amount': float(row['quantity_sold']) * float(row['dish_price']) if row['dish_price'] and row['quantity_sold'] else 0,
+                    'sales_amount': (float(row['quantity_sold']) * float(row['dish_price']) if row['dish_price'] and row['quantity_sold'] else 0) - (float(row['tax_amount']) if row['tax_amount'] else 0),
                     'materials': [],
                     'total_material_cost': 0
                 }

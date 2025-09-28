@@ -310,6 +310,7 @@ CREATE TABLE dish_monthly_sale (
     return_amount NUMERIC(12, 4) DEFAULT 0, -- 退菜数量
     free_meal_amount NUMERIC(12, 4) DEFAULT 0, -- 免费餐数量
     gift_amount NUMERIC(12, 4) DEFAULT 0, -- 赠送数量
+    tax_amount NUMERIC(12, 4) DEFAULT 0, -- 税额
     UNIQUE(dish_id, store_id, month, year) -- 同一菜品同一门店同一月只能有一条记录
 );
 
@@ -322,6 +323,7 @@ CREATE TABLE monthly_combo_dish_sale (
     month INTEGER NOT NULL CHECK (month >= 1 AND month <= 12), -- 月份 (1-12)
     year INTEGER NOT NULL CHECK (year >= 2020), -- 年份
     sale_amount NUMERIC(12, 4) DEFAULT 0, -- 销售数量 (出品数量 - 退菜数量)
+    tax_amount NUMERIC(12, 4) DEFAULT 0, -- 税额
     UNIQUE(combo_id, dish_id, store_id, month, year) -- 同一套餐同一菜品同一门店同一月只能有一条记录
 );
 
