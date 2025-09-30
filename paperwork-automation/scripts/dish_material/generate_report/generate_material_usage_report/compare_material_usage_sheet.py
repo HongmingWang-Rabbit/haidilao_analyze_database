@@ -48,36 +48,55 @@ def get_material_usage_data_from_database(db_manager: DatabaseManager, year: int
     with db_manager.get_connection() as conn:
         cursor = conn.cursor()
         
+        # Calculate previous month/year
+        prev_month = month - 1 if month > 1 else 12
+        prev_year = year if month > 1 else year - 1
+
         # Get actual material usage (directly from material_monthly_usage which now stores the pre-calculated actual usage)
-        # Also get the material price and unit for the month
+        # Also get the material price, unit, material type from material_child_type, and last month's usage for the month
         actual_usage_query = """
-        SELECT 
+        SELECT
             m.material_number,
             m.description as material_name,
             m.unit as material_unit,
             mmu.material_used as actual_usage,
-            COALESCE(mp.price, 0) as material_price
+            COALESCE(mp.price, 0) as material_price,
+            mct.name as material_child_type,
+            COALESCE(mmu_prev.material_used, 0) as last_month_usage,
+            COALESCE(mp_prev.price, mp.price, 0) as last_month_price
         FROM material_monthly_usage mmu
         JOIN material m ON m.id = mmu.material_id AND m.store_id = mmu.store_id
-        LEFT JOIN material_price_history mp ON mp.material_id = m.id 
+        LEFT JOIN material_child_type mct ON mct.id = m.material_child_type_id
+        LEFT JOIN material_price_history mp ON mp.material_id = m.id
             AND mp.store_id = m.store_id
             AND mp.is_active = TRUE
+        LEFT JOIN material_monthly_usage mmu_prev ON mmu_prev.material_id = m.id
+            AND mmu_prev.store_id = m.store_id
+            AND mmu_prev.year = %s
+            AND mmu_prev.month = %s
+        LEFT JOIN material_price_history mp_prev ON mp_prev.material_id = m.id
+            AND mp_prev.store_id = m.store_id
+            AND mp_prev.effective_year = %s
+            AND mp_prev.effective_month = %s
         WHERE mmu.year = %s
           AND mmu.month = %s
           AND mmu.store_id = %s
         """
         
-        cursor.execute(actual_usage_query, (year, month, store_id))
+        cursor.execute(actual_usage_query, (prev_year, prev_month, prev_year, prev_month, year, month, store_id))
         actual_usage_data = cursor.fetchall()
         
         for row in actual_usage_data:
             result[row['material_number']] = {
                 'material_name': row['material_name'],
                 'material_unit': row['material_unit'],
+                'material_use_type': row['material_child_type'] or '',  # Material type from material_child_type table
                 'actual_usage': float(row['actual_usage']) if row['actual_usage'] else 0.0,
                 'theory_usage': 0.0,
                 'usage_details': [],
                 'material_price': float(row['material_price']) if row['material_price'] else 0.0,
+                'last_month_usage': float(row['last_month_usage']) if row['last_month_usage'] else 0.0,
+                'last_month_price': float(row['last_month_price']) if row['last_month_price'] else 0.0,
                 'unit_conversion': 1.0  # Will be updated from dish_material
             }
         
@@ -194,10 +213,13 @@ def get_material_usage_data_from_database(db_manager: DatabaseManager, year: int
                 result[material_number] = {
                     'material_name': row['material_name'],
                     'material_unit': row['material_unit'],
+                    'material_use_type': '',  # Will be fetched separately if needed
                     'actual_usage': 0.0,
                     'theory_usage': 0.0,
                     'usage_details': [],
                     'material_price': 0.0,  # Will need to fetch separately if not already present
+                    'last_month_usage': 0.0,
+                    'last_month_price': 0.0,
                     'unit_conversion': 1.0
                 }
             
@@ -237,31 +259,37 @@ def get_material_usage_data_from_database(db_manager: DatabaseManager, year: int
             
             result[material_number]['usage_details'].append(usage_detail)
         
-        # Fetch material prices for materials that don't have them yet
+        # Fetch material prices and types for materials that don't have them yet
         # This handles materials that only appear in theory usage
         materials_without_price = [mat_num for mat_num, data in result.items() if data.get('material_price', 0) == 0]
-        
-        if materials_without_price:
-            price_query = """
-            SELECT 
+        materials_without_type = [mat_num for mat_num, data in result.items() if not data.get('material_use_type')]
+        materials_to_fetch = list(set(materials_without_price + materials_without_type))
+
+        if materials_to_fetch:
+            additional_query = """
+            SELECT
                 m.material_number,
                 m.unit as material_unit,
-                COALESCE(mp.price, 0) as material_price
+                COALESCE(mp.price, 0) as material_price,
+                mct.name as material_child_type
             FROM material m
-            LEFT JOIN material_price_history mp ON mp.material_id = m.id 
+            LEFT JOIN material_child_type mct ON mct.id = m.material_child_type_id
+            LEFT JOIN material_price_history mp ON mp.material_id = m.id
                 AND mp.store_id = m.store_id
                 AND mp.is_active = TRUE
             WHERE m.store_id = %s
               AND m.material_number = ANY(%s)
             """
-            cursor.execute(price_query, (store_id, materials_without_price))
-            price_data = cursor.fetchall()
-            
-            for row in price_data:
+            cursor.execute(additional_query, (store_id, materials_to_fetch))
+            additional_data = cursor.fetchall()
+
+            for row in additional_data:
                 if row['material_number'] in result:
                     result[row['material_number']]['material_price'] = float(row['material_price']) if row['material_price'] else 0.0
                     if 'material_unit' not in result[row['material_number']]:
                         result[row['material_number']]['material_unit'] = row['material_unit']
+                    if not result[row['material_number']].get('material_use_type'):
+                        result[row['material_number']]['material_use_type'] = row['material_child_type'] or ''
     
     return result
 
@@ -338,25 +366,25 @@ def write_material_usage_to_sheet(worksheet, db_manager: DatabaseManager, year: 
         store_name: Store name for display
         debug: If True, include detailed calculation info
     
-    The sheet has headers: 
-    物料名称, 物料号, 理论消耗来源, 总理论消耗, 实际消耗, 差异, 备注
+    The sheet has headers:
+    物料名称, 物料号, 物料类型, 物料单位, 理论消耗来源, 总理论消耗, 实际消耗, 数量差异(物料单位), 差异%, 使用金额, 上月使用金额, 环比差异, 金额差异, 备注
     """
     # Add title and info at the top FIRST
     title_cell = worksheet.cell(row=1, column=1, value=f"{store_name} - 物料理论与实际消耗对比")
     title_cell.font = Font(size=14, bold=True)
-    worksheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=10)
+    worksheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=14)
     title_cell.alignment = Alignment(horizontal='center')
     
     date_cell = worksheet.cell(row=2, column=1, value=f"{year}年{month}月")
     date_cell.font = Font(size=12)
-    worksheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=10)
+    worksheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=14)
     date_cell.alignment = Alignment(horizontal='center')
     
     # Leave a blank row
     header_row = 4
     
     # Set headers
-    headers = ['物料名称', '物料号', '物料单位', '理论消耗来源', '总理论消耗(KG)', '实际消耗(KG)', '数量差异(物料单位)', '差异%', '金额差异', '备注']
+    headers = ['物料名称', '物料号', '物料类型', '物料单位', '理论消耗来源', '总理论消耗(KG)', '实际消耗(KG)', '数量差异(物料单位)', '差异%', '使用金额', '上月使用金额', '环比差异', '金额差异', '备注']
     
     # Style for headers
     header_font = Font(bold=True)
@@ -399,22 +427,26 @@ def write_material_usage_to_sheet(worksheet, db_manager: DatabaseManager, year: 
         usage_details = material_data['usage_details']
         num_details = max(len(usage_details), 1)  # At least one row even if no details
         
-        # Material name, number and unit (merged across detail rows if multiple)
+        # Material name, number, type and unit (merged across detail rows if multiple)
         material_name_cell = worksheet.cell(row=current_row, column=1, value=material_data['material_name'])
         material_number_cell = worksheet.cell(row=current_row, column=2, value=material_number)
-        material_unit_cell = worksheet.cell(row=current_row, column=3, value=material_data.get('material_unit', ''))
+        material_type_cell = worksheet.cell(row=current_row, column=3, value=material_data.get('material_use_type', ''))
+        material_unit_cell = worksheet.cell(row=current_row, column=4, value=material_data.get('material_unit', ''))
         
         if num_details > 1:
-            # Merge cells for material name, number and unit
-            worksheet.merge_cells(start_row=current_row, start_column=1, 
+            # Merge cells for material name, number, type and unit
+            worksheet.merge_cells(start_row=current_row, start_column=1,
                                 end_row=current_row + num_details - 1, end_column=1)
-            worksheet.merge_cells(start_row=current_row, start_column=2, 
+            worksheet.merge_cells(start_row=current_row, start_column=2,
                                 end_row=current_row + num_details - 1, end_column=2)
-            worksheet.merge_cells(start_row=current_row, start_column=3, 
+            worksheet.merge_cells(start_row=current_row, start_column=3,
                                 end_row=current_row + num_details - 1, end_column=3)
+            worksheet.merge_cells(start_row=current_row, start_column=4,
+                                end_row=current_row + num_details - 1, end_column=4)
         
         material_name_cell.alignment = Alignment(vertical='center', wrap_text=True)
         material_number_cell.alignment = Alignment(vertical='center')
+        material_type_cell.alignment = Alignment(vertical='center')
         material_unit_cell.alignment = Alignment(vertical='center')
         
         # Theory usage details
@@ -435,88 +467,124 @@ def write_material_usage_to_sheet(worksheet, db_manager: DatabaseManager, year: 
                         # If debug is true but no debug data, still show codes
                         theory_source = f"{detail['dish_name']} {detail['dish_code']}: {detail['usage']:.2f}"
                 
-                worksheet.cell(row=current_row + i, column=4, value=theory_source)
-                worksheet.cell(row=current_row + i, column=4).border = thin_border
+                worksheet.cell(row=current_row + i, column=5, value=theory_source)
+                worksheet.cell(row=current_row + i, column=5).border = thin_border
         else:
-            worksheet.cell(row=current_row, column=4, value="无理论消耗")
-            worksheet.cell(row=current_row, column=4).border = thin_border
+            worksheet.cell(row=current_row, column=5, value="无理论消耗")
+            worksheet.cell(row=current_row, column=5).border = thin_border
         
         # Total theory usage (merged)
-        total_theory_cell = worksheet.cell(row=current_row, column=5, 
+        total_theory_cell = worksheet.cell(row=current_row, column=6,
                                           value=round(material_data['theory_usage'], 2))
         if num_details > 1:
-            worksheet.merge_cells(start_row=current_row, start_column=5, 
-                                end_row=current_row + num_details - 1, end_column=5)
+            worksheet.merge_cells(start_row=current_row, start_column=6,
+                                end_row=current_row + num_details - 1, end_column=6)
         total_theory_cell.alignment = Alignment(vertical='center', horizontal='right')
         total_theory_cell.border = thin_border
-        
+
         # Actual usage (merged)
-        actual_usage_cell = worksheet.cell(row=current_row, column=6, 
+        actual_usage_cell = worksheet.cell(row=current_row, column=7,
                                           value=round(material_data['actual_usage'], 2))
         if num_details > 1:
-            worksheet.merge_cells(start_row=current_row, start_column=6, 
-                                end_row=current_row + num_details - 1, end_column=6)
+            worksheet.merge_cells(start_row=current_row, start_column=7,
+                                end_row=current_row + num_details - 1, end_column=7)
         actual_usage_cell.alignment = Alignment(vertical='center', horizontal='right')
         actual_usage_cell.border = thin_border
-        
+
         # Exact quantity difference (merged) - adjusted by unit_conversion
         unit_conversion = material_data.get('unit_conversion', 1.0)
         quantity_diff_raw = material_data['actual_usage'] - material_data['theory_usage']
         quantity_diff = quantity_diff_raw * unit_conversion  # Apply unit conversion
-        quantity_diff_cell = worksheet.cell(row=current_row, column=7, value=round(quantity_diff, 2))
+        quantity_diff_cell = worksheet.cell(row=current_row, column=8, value=round(quantity_diff, 2))
         if num_details > 1:
-            worksheet.merge_cells(start_row=current_row, start_column=7, 
-                                end_row=current_row + num_details - 1, end_column=7)
+            worksheet.merge_cells(start_row=current_row, start_column=8,
+                                end_row=current_row + num_details - 1, end_column=8)
         quantity_diff_cell.alignment = Alignment(vertical='center', horizontal='right')
         quantity_diff_cell.border = thin_border
         
-        # Difference percentage (merged) - MOVED TO COLUMN 8
+        # Difference percentage (merged) - Now in COLUMN 9
         difference = None
         if material_data['theory_usage'] != 0:
             difference = (material_data['actual_usage'] - material_data['theory_usage']) / material_data['theory_usage']
             diff_text = f"{difference:.1%}"
         else:
             diff_text = "N/A"
-        
-        diff_cell = worksheet.cell(row=current_row, column=8, value=diff_text)
+
+        diff_cell = worksheet.cell(row=current_row, column=9, value=diff_text)
         if num_details > 1:
-            worksheet.merge_cells(start_row=current_row, start_column=8, 
-                                end_row=current_row + num_details - 1, end_column=8)
+            worksheet.merge_cells(start_row=current_row, start_column=9,
+                                end_row=current_row + num_details - 1, end_column=9)
         diff_cell.alignment = Alignment(vertical='center', horizontal='center')
         diff_cell.border = thin_border
         
         # We'll apply the highlight fill later with the alternating row colors
         
-        # Amount difference column (merged) - difference amount * material price - MOVED TO COLUMN 9
+        # Usage amount column (merged) - actual usage * material price - Now in COLUMN 10
+        usage_amount = 0.0
+        if 'material_price' in material_data:
+            usage_amount = material_data['actual_usage'] * material_data['material_price']
+
+        usage_amount_cell = worksheet.cell(row=current_row, column=10, value=round(usage_amount, 2))
+        if num_details > 1:
+            worksheet.merge_cells(start_row=current_row, start_column=10,
+                                end_row=current_row + num_details - 1, end_column=10)
+        usage_amount_cell.alignment = Alignment(vertical='center', horizontal='right')
+        usage_amount_cell.border = thin_border
+
+        # Last month usage amount column (merged) - last month usage * last month price - Now in COLUMN 11
+        last_month_amount = 0.0
+        if 'last_month_price' in material_data:
+            last_month_amount = material_data['last_month_usage'] * material_data['last_month_price']
+
+        last_month_amount_cell = worksheet.cell(row=current_row, column=11, value=round(last_month_amount, 2))
+        if num_details > 1:
+            worksheet.merge_cells(start_row=current_row, start_column=11,
+                                end_row=current_row + num_details - 1, end_column=11)
+        last_month_amount_cell.alignment = Alignment(vertical='center', horizontal='right')
+        last_month_amount_cell.border = thin_border
+
+        # Month-over-month difference column (merged) - current month amount - last month amount - Now in COLUMN 12
+        mom_diff = usage_amount - last_month_amount
+        mom_diff_cell = worksheet.cell(row=current_row, column=12, value=round(mom_diff, 2))
+        if num_details > 1:
+            worksheet.merge_cells(start_row=current_row, start_column=12,
+                                end_row=current_row + num_details - 1, end_column=12)
+        mom_diff_cell.alignment = Alignment(vertical='center', horizontal='right')
+        mom_diff_cell.border = thin_border
+
+        # Amount difference column (merged) - difference amount * material price - Now in COLUMN 13
         amount_diff = 0.0
         if 'material_price' in material_data:
             usage_diff = material_data['actual_usage'] - material_data['theory_usage']
             amount_diff = usage_diff * material_data['material_price']
-        
-        amount_diff_cell = worksheet.cell(row=current_row, column=9, value=round(amount_diff, 2))
+
+        amount_diff_cell = worksheet.cell(row=current_row, column=13, value=round(amount_diff, 2))
         if num_details > 1:
-            worksheet.merge_cells(start_row=current_row, start_column=9, 
-                                end_row=current_row + num_details - 1, end_column=9)
+            worksheet.merge_cells(start_row=current_row, start_column=13,
+                                end_row=current_row + num_details - 1, end_column=13)
         amount_diff_cell.alignment = Alignment(vertical='center', horizontal='right')
         amount_diff_cell.border = thin_border
-        
-        # Notes column (merged, empty for manual input) - MOVED TO COLUMN 10
-        notes_cell = worksheet.cell(row=current_row, column=10, value="")
+
+        # Notes column (merged, empty for manual input) - Now in COLUMN 14
+        notes_cell = worksheet.cell(row=current_row, column=14, value="")
         if num_details > 1:
-            worksheet.merge_cells(start_row=current_row, start_column=10, 
-                                end_row=current_row + num_details - 1, end_column=10)
+            worksheet.merge_cells(start_row=current_row, start_column=14,
+                                end_row=current_row + num_details - 1, end_column=14)
         notes_cell.border = thin_border
         
         # Apply borders and alternating fills to all cells
         fill_to_use = even_row_fill if material_index % 2 == 0 else odd_row_fill
         for row in range(current_row, current_row + num_details):
-            for col in range(1, 11):  # Now 11 columns with material unit added
+            for col in range(1, 15):  # Now 15 columns with last month and MoM columns added
                 cell = worksheet.cell(row=row, column=col)
                 cell.border = thin_border
-                # Apply alternating fill, but use highlight for large differences in column 8 (percentage)
-                if col == 8 and difference is not None and abs(difference) > 0.2:
+                # Apply alternating fill, but use highlight for large differences in column 9 (percentage)
+                if col == 9 and difference is not None and abs(difference) > 0.2:
                     # Highlight large differences with pink
                     cell.fill = PatternFill(start_color="FFB6C1", end_color="FFB6C1", fill_type="solid")
+                # Highlight significant MoM changes in column 12
+                elif col == 12 and abs(mom_diff) > 1000:  # Highlight if MoM difference > 1000
+                    cell.fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")  # Yellow
                 else:
                     # Apply zebra striping
                     cell.fill = fill_to_use
@@ -525,7 +593,7 @@ def write_material_usage_to_sheet(worksheet, db_manager: DatabaseManager, year: 
         material_index += 1  # Increment for next material record
     
     # Auto-adjust column widths
-    column_widths = [30, 15, 10, 50, 15, 15, 15, 10, 15, 20]  # Added width for material unit column
+    column_widths = [30, 15, 20, 10, 50, 15, 15, 15, 10, 15, 15, 15, 15, 20]  # Added widths for last month and MoM columns
     for i, width in enumerate(column_widths, 1):
         worksheet.column_dimensions[get_column_letter(i)].width = width
     
