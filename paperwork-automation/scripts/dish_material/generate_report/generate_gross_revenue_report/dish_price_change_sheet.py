@@ -41,11 +41,15 @@ class DishPriceChangeSheet:
         query = """
             WITH dish_data AS (
                 SELECT
-                    d.id as dish_id,
                     d.full_code as dish_code,
-                    d.name as dish_name,
-                    dms.sale_amount as total_quantity,
-                    COALESCE(
+                    -- Use the first name for dishes with same full_code
+                    MIN(d.name) as dish_name,
+                    -- Aggregate IDs for dishes with same full_code
+                    ARRAY_AGG(DISTINCT d.id) as dish_ids,
+                    -- Sum quantities across all sizes
+                    SUM(dms.sale_amount) as total_quantity,
+                    -- Weighted average price
+                    SUM(dms.sale_amount * COALESCE(
                         (SELECT dph.price
                          FROM dish_price_history dph
                          WHERE dph.dish_id = d.id
@@ -55,17 +59,18 @@ class DishPriceChangeSheet:
                          ORDER BY dph.effective_year DESC, dph.effective_month DESC
                          LIMIT 1),
                         0
-                    ) as avg_price
+                    )) / NULLIF(SUM(dms.sale_amount), 0) as avg_price
                 FROM dish d
                 INNER JOIN dish_monthly_sale dms ON d.id = dms.dish_id
                 WHERE dms.store_id = %s
                     AND dms.year = %s
                     AND dms.month = %s
+                GROUP BY d.full_code
             ),
             material_usage AS (
                 SELECT
-                    dd.dish_id,
-                    -- Calculate theoretical material cost (only for cost-type materials)
+                    dd.dish_code,
+                    -- Calculate theoretical material cost - sum for all dishes in this dish_code group
                     SUM(
                         CASE WHEN EXISTS (
                             SELECT 1 FROM material_monthly_usage mmu
@@ -75,12 +80,15 @@ class DishPriceChangeSheet:
                               AND mmu.month = %s
                               AND mmu.material_use_type = '成本类'
                         )
-                        THEN dd.total_quantity * dm.standard_quantity * COALESCE(dm.loss_rate, 0) /
-                             COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1) * COALESCE(mph.price, 0)
+                        THEN
+                            -- Theoretical cost calculation
+                            COALESCE(dms.sale_amount, 0) *
+                            dm.standard_quantity * COALESCE(dm.loss_rate, 0) /
+                            COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1) * COALESCE(mph.price, 0)
                         ELSE 0
                         END
                     ) as theoretical_cost,
-                    -- Calculate theoretical material usage
+                    -- Calculate ACTUAL material cost using actual usage from inventory
                     SUM(
                         CASE WHEN EXISTS (
                             SELECT 1 FROM material_monthly_usage mmu
@@ -90,14 +98,51 @@ class DishPriceChangeSheet:
                               AND mmu.month = %s
                               AND mmu.material_use_type = '成本类'
                         )
-                        THEN dd.total_quantity * dm.standard_quantity * COALESCE(dm.loss_rate, 0) /
-                             COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1)
+                        THEN
+                            -- Calculate this dish's proportion of total theoretical usage for this material
+                            -- Then multiply by actual usage from inventory
+                            CASE
+                                WHEN (
+                                    -- Total theoretical usage for this material across all dishes
+                                    SELECT SUM(dms2.sale_amount * dm2.standard_quantity * COALESCE(dm2.loss_rate, 0) /
+                                               COALESCE(NULLIF(dm2.unit_conversion_rate, 0), 1))
+                                    FROM dish_monthly_sale dms2
+                                    JOIN dish_material dm2 ON dm2.dish_id = dms2.dish_id AND dm2.store_id = dms2.store_id
+                                    WHERE dm2.material_id = m.id
+                                      AND dms2.store_id = %s
+                                      AND dms2.year = %s
+                                      AND dms2.month = %s
+                                ) > 0
+                                THEN
+                                    -- This dish's theoretical usage
+                                    (COALESCE(dms.sale_amount, 0) * dm.standard_quantity * COALESCE(dm.loss_rate, 0) /
+                                     COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1)) /
+                                    -- Divided by total theoretical usage
+                                    (SELECT SUM(dms2.sale_amount * dm2.standard_quantity * COALESCE(dm2.loss_rate, 0) /
+                                                COALESCE(NULLIF(dm2.unit_conversion_rate, 0), 1))
+                                     FROM dish_monthly_sale dms2
+                                     JOIN dish_material dm2 ON dm2.dish_id = dms2.dish_id AND dm2.store_id = dms2.store_id
+                                     WHERE dm2.material_id = m.id
+                                       AND dms2.store_id = %s
+                                       AND dms2.year = %s
+                                       AND dms2.month = %s) *
+                                    -- Multiplied by actual usage from inventory
+                                    COALESCE((SELECT mmu.material_used
+                                              FROM material_monthly_usage mmu
+                                              WHERE mmu.material_id = m.id
+                                                AND mmu.store_id = %s
+                                                AND mmu.year = %s
+                                                AND mmu.month = %s), 0) *
+                                    -- Multiplied by material price
+                                    COALESCE(mph.price, 0)
+                                ELSE 0
+                            END
                         ELSE 0
                         END
-                    ) as theoretical_usage,
-                    -- Concatenate material names
+                    ) as actual_cost,
+                    -- Concatenate unique material names (without ORDER BY due to DISTINCT)
                     STRING_AGG(
-                        CASE WHEN EXISTS (
+                        DISTINCT CASE WHEN EXISTS (
                             SELECT 1 FROM material_monthly_usage mmu
                             WHERE mmu.material_id = m.id
                               AND mmu.store_id = %s
@@ -107,50 +152,72 @@ class DishPriceChangeSheet:
                         )
                         THEN m.description
                         ELSE NULL
-                        END, ', ' ORDER BY m.material_number
+                        END, ', '
                     ) as materials_used
                 FROM dish_data dd
-                LEFT JOIN dish_material dm ON dm.dish_id = dd.dish_id AND dm.store_id = %s
+                CROSS JOIN UNNEST(dd.dish_ids) as unnested_dish_id
+                LEFT JOIN dish_monthly_sale dms ON dms.dish_id = unnested_dish_id
+                    AND dms.store_id = %s
+                    AND dms.year = %s
+                    AND dms.month = %s
+                LEFT JOIN dish_material dm ON dm.dish_id = unnested_dish_id AND dm.store_id = %s
                 LEFT JOIN material m ON m.id = dm.material_id AND m.store_id = %s
                 LEFT JOIN material_price_history mph ON mph.material_id = m.id
                     AND mph.store_id = %s
                     AND mph.is_active = TRUE
-                GROUP BY dd.dish_id
+                GROUP BY dd.dish_code
             )
             SELECT
-                dd.dish_id,
                 dd.dish_code,
                 dd.dish_name,
+                dd.dish_ids,
                 dd.avg_price,
                 dd.total_quantity,
-                dd.avg_price * dd.total_quantity as total_revenue,
+                COALESCE(dd.avg_price, 0) * dd.total_quantity as total_revenue,
                 COALESCE(mu.theoretical_cost, 0) as theoretical_cost,
-                COALESCE(mu.theoretical_usage, 0) as theoretical_usage,
+                COALESCE(mu.actual_cost, 0) as actual_cost,
                 COALESCE(mu.materials_used, '') as materials_used
             FROM dish_data dd
-            LEFT JOIN material_usage mu ON mu.dish_id = dd.dish_id
+            LEFT JOIN material_usage mu ON mu.dish_code = dd.dish_code
             WHERE dd.total_quantity > 0
         """
 
         try:
             with self.db_manager.get_connection() as conn:
                 with conn.cursor() as cursor:
-                    cursor.execute(query, (store_id, year, year, month, store_id, year, month,
-                                         store_id, year, month, store_id, year, month,
-                                         store_id, year, month, store_id, store_id, store_id))
+                    cursor.execute(query, (
+                        # dish_data CTE price subquery
+                        store_id, year, year, month,
+                        # dish_data CTE main query
+                        store_id, year, month,
+                        # material_usage CTE - first EXISTS for theoretical_cost
+                        store_id, year, month,
+                        # material_usage CTE - second EXISTS for actual_cost
+                        store_id, year, month,
+                        # material_usage CTE - actual_cost subqueries
+                        store_id, year, month,  # First total theoretical subquery
+                        store_id, year, month,  # Second total theoretical subquery
+                        store_id, year, month,  # Actual usage subquery
+                        # material_usage CTE - third EXISTS for STRING_AGG
+                        store_id, year, month,
+                        # material_usage CTE - JOINs
+                        store_id, year, month,  # dish_monthly_sale
+                        store_id, store_id, store_id  # dish_material, material, material_price_history
+                    ))
                     results = cursor.fetchall()
 
                     dish_data = {}
                     for row in results:
-                        # Use dish_id as the key instead of dish_code
-                        dish_data[row['dish_id']] = {
+                        # Use dish_code as the key for merged dishes
+                        dish_data[row['dish_code']] = {
                             'dish_code': row['dish_code'],
                             'dish_name': row['dish_name'],
+                            'dish_ids': row['dish_ids'],  # Array of dish IDs that were merged
                             'avg_price': float(row['avg_price']) if row['avg_price'] else 0,
                             'total_quantity': float(row['total_quantity']) if row['total_quantity'] else 0,
                             'total_revenue': float(row['total_revenue']) if row['total_revenue'] else 0,
                             'theoretical_cost': float(row['theoretical_cost']) if row['theoretical_cost'] else 0,
-                            'theoretical_usage': float(row['theoretical_usage']) if row['theoretical_usage'] else 0,
+                            'actual_cost': float(row['actual_cost']) if row['actual_cost'] else 0,
                             'materials_used': row['materials_used'] if row['materials_used'] else ''
                         }
 
@@ -159,43 +226,96 @@ class DishPriceChangeSheet:
             logger.error(f"Error getting dish prices and sales: {e}")
             return {}
 
-    def _get_actual_material_usage(self, year: int, month: int, store_id: int) -> float:
-        """Get total actual material usage for the store in the given month"""
+    def _get_actual_theoretical_ratio(self, year: int, month: int, store_id: int) -> float:
+        """Get the ratio of actual to theoretical material usage for the store.
+
+        This ratio represents the actual efficiency/waste factor.
+        Returns 1.0 if no data available (assumes no extra waste).
+        """
         query = """
+            WITH theoretical_usage AS (
+                -- Calculate total theoretical material usage
+                SELECT
+                    m.id as material_id,
+                    SUM(
+                        dms.sale_amount *
+                        dm.standard_quantity * COALESCE(dm.loss_rate, 0) /
+                        COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1)
+                    ) as theoretical_qty
+                FROM dish_monthly_sale dms
+                JOIN dish_material dm ON dm.dish_id = dms.dish_id AND dm.store_id = dms.store_id
+                JOIN material m ON m.id = dm.material_id AND m.store_id = dm.store_id
+                WHERE dms.store_id = %s
+                  AND dms.year = %s
+                  AND dms.month = %s
+                  AND EXISTS (
+                      SELECT 1 FROM material_monthly_usage mmu
+                      WHERE mmu.material_id = m.id
+                        AND mmu.store_id = %s
+                        AND mmu.year = %s
+                        AND mmu.month = %s
+                        AND mmu.material_use_type = '成本类'
+                  )
+                GROUP BY m.id
+            ),
+            actual_usage AS (
+                -- Get actual usage from inventory data
+                SELECT
+                    mmu.material_id,
+                    mmu.material_used as actual_qty
+                FROM material_monthly_usage mmu
+                WHERE mmu.year = %s
+                  AND mmu.month = %s
+                  AND mmu.store_id = %s
+                  AND mmu.material_use_type = '成本类'
+            )
             SELECT
-                SUM(mmu.material_used * COALESCE(mph.price, 0)) as total_actual_cost
-            FROM material_monthly_usage mmu
-            JOIN material m ON m.id = mmu.material_id AND m.store_id = mmu.store_id
-            LEFT JOIN material_price_history mph ON mph.material_id = m.id
-                AND mph.store_id = m.store_id
+                SUM(COALESCE(au.actual_qty, 0) * COALESCE(mph.price, 0)) as total_actual_cost,
+                SUM(COALESCE(tu.theoretical_qty, 0) * COALESCE(mph.price, 0)) as total_theoretical_cost
+            FROM theoretical_usage tu
+            LEFT JOIN actual_usage au ON au.material_id = tu.material_id
+            LEFT JOIN material_price_history mph ON mph.material_id = tu.material_id
+                AND mph.store_id = %s
                 AND mph.is_active = TRUE
-            WHERE mmu.year = %s
-              AND mmu.month = %s
-              AND mmu.store_id = %s
-              AND mmu.material_use_type = '成本类'  -- Only cost-type materials
         """
 
         try:
             with self.db_manager.get_connection() as conn:
                 with conn.cursor() as cursor:
-                    cursor.execute(query, (year, month, store_id))
+                    cursor.execute(query, (
+                        store_id, year, month,  # for theoretical_usage
+                        store_id, year, month,  # for EXISTS check
+                        year, month, store_id,  # for actual_usage
+                        store_id  # for price history
+                    ))
                     result = cursor.fetchone()
-                    return float(result['total_actual_cost']) if result and result['total_actual_cost'] else 0
-        except Exception as e:
-            logger.error(f"Error getting actual material usage: {e}")
-            return 0
 
-    def _get_all_dish_materials(self, store_id: int, year: int, month: int) -> Dict[int, list]:
-        """Get materials for all dishes at once for better performance"""
+                    if result and result['total_theoretical_cost'] and result['total_theoretical_cost'] > 0:
+                        # Return the ratio of actual to theoretical
+                        actual = result['total_actual_cost'] or 0
+                        theoretical = result['total_theoretical_cost']
+                        ratio = actual / theoretical
+                        logger.info(f"Store {store_id}: Actual/Theoretical ratio = {ratio:.4f}")
+                        return ratio
+                    else:
+                        logger.warning(f"No theoretical cost data for store {store_id}")
+                        return 1.0  # Default to no extra waste
+        except Exception as e:
+            logger.error(f"Error calculating actual/theoretical ratio: {e}")
+            return 1.0
+
+    def _get_all_dish_materials(self, store_id: int, year: int, month: int) -> Dict[str, list]:
+        """Get materials for all dishes grouped by full_code"""
         query = """
             SELECT
-                dm.dish_id,
+                d.full_code as dish_code,
                 m.material_number,
                 m.description as material_name,
                 COALESCE(mph.price, 0) as material_price,
-                dm.standard_quantity * COALESCE(dm.loss_rate, 0) /
-                    COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1) as usage_per_dish
+                AVG(dm.standard_quantity * COALESCE(dm.loss_rate, 0) /
+                    COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1)) as usage_per_dish
             FROM dish_material dm
+            JOIN dish d ON d.id = dm.dish_id
             JOIN material m ON m.id = dm.material_id AND m.store_id = dm.store_id
             LEFT JOIN material_price_history mph ON mph.material_id = m.id
                 AND mph.store_id = m.store_id
@@ -209,7 +329,8 @@ class DishPriceChangeSheet:
                     AND mmu.month = %s
                     AND mmu.material_use_type = '成本类'
               )
-            ORDER BY dm.dish_id, m.material_number
+            GROUP BY d.full_code, m.material_number, m.description, mph.price
+            ORDER BY d.full_code, m.material_number
         """
 
         try:
@@ -220,16 +341,24 @@ class DishPriceChangeSheet:
 
                     dish_materials = {}
                     for row in results:
-                        dish_id = row['dish_id']
-                        if dish_id not in dish_materials:
-                            dish_materials[dish_id] = []
+                        dish_code = row['dish_code']
+                        if dish_code not in dish_materials:
+                            dish_materials[dish_code] = []
 
-                        dish_materials[dish_id].append({
-                            'material_number': row['material_number'],
-                            'material_name': row['material_name'],
-                            'material_price': float(row['material_price']) if row['material_price'] else 0,
-                            'usage_per_dish': float(row['usage_per_dish']) if row['usage_per_dish'] else 0
-                        })
+                        # Check if this material already exists for this dish_code
+                        existing = False
+                        for mat in dish_materials[dish_code]:
+                            if mat['material_number'] == row['material_number']:
+                                existing = True
+                                break
+
+                        if not existing:
+                            dish_materials[dish_code].append({
+                                'material_number': row['material_number'],
+                                'material_name': row['material_name'],
+                                'material_price': float(row['material_price']) if row['material_price'] else 0,
+                                'usage_per_dish': float(row['usage_per_dish']) if row['usage_per_dish'] else 0
+                            })
                     return dish_materials
         except Exception as e:
             logger.error(f"Error getting dish materials: {e}")
@@ -243,25 +372,21 @@ class DishPriceChangeSheet:
         last_month_data = self._get_dish_prices_and_sales(date_ranges['last_month'], store_id)
         last_year_data = self._get_dish_prices_and_sales(date_ranges['last_year'], store_id)
 
-        # Get actual material usage for current period
+        # Get current year/month for fetching materials
         current_year = date_ranges['current'][0].year
         current_month = date_ranges['current'][0].month
-        total_actual_cost = self._get_actual_material_usage(current_year, current_month, store_id)
 
         # Get all dish materials at once for better performance
         all_dish_materials = self._get_all_dish_materials(store_id, current_year, current_month)
 
-        # Calculate total theoretical cost to distribute actual cost proportionally
-        total_theoretical_cost = sum(d.get('theoretical_cost', 0) for d in current_data.values())
-
-        # Get all dish IDs that appear in any of the three periods
-        all_dish_ids = set(current_data.keys()) | set(last_month_data.keys()) | set(last_year_data.keys())
+        # Get all dish codes that appear in any of the three periods (now grouped by full_code)
+        all_dish_codes = set(current_data.keys()) | set(last_month_data.keys()) | set(last_year_data.keys())
 
         store_rows = []
-        for dish_id in all_dish_ids:
-            current = current_data.get(dish_id, {})
-            last_month = last_month_data.get(dish_id, {})
-            last_year = last_year_data.get(dish_id, {})
+        for dish_code in all_dish_codes:
+            current = current_data.get(dish_code, {})
+            last_month = last_month_data.get(dish_code, {})
+            last_year = last_year_data.get(dish_code, {})
 
             # Skip if no current data
             if not current:
@@ -290,20 +415,17 @@ class DishPriceChangeSheet:
             if dish_code == '14120001':
                 continue
 
-            # Calculate theoretical and actual costs for this dish
+            # Get theoretical and actual costs for this dish
             theoretical_cost = current.get('theoretical_cost', 0)
-
-            # Distribute actual cost proportionally based on theoretical cost
-            if total_theoretical_cost > 0:
-                actual_cost = (theoretical_cost / total_theoretical_cost) * total_actual_cost
-            else:
-                actual_cost = 0
+            actual_cost = current.get('actual_cost', 0)  # Now comes directly from query with material-level ratios
 
             # Calculate loss (actual - theoretical)
+            # Positive means more usage than expected (waste)
+            # Negative means less usage than expected (efficiency gain)
             loss_amount = actual_cost - theoretical_cost
 
             # Get materials list for this dish from pre-fetched data
-            materials_list = all_dish_materials.get(dish_id, [])
+            materials_list = all_dish_materials.get(dish_code, [])
 
             row = {
                 '门店': store_name,

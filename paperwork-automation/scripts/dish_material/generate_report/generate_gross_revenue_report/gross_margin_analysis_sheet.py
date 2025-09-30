@@ -250,70 +250,71 @@ class GrossMarginAnalysisSheet:
         """Calculate dish loss/waste impact (actual vs theoretical material usage)"""
         current_year, current_mon = current_month
 
-        # This query calculates the difference between actual material usage and theoretical usage
-        # based on dishes sold and their material composition
+        # Match the dish price change sheet calculation exactly
+        # Calculate total theoretical cost and actual cost, then return the difference
         query = """
-            WITH theoretical_usage AS (
-                -- Calculate theoretical material usage based on dishes sold
+            WITH dish_sales AS (
+                -- Get all dishes sold this month
                 SELECT
-                    dm.material_id,
-                    SUM(dms.sale_amount * dm.standard_quantity * COALESCE(dm.loss_rate, 0) /
-                        COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1)) as theoretical_qty
+                    dms.dish_id,
+                    SUM(dms.sale_amount) as total_quantity
                 FROM dish_monthly_sale dms
-                INNER JOIN dish_material dm ON dms.dish_id = dm.dish_id
                 WHERE dms.store_id = %s
                     AND dms.year = %s
                     AND dms.month = %s
-                    AND dm.store_id = %s
-                GROUP BY dm.material_id
+                GROUP BY dms.dish_id
             ),
-            actual_usage AS (
-                -- Get actual material usage (only cost-type materials)
+            theoretical_cost AS (
+                -- Calculate theoretical cost based on BOM
                 SELECT
-                    material_id,
-                    material_used as actual_qty
-                FROM material_monthly_usage
-                WHERE store_id = %s
-                    AND year = %s
-                    AND month = %s
-                    AND material_use_type = '成本类'  -- Only cost-type materials
+                    SUM(
+                        CASE WHEN EXISTS (
+                            SELECT 1 FROM material_monthly_usage mmu
+                            WHERE mmu.material_id = m.id
+                              AND mmu.store_id = %s
+                              AND mmu.year = %s
+                              AND mmu.month = %s
+                              AND mmu.material_use_type = '成本类'
+                        )
+                        THEN ds.total_quantity * dm.standard_quantity * COALESCE(dm.loss_rate, 0) /
+                             COALESCE(NULLIF(dm.unit_conversion_rate, 0), 1) * COALESCE(mph.price, 0)
+                        ELSE 0
+                        END
+                    ) as total_theoretical
+                FROM dish_sales ds
+                LEFT JOIN dish_material dm ON dm.dish_id = ds.dish_id AND dm.store_id = %s
+                LEFT JOIN material m ON m.id = dm.material_id AND m.store_id = %s
+                LEFT JOIN material_price_history mph ON mph.material_id = m.id
+                    AND mph.store_id = %s
+                    AND mph.is_active = TRUE
             ),
-            material_prices AS (
-                -- Get material prices
-                SELECT DISTINCT
-                    m.id as material_id,
-                    COALESCE(
-                        (SELECT mph.price
-                         FROM material_price_history mph
-                         WHERE mph.material_id = m.id
-                           AND mph.store_id = %s
-                           AND ((mph.effective_year < %s) OR
-                                (mph.effective_year = %s AND mph.effective_month <= %s))
-                         ORDER BY mph.effective_year DESC, mph.effective_month DESC
-                         LIMIT 1),
-                        0
-                    ) as price
-                FROM material m
-                WHERE m.store_id = %s
+            actual_cost AS (
+                -- Get actual material cost
+                SELECT
+                    SUM(mmu.material_used * COALESCE(mph.price, 0)) as total_actual
+                FROM material_monthly_usage mmu
+                JOIN material m ON m.id = mmu.material_id AND m.store_id = mmu.store_id
+                LEFT JOIN material_price_history mph ON mph.material_id = m.id
+                    AND mph.store_id = m.store_id
+                    AND mph.is_active = TRUE
+                WHERE mmu.year = %s
+                  AND mmu.month = %s
+                  AND mmu.store_id = %s
+                  AND mmu.material_use_type = '成本类'
             )
             SELECT
-                SUM(
-                    (COALESCE(au.actual_qty, 0) - COALESCE(tu.theoretical_qty, 0)) * mp.price
-                ) as loss_amount
-            FROM material_prices mp
-            LEFT JOIN theoretical_usage tu ON mp.material_id = tu.material_id
-            LEFT JOIN actual_usage au ON mp.material_id = au.material_id
-            WHERE tu.material_id IS NOT NULL OR au.material_id IS NOT NULL  -- Only materials with either theoretical or actual usage
+                COALESCE(ac.total_actual, 0) - COALESCE(tc.total_theoretical, 0) as loss_amount
+            FROM theoretical_cost tc, actual_cost ac
         """
 
         try:
             with self.db_manager.get_connection() as conn:
                 with conn.cursor() as cursor:
                     cursor.execute(query,
-                                 (store_id, current_year, current_mon, store_id,
-                                  store_id, current_year, current_mon,
-                                  store_id, current_year, current_year, current_mon,
-                                  store_id))
+                                 (store_id, current_year, current_mon,  # dish_sales CTE
+                                  store_id, current_year, current_mon,  # EXISTS check in theoretical_cost
+                                  store_id, store_id, store_id,         # JOINs in theoretical_cost
+                                  current_year, current_mon, store_id)) # actual_cost CTE
                     result = cursor.fetchone()
 
                     return float(result['loss_amount']) if result['loss_amount'] else 0
