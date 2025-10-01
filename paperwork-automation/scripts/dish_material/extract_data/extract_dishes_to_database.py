@@ -26,6 +26,7 @@ from utils.database import DatabaseManager, DatabaseConfig
 from lib.excel_utils import safe_read_excel, clean_dish_code
 from configs.dish_material.dish_sales_extraction import (
     DISH_COLUMN_MAPPINGS,
+    DISH_COLUMN_MAPPINGS_ALT,
     DISH_FILE_STOREID_MAPPING
 )
 from scripts.dish_material.extract_data.file_discovery import find_dish_sales_file
@@ -102,9 +103,21 @@ class DishExtractor:
                 logger.error(f"File is not an Excel file: {input_path}")
                 return {'error': 'Not an Excel file'}
         else:
-            # Directory provided - find all Excel files
+            # Directory provided - check for folder-based structure (1, 2, 3, etc.) or direct Excel files
             excel_files = list(input_path.glob('*.xlsx')) + \
                 list(input_path.glob('*.xls'))
+
+            # If no Excel files found, check for folder-based structure (1, 2, 3, etc.)
+            if not excel_files:
+                logger.info(f"No direct Excel files found, checking for folder-based structure...")
+                store_folders = [d for d in input_path.iterdir() if d.is_dir() and d.name.isdigit()]
+
+                if store_folders:
+                    logger.info(f"Found {len(store_folders)} store folders")
+                    for folder in sorted(store_folders, key=lambda x: int(x.name)):
+                        folder_files = list(folder.glob('*.xlsx')) + list(folder.glob('*.xls'))
+                        excel_files.extend(folder_files)
+                        logger.info(f"Store folder {folder.name}: {len(folder_files)} file(s)")
 
         if not excel_files:
             logger.warning(f"No Excel files found in {input_path}")
@@ -209,6 +222,11 @@ class DishExtractor:
                 dtype_spec[DISH_COLUMN_MAPPINGS['full_code']] = str
             if DISH_COLUMN_MAPPINGS.get('short_code'):
                 dtype_spec[DISH_COLUMN_MAPPINGS['short_code']] = str
+            # Also add alternative mapping dtype specs
+            if DISH_COLUMN_MAPPINGS_ALT.get('full_code'):
+                dtype_spec[DISH_COLUMN_MAPPINGS_ALT['full_code']] = str
+            if DISH_COLUMN_MAPPINGS_ALT.get('short_code'):
+                dtype_spec[DISH_COLUMN_MAPPINGS_ALT['short_code']] = str
 
             # Try the standard sheet name first
             try:
@@ -223,9 +241,11 @@ class DishExtractor:
                     df = safe_read_excel(str(file_path), dtype_spec=dtype_spec)
                     logger.info(
                         f"Successfully read default sheet with {len(df)} rows")
-                    # Check if this looks like June format based on columns
-                    if '出品数量' in df.columns and '菜品单价' in df.columns:
-                        logger.info("Detected June format columns, applying mapping...")
+                    # Check if this looks like OLD June format (with different column names)
+                    # The new folder-based format also has '出品数量' and '菜品单价' but they are correct
+                    # Only apply June mapping if we DON'T have '门店名称' (folder format has this)
+                    if '出品数量' in df.columns and '菜品单价' in df.columns and '门店名称' not in df.columns:
+                        logger.info("Detected old June format columns, applying mapping...")
                         june_column_mapping = {
                             '规格': '规格名称',  # June uses '规格' instead of '规格名称'
                             '出品数量': '销售数量',  # June uses '出品数量' instead of '销售数量'
@@ -239,11 +259,25 @@ class DishExtractor:
                     logger.error(f"Failed to read any sheet from {file_path}: {e}")
                     raise
 
-            # Rename columns based on mapping
+            # Determine which column mapping to use
+            # Try primary mapping first
             rename_mapping = {}
             for key, chinese_col in DISH_COLUMN_MAPPINGS.items():
                 if chinese_col in df.columns:
                     rename_mapping[chinese_col] = key
+
+            # If primary mapping doesn't match well, try alternative mapping
+            if len(rename_mapping) < 5:  # Arbitrary threshold - should have at least 5 matches
+                logger.info("Primary column mapping has few matches, trying alternative mapping...")
+                alt_rename_mapping = {}
+                for key, chinese_col in DISH_COLUMN_MAPPINGS_ALT.items():
+                    if chinese_col in df.columns:
+                        alt_rename_mapping[chinese_col] = key
+
+                # Use alternative mapping if it has more matches
+                if len(alt_rename_mapping) > len(rename_mapping):
+                    logger.info(f"Using alternative column mapping ({len(alt_rename_mapping)} matches vs {len(rename_mapping)})")
+                    rename_mapping = alt_rename_mapping
 
             if not rename_mapping:
                 logger.warning(f"No matching columns found in {file_path}")
@@ -422,13 +456,24 @@ class DishExtractor:
                     insert_columns = ['full_code', 'size', 'is_active']
                     insert_values = [full_code, size, True]
 
+                    # Name is required field
                     if 'name' in dish_row and not pd.isna(dish_row['name']):
                         insert_columns.append('name')
                         insert_values.append(dish_row['name'])
+                        name_value = dish_row['name']
+                    else:
+                        # Skip if no name provided
+                        logger.warning(f"Skipping dish {full_code} - no name provided")
+                        continue
 
+                    # System name - if not provided, use name value
                     if 'system_name' in dish_row and not pd.isna(dish_row['system_name']):
                         insert_columns.append('system_name')
                         insert_values.append(dish_row['system_name'])
+                    else:
+                        # Default system_name to name if not provided
+                        insert_columns.append('system_name')
+                        insert_values.append(name_value)
 
                     if 'short_code' in dish_row and not pd.isna(dish_row['short_code']):
                         insert_columns.append('short_code')
