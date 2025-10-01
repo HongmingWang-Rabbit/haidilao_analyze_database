@@ -12,6 +12,7 @@ BankWorkSheet = {
     "CA4D-1699": BankBrands.BMO,
     "CA5D-6333": BankBrands.BMO,
     "CA6D-6317": BankBrands.BMO,
+    "CA8D-9592": BankBrands.BMO,
     "CA7D-CIBC 0401": BankBrands.CIBC,
     "RBC 5401": BankBrands.RBC,
     "RBC 5419": BankBrands.RBC,
@@ -28,6 +29,7 @@ BanWorkSheetToFormattedName={
     "CA4D-1699":  "BMO1699",
     "CA5D-6333":  "BMO6333",
     "CA6D-6317":  "BMO6317",
+    "CA8D-9592":  "BMO9592",
     "CA7D-CIBC 0401": "CIBC0401",
     "RBC 5401": "RBC5401",
     "RBC 5419":  "RBC5419",
@@ -65,6 +67,10 @@ BankWorkSheetOfflinePaymentInfo:Dict[str, PaymentInfo] = {
     "CA6D-6317":  {
         "company_code":9451,
         "department_name":"加拿大六店"
+    },
+    "CA8D-9592":  {
+        "company_code":9451,
+        "department_name":"加拿大八店"
     },
     "CA7D-CIBC 0401": {
         "company_code":9451,
