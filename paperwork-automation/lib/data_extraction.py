@@ -327,7 +327,8 @@ def transform_daily_report_data(df):
         '加拿大四店': 4,
         '加拿大五店': 5,
         '加拿大六店': 6,
-        '加拿大七店': 7
+        '加拿大七店': 7,
+        "加拿大八店": 8
     }
 
     # Check if this is time segment data (has '分时段' column)
@@ -467,7 +468,8 @@ def transform_time_segment_data(df):
         '加拿大四店': 4,
         '加拿大五店': 5,
         '加拿大六店': 6,
-        '加拿大七店': 7
+        '加拿大七店': 7,
+        "加拿大八店": 8
     }
 
     # Time segment ID mapping

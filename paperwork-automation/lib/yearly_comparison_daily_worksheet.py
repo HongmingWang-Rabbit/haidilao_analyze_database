@@ -268,7 +268,7 @@ class YearlyComparisonDailyWorksheetGenerator:
                 return "当月累计平均翻台率"
             else:
                 col_index = col - 3
-                if col_index < 7:
+                if col_index < 8:
                     return f"第{col_index + 1}名"
         elif content == f"{target_dt.month}月{target_dt.day}日翻台率排名店铺":
             if store_name == "加拿大片区":
@@ -355,7 +355,7 @@ class YearlyComparisonDailyWorksheetGenerator:
 
         # Title
         title = f"加拿大-各门店{self.target_date.replace('-', '年', 1).replace('-', '月', 1)}日同比数据-{weekday}"
-        ws.merge_cells('A1:J1')
+        ws.merge_cells('A1:K1')
         ws['A1'] = title
         ws['A1'].font = Font(bold=True, size=12, color="FFFFFF")
         ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
@@ -455,14 +455,14 @@ class YearlyComparisonDailyWorksheetGenerator:
                     horizontal='center', vertical='center')
                 cell.font = Font(bold=True)
 
-        ws['J24'] = "当月累计平均翻台率"
-        ws['J25'] = ws['J28'].value
-        ws['J25'].fill = PatternFill(
+        ws['K24'] = "当月累计平均翻台率"
+        ws['K25'] = ws['K28'].value
+        ws['K25'].fill = PatternFill(
             start_color="FFFFFFFF", end_color="FFFFFFFF", fill_type="solid")
-        ws['J25'].alignment = Alignment(horizontal='center', vertical='center')
-        ws['J25'].font = Font(bold=True, size=20, color="FFFF0000")
+        ws['K25'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['K25'].font = Font(bold=True, size=20, color="FFFF0000")
 
-        ws.merge_cells('J25:J28')
+        ws.merge_cells('K25:K28')
 
         # Apply common formatting
         self.apply_common_formatting(ws, current_row)
@@ -472,7 +472,7 @@ class YearlyComparisonDailyWorksheetGenerator:
     def apply_common_formatting(self, ws, current_row):
         """Apply common formatting to the worksheet"""
         # Set column widths
-        column_widths = [20, 20, 12, 12, 12, 12, 12, 12, 12, 20]
+        column_widths = [20, 20, 12, 12, 12, 12, 12, 12, 12, 12, 20]
         for i, width in enumerate(column_widths, 1):
             if i <= len(column_widths):
                 ws.column_dimensions[get_column_letter(i)].width = width
@@ -484,7 +484,7 @@ class YearlyComparisonDailyWorksheetGenerator:
         )
 
         for row in range(1, current_row):
-            for col in range(1, 11):
+            for col in range(1, 12):
                 cell = ws.cell(row=row, column=col)
                 cell.border = thin_border
 

@@ -21,6 +21,7 @@ INVENTORY_STORE_MAPPING = {
     "5": 5,  # CA05 - 加拿大五店
     "6": 6,  # CA06 - 加拿大六店
     "7": 7,  # CA07 - 加拿大七店
+    "8": 8,
 }
 
 # File name pattern to extract store code

@@ -268,7 +268,7 @@ class ComparisonWorksheetGenerator:
                 return "当月累计平均翻台率"
             else:
                 col_index = col - 3
-                if col_index < 7:
+                if col_index < 8:
                     return f"第{col_index + 1}名"
         elif content == f"{target_dt.month}月{target_dt.day}日翻台率排名店铺":
             if store_name == "加拿大片区":
@@ -380,7 +380,7 @@ class ComparisonWorksheetGenerator:
 
         # Title
         title = f"加拿大-各门店{self.target_date.replace('-', '年', 1).replace('-', '月', 1)}日环比数据-{weekday}"
-        ws.merge_cells('A1:J1')
+        ws.merge_cells('A1:K1')
         ws['A1'] = title
         ws['A1'].font = Font(bold=True, size=12)
         ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
@@ -485,8 +485,8 @@ class ComparisonWorksheetGenerator:
 
         # manual modify some displays
         # #当月累计平均翻台率 - Calculate the correct average from monthly ranking values
-        ws.merge_cells('J25:J28')
-        mtd_avg_turnover = ws['J25']
+        ws.merge_cells('K25:K28')
+        mtd_avg_turnover = ws['K25']
 
         # FIX: Calculate accurate weighted average to avoid precision loss
         # Use the same calculation as in get_cell_value method
@@ -553,7 +553,7 @@ class ComparisonWorksheetGenerator:
         )
 
         for row in range(1, current_row):
-            for col in range(1, 11):
+            for col in range(1, 12):
                 cell = ws.cell(row=row, column=col)
                 cell.border = thin_border
 
@@ -566,7 +566,7 @@ class ComparisonWorksheetGenerator:
                         cell.number_format = '0.00%'
 
         # Set column widths
-        column_widths = [20, 20, 12, 12, 12, 12, 12, 12, 12, 20]
+        column_widths = [20, 20, 12, 12, 12, 12, 12, 12, 12, 12, 20]
         for i, width in enumerate(column_widths, 1):
             ws.column_dimensions[get_column_letter(i)].width = width
 

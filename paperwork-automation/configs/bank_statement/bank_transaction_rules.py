@@ -653,7 +653,7 @@ BANK_TRANSACTION_RULES: List[Tuple[TransactionMatchRule, Dict]] = [
     }),
 
     (TransactionMatchRule(
-        description_pattern="SNAPPYWC9005",
+        description_pattern="SNAPPYWC",
         transaction_type="credit"
     ), {
         "品名": TransactionType.INCOME_RECEIVED.value,
@@ -1070,7 +1070,7 @@ FIRST DATA CANADA\(J\)''', re.IGNORECASE | re.MULTILINE),
     (TransactionMatchRule(
         description_pattern="VW CREDIT CAN   LNS/PRE",
         transaction_type='debit',
-        amount_pattern=197.99
+        amount_pattern=1171.11
     ), {
         "品名": TransactionType.RENTAL_FEE.value,
         "付款详情": "蒋冰遇汽车租赁费",
@@ -1116,6 +1116,19 @@ FIRST DATA CANADA\(J\)''', re.IGNORECASE | re.MULTILINE),
         "单据号": True,
         "附件": False,
         "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+    
+    (TransactionMatchRule(
+        description_pattern="COOPERATORS CSI INS/ASS",
+        transaction_type='debit',
+        amount_pattern=521.67
+    ), {
+        "品名": TransactionType.INSURANCE_FEE.value,
+        "付款详情": "三店员工宿舍保险$108.81+店经理用车acura保险$411.59",
+        "单据号": False,
+        "附件": True,
+        "是否登记线下付款表": True,
         "是否登记支票使用表": False,
     }),
 

@@ -161,7 +161,7 @@ class ReportDataProvider:
                 # Store seating capacity mapping (from business knowledge)
                 # This is consistent with existing code patterns in the codebase
                 store_seating_capacity = {
-                    1: 53, 2: 36, 3: 48, 4: 70, 5: 55, 6: 56, 7: 57}
+                    1: 53, 2: 36, 3: 48, 4: 70, 5: 55, 6: 56, 7: 57, 8: 56}
 
                 # Calculate proper monthly cumulative turnover rate
                 # Method 1: Weighted average by seating capacity (more accurate)
@@ -412,7 +412,7 @@ class ReportDataProvider:
             AND ts.id = smtt.time_segment_id
             AND EXTRACT(YEAR FROM smtt.month) = %s 
             AND EXTRACT(MONTH FROM smtt.month) = %s
-        WHERE s.id BETWEEN 1 AND 7
+        WHERE s.id BETWEEN 1 AND 8
         ORDER BY s.id, ts.id
         """
 
@@ -577,11 +577,12 @@ class ReportDataProvider:
             4: '李俊娟',
             5: '陈浩',
             6: '高新菊',
-            7: '潘幸远'
+            7: '潘幸远',
+            8: '李俊娟'
         }
 
         sql = """
-        SELECT 
+        SELECT
             s.id as store_id,
             s.name as store_name,
             s.seats_total as seating_capacity,
@@ -600,11 +601,11 @@ class ReportDataProvider:
             dr_prev.turnover_rate as prev_turnover_rate,
             dr_prev.revenue_tax_not_included / 10000.0 as prev_revenue
         FROM store s
-        LEFT JOIN daily_report dr_current ON s.id = dr_current.store_id 
+        LEFT JOIN daily_report dr_current ON s.id = dr_current.store_id
             AND dr_current.date = %s
-        LEFT JOIN daily_report dr_prev ON s.id = dr_prev.store_id 
+        LEFT JOIN daily_report dr_prev ON s.id = dr_prev.store_id
             AND dr_prev.date = %s
-        WHERE s.id BETWEEN 1 AND 7
+        WHERE s.id BETWEEN 1 AND 8
         ORDER BY s.id
         """
 
@@ -678,11 +679,12 @@ class ReportDataProvider:
             4: '李俊娟',
             5: '陈浩',
             6: '高新菊',
-            7: '潘幸远'
+            7: '潘幸远',
+            8: '李俊娟'
         }
 
         sql = """
-        SELECT 
+        SELECT
             s.id as store_id,
             s.name as store_name,
             s.seats_total as seating_capacity,
@@ -701,11 +703,11 @@ class ReportDataProvider:
             COALESCE(AVG(dr_prev.turnover_rate), 0) as prev_avg_turnover_rate,
             COALESCE(SUM(dr_prev.revenue_tax_not_included) / 10000.0, 0) as prev_total_revenue
         FROM store s
-        LEFT JOIN daily_report dr_current ON s.id = dr_current.store_id 
+        LEFT JOIN daily_report dr_current ON s.id = dr_current.store_id
             AND dr_current.date >= %s AND dr_current.date <= %s
-        LEFT JOIN daily_report dr_prev ON s.id = dr_prev.store_id 
+        LEFT JOIN daily_report dr_prev ON s.id = dr_prev.store_id
             AND dr_prev.date >= %s AND dr_prev.date <= %s
-        WHERE s.id BETWEEN 1 AND 7
+        WHERE s.id BETWEEN 1 AND 8
         GROUP BY s.id, s.name, s.seats_total
         ORDER BY s.id
         """
@@ -835,7 +837,7 @@ class ReportDataProvider:
                 AND s.id = mcds.store_id
                 AND mcds.year = %s AND mcds.month = %s
             LEFT JOIN dish_material dm ON d.id = dm.dish_id
-            WHERE s.id BETWEEN 1 AND 7
+            WHERE s.id BETWEEN 1 AND 8
             GROUP BY d.id, s.id
         ),
         -- Get actual usage from material_monthly_usage (current, previous month, last year)
@@ -856,10 +858,10 @@ class ReportDataProvider:
                 AND s.id = mmu.store_id
                 AND (
                     (mmu.year = %s AND mmu.month = %s) OR  -- Current month
-                    (mmu.year = %s AND mmu.month = %s) OR  -- Previous month  
+                    (mmu.year = %s AND mmu.month = %s) OR  -- Previous month
                     (mmu.year = %s AND mmu.month = %s)     -- Last year same month
                 )
-            WHERE s.id BETWEEN 1 AND 7
+            WHERE s.id BETWEEN 1 AND 8
             GROUP BY d.id, s.id
         ),
         -- Get combo sales data
@@ -873,7 +875,7 @@ class ReportDataProvider:
             LEFT JOIN monthly_combo_dish_sale mcds ON d.id = mcds.dish_id
                 AND s.id = mcds.store_id
                 AND mcds.year = %s AND mcds.month = %s
-            WHERE s.id BETWEEN 1 AND 7
+            WHERE s.id BETWEEN 1 AND 8
             GROUP BY d.id, s.id
         )
         SELECT 
@@ -986,7 +988,7 @@ class ReportDataProvider:
             AND s.id = dau.store_id
         LEFT JOIN dish_combo_sales dcs ON d.id = dcs.dish_id
             AND s.id = dcs.store_id
-        WHERE s.id BETWEEN 1 AND 7
+        WHERE s.id BETWEEN 1 AND 8
             AND (ads.total_sale_amount > 0 OR dcp.price > 0)
         GROUP BY s.id, s.name, d.id, d.full_code, d.name, d.size, 
                  ads.total_sale_amount, dcp.price, dpp.price, dlyp.price, dcp.earliest_price_date,
@@ -1105,7 +1107,7 @@ class ReportDataProvider:
             AND s.id = mmu.store_id
             AND mmu.year = %s
             AND mmu.month = %s
-        WHERE s.id BETWEEN 1 AND 7
+        WHERE s.id BETWEEN 1 AND 8
             AND (mcp.price > 0 OR mmu.material_used > 0)
         ORDER BY s.id, m.material_number
         """
@@ -1210,7 +1212,7 @@ class ReportDataProvider:
             # Workaround: Use separate queries instead of complex join due to parameter binding issues
             
             # 1. Get all stores
-            stores_sql = "SELECT id as store_id, name as store_name FROM store WHERE id BETWEEN 1 AND 7 ORDER BY id"
+            stores_sql = "SELECT id as store_id, name as store_name FROM store WHERE id BETWEEN 1 AND 8 ORDER BY id"
             stores = self.db_manager.fetch_all(stores_sql)
             
             # 2. Get current revenue
@@ -1329,7 +1331,7 @@ class ReportDataProvider:
         LEFT JOIN daily_report dr ON s.id = dr.store_id
             AND EXTRACT(YEAR FROM dr.date) = %s
             AND EXTRACT(MONTH FROM dr.date) = %s
-        WHERE s.id BETWEEN 1 AND 7
+        WHERE s.id BETWEEN 1 AND 8
         GROUP BY s.id, s.name
         ORDER BY s.id
         """

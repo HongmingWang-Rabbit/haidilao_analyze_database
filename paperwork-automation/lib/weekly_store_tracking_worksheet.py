@@ -266,6 +266,17 @@ class WeeklyStoreTrackingGenerator:
                 'prev_avg_turnover_rate': 3.98,
                 'current_total_revenue': 11.13,
                 'prev_total_revenue': 13.09
+            },
+            {
+                'store_id': 8,
+                'store_name': '加拿大八店',
+                'manager_name': '李俊娟',
+                'seating_capacity': 56,
+                'annual_avg_turnover_2024': 3.32,
+                'current_avg_turnover_rate': 4.75,
+                'prev_avg_turnover_rate': 3.78,
+                'current_total_revenue': 30.17,
+                'prev_total_revenue': 25.48
             }
         ]
 
@@ -426,7 +437,7 @@ class WeeklyStoreTrackingGenerator:
             # Normalized scoring - EXACT formulas from reference sheet
             # I - Improvement score (Turnover difference normalization)
             ws.cell(row=row, column=9,
-                    value=f"=(H{row}-MIN($H$4:$H$10))/(MAX($H$4:$H$10)-MIN($H$4:$H$10))")
+                    value=f"=(H{row}-MIN($H$4:$H$11))/(MAX($H$4:$H$11)-MIN($H$4:$H$11))")
 
             # Revenue data (weekly totals)
             # J - Current week total revenue
@@ -439,7 +450,7 @@ class WeeklyStoreTrackingGenerator:
             # Normalized scoring - EXACT formulas from reference sheet
             # M - Revenue improvement score (Revenue difference normalization)
             ws.cell(row=row, column=13,
-                    value=f"=(L{row}-MIN($L$4:$L$10))/(MAX($L$4:$L$10)-MIN($L$4:$L$10))")
+                    value=f"=(L{row}-MIN($L$4:$L$11))/(MAX($L$4:$L$11)-MIN($L$4:$L$11))")
 
             # Comprehensive scoring - Modified formula without basic scores
             # N - Comprehensive score (50% weight each improvement score)
@@ -448,7 +459,7 @@ class WeeklyStoreTrackingGenerator:
 
             # Ranking - EXACT formula from reference sheet
             # O - Ranking (RANK function)
-            ws.cell(row=row, column=15, value=f"=RANK(N{row},$N$4:$N$10)")
+            ws.cell(row=row, column=15, value=f"=RANK(N{row},$N$4:$N$11)")
 
     def _apply_formatting(self, ws: Worksheet, num_stores: int) -> None:
         """Apply professional formatting to the worksheet."""

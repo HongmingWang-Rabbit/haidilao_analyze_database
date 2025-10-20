@@ -27,6 +27,7 @@ class StoreMapping:
             '加拿大五店': 5,
             '加拿大六店': 6,
             '加拿大七店': 7,
+            "加拿大八店": 8
         }
     
     @staticmethod

@@ -200,7 +200,7 @@ class YearlyComparisonWorksheetGenerator(BaseWorksheetGenerator):
 
         # Title
         title = f"加拿大-各门店{self.current_year}年{self.month}月{self.day}日同比数据-{weekday}"
-        ws.merge_cells('A1:J1')
+        ws.merge_cells('A1:K1')
         ws['A1'] = title
         ws['A1'].font = Font(bold=True, size=12)
         ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
@@ -213,13 +213,13 @@ class YearlyComparisonWorksheetGenerator(BaseWorksheetGenerator):
         ws['A2'] = "分类"
         ws.merge_cells('C2:E2')
         ws['C2'] = "西部"
-        ws.merge_cells('F2:I2')
+        ws.merge_cells('F2:J2')
         ws['F2'] = "东部"
-        ws['J2'] = "加拿大片区"
+        ws['K2'] = "加拿大片区"
 
         # Row 3: Store names
         headers_row3 = ["项目", "内容", "加拿大一店", "加拿大二店", "加拿大七店",
-                        "加拿大三店", "加拿大四店", "加拿大五店", "加拿大六店", "加拿大片区"]
+                        "加拿大三店", "加拿大四店", "加拿大五店", "加拿大六店", "加拿大八店", "加拿大片区"]
         for col, header in enumerate(headers_row3, 1):
             cell = ws.cell(row=3, column=col, value=header)
             cell.font = Font(bold=True)
@@ -229,7 +229,7 @@ class YearlyComparisonWorksheetGenerator(BaseWorksheetGenerator):
 
         # Apply header formatting
         for row in [2, 3]:
-            for col in range(1, 11):
+            for col in range(1, 12):
                 cell = ws.cell(row=row, column=col)
                 cell.font = Font(bold=True)
                 cell.fill = PatternFill(
@@ -264,9 +264,9 @@ class YearlyComparisonWorksheetGenerator(BaseWorksheetGenerator):
             ("", "单桌消费增长率", "FFFF00"),  # Highlighted
         ]
 
-        # Store order matching the image (西部: 一店,二店,七店; 东部: 三店,四店,五店,六店)
+        # Store order matching the image (西部: 一店,二店,七店; 东部: 三店,四店,五店,六店,八店)
         store_order = ["加拿大一店", "加拿大二店", "加拿大七店",
-                       "加拿大三店", "加拿大四店", "加拿大五店", "加拿大六店", "加拿大片区"]
+                       "加拿大三店", "加拿大四店", "加拿大五店", "加拿大六店", "加拿大八店", "加拿大片区"]
 
         # Add data to worksheet
         current_row = 4
@@ -354,11 +354,11 @@ class YearlyComparisonWorksheetGenerator(BaseWorksheetGenerator):
         )
 
         for row in range(1, current_row):
-            for col in range(1, 11):
+            for col in range(1, 12):
                 ws.cell(row=row, column=col).border = thin_border
 
         # Set column widths
-        column_widths = [15, 20, 12, 12, 12, 12, 12, 12, 12, 15]
+        column_widths = [15, 20, 12, 12, 12, 12, 12, 12, 12, 12, 15]
         for i, width in enumerate(column_widths, 1):
             ws.column_dimensions[get_column_letter(i)].width = width
 

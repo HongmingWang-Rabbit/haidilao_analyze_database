@@ -19,7 +19,8 @@ STORE_NAME_MAPPING: Dict[str, int] = {
     '加拿大四店': 4,
     '加拿大五店': 5,
     '加拿大六店': 6,
-    '加拿大七店': 7
+    '加拿大七店': 7,
+    '加拿大八店': 8
 }
 
 # Reverse mapping for ID to name lookups
@@ -31,7 +32,7 @@ STORE_ID_TO_NAME_MAPPING: Dict[int, str] = {
 VALID_STORE_NAMES: List[str] = list(STORE_NAME_MAPPING.keys())
 
 # Store IDs in order
-STORE_IDS: List[int] = list(range(1, 8))
+STORE_IDS: List[int] = list(range(1, 9))
 
 
 # ============================================================================

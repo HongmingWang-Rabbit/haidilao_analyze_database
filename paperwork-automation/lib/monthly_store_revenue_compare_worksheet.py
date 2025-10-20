@@ -124,7 +124,7 @@ class MonthlyStoreRevenueCompareWorksheet:
                 end_date = datetime(year, month + 1, 1) - timedelta(days=1)
             
             query = """
-                SELECT 
+                SELECT
                     s.name as store_name,
                     COALESCE(SUM(d.revenue_tax_not_included), 0) as total_revenue,
                     COALESCE(AVG(d.turnover_rate), 0) as avg_turnover_rate,
@@ -132,10 +132,10 @@ class MonthlyStoreRevenueCompareWorksheet:
                     COALESCE(AVG(d.tables_served_validated), 0) as avg_tables_validated,
                     COUNT(DISTINCT d.date) as operating_days
                 FROM store s
-                LEFT JOIN daily_report d ON s.id = d.store_id 
-                    AND d.date >= %s 
+                LEFT JOIN daily_report d ON s.id = d.store_id
+                    AND d.date >= %s
                     AND d.date <= %s
-                WHERE s.id <= 7  -- Only Canadian stores
+                WHERE s.id <= 8  -- Only Canadian stores
                 GROUP BY s.id, s.name
                 ORDER BY s.id
             """
@@ -196,7 +196,8 @@ class MonthlyStoreRevenueCompareWorksheet:
             '加拿大四店': 70,
             '加拿大五店': 55,
             '加拿大六店': 56,
-            '加拿大七店': 57
+            '加拿大七店': 57,
+            "加拿大八店": 56
         }
         return seats_mapping.get(store_name, 50)  # Default to 50 if not found
     
@@ -281,7 +282,8 @@ class MonthlyStoreRevenueCompareWorksheet:
             '加拿大四店': ('李俊骑', 6),
             '加拿大五店': ('陈浩', 7),
             '加拿大六店': ('高新荣', 8),
-            '加拿大七店': ('海参威', 9)
+            '加拿大七店': ('海参威', 9),
+            '加拿大八店': ('', 10)
         }
         
         # Fill revenue data (top section, rows 3-9)

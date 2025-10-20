@@ -46,7 +46,7 @@ class DatabaseReportGenerator:
         # Store mapping
         self.store_names = {
             1: "加拿大一店", 2: "加拿大二店", 3: "加拿大三店", 4: "加拿大四店",
-            5: "加拿大五店", 6: "加拿大六店", 7: "加拿大七店"
+            5: "加拿大五店", 6: "加拿大六店", 7: "加拿大七店", 8: "加拿大八店"
         }
 
         # Initialize data provider and worksheet generators
