@@ -2370,10 +2370,10 @@ except Exception as e:
         command = f'{self.python_cmd} scripts/extract_material_prices_by_store.py --input "{excel_file}"'
 
         if choice == '2':
-            store_id = input("Enter store ID (1-7): ").strip()
+            store_id = input("Enter store ID (1-8): ").strip()
             try:
                 store_id = int(store_id)
-                if 1 <= store_id <= 7:
+                if 1 <= store_id <= 8:
                     command += f' --store-id {store_id}'
                 else:
                     print("❌ Invalid store ID. Using auto-detection.")

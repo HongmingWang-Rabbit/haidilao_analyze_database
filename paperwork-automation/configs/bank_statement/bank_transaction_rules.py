@@ -724,6 +724,18 @@ BANK_TRANSACTION_RULES: List[Tuple[TransactionMatchRule, Dict]] = [
         "是否登记线下付款表": False,
         "是否登记支票使用表": False,
     }),
+
+    (TransactionMatchRule(
+        description_pattern=re.compile(r"^AMX\d+\s+\d+$"),
+        transaction_type='credit'
+    ), {
+        "品名": TransactionType.INCOME_RECEIVED.value,
+        "付款详情": "Moneris进账",
+        "单据号": False,
+        "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
     # Interest patterns
     (TransactionMatchRule(
         description_pattern=re.compile(r'INTEREST', re.IGNORECASE)

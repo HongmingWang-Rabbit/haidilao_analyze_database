@@ -12,6 +12,9 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent))
 
+# Import centralized store configuration
+from configs.store_config import STORE_MANAGERS, STORE_SEATING_CAPACITY
+
 
 class ReportDataProvider:
     """Centralized data provider for all report generation"""
@@ -158,10 +161,8 @@ class ReportDataProvider:
                 total_customers = sum(float(r['customers'] or 0) for r in rows)
                 total_discount = sum(
                     float(r['discount_total'] or 0) for r in rows)
-                # Store seating capacity mapping (from business knowledge)
-                # This is consistent with existing code patterns in the codebase
-                store_seating_capacity = {
-                    1: 53, 2: 36, 3: 48, 4: 70, 5: 55, 6: 56, 7: 57, 8: 56}
+                # Store seating capacity from centralized config
+                store_seating_capacity = STORE_SEATING_CAPACITY
 
                 # Calculate proper monthly cumulative turnover rate
                 # Method 1: Weighted average by seating capacity (more accurate)
@@ -569,17 +570,8 @@ class ReportDataProvider:
         prev_year = target_dt.year - 1
         prev_year_date = f"{prev_year}-{target_dt.month:02d}-{target_dt.day:02d}"
 
-        # Define individual store managers as per reference sheet
-        store_managers = {
-            1: '张森磊',
-            2: '潘幸远',
-            3: 'Bao Xiaoyun',
-            4: '李俊娟',
-            5: '陈浩',
-            6: '高新菊',
-            7: '潘幸远',
-            8: '李俊娟'
-        }
+        # Store managers from centralized config
+        store_managers = STORE_MANAGERS
 
         sql = """
         SELECT
@@ -671,17 +663,8 @@ class ReportDataProvider:
         prev_year_start = prev_year_start_dt.strftime('%Y-%m-%d')
         prev_year_end = prev_year_end_dt.strftime('%Y-%m-%d')
 
-        # Define individual store managers as per reference sheet
-        store_managers = {
-            1: '张森磊',
-            2: '潘幸远',
-            3: 'Bao Xiaoyun',
-            4: '李俊娟',
-            5: '陈浩',
-            6: '高新菊',
-            7: '潘幸远',
-            8: '李俊娟'
-        }
+        # Store managers from centralized config
+        store_managers = STORE_MANAGERS
 
         sql = """
         SELECT

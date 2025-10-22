@@ -281,12 +281,12 @@ class DishMaterialDatabase:
             LEFT JOIN LATERAL (
                 SELECT unit_price 
                 FROM material_price_history 
-                WHERE material_number = dmm.material_number 
+                WHERE material_number = dmm.material_number
                     AND effective_date <= %s
-                ORDER BY effective_date DESC 
+                ORDER BY effective_date DESC
                 LIMIT 1
             ) mph ON true
-            WHERE s.store_id <= 7
+            WHERE s.store_id <= 8
             GROUP BY s.store_id, s.store_name
         )
         SELECT 

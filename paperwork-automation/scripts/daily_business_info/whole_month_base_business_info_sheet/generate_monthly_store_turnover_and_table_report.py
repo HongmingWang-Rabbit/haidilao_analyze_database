@@ -206,8 +206,8 @@ class MonthlyStoreReportGenerator:
             if 'Sheet' in workbook.sheetnames:
                 workbook.remove(workbook['Sheet'])
 
-            # Generate worksheet for each store (IDs 1-7)
-            for store_id in range(1, 8):
+            # Generate worksheet for each store (IDs 1-8)
+            for store_id in range(1, 9):
                 store_name = STORE_ID_TO_NAME_MAPPING.get(store_id, f"Store_{store_id}")
                 print(f"Generating worksheet for {store_name}...")
                 self.generate_store_worksheet(workbook, store_id, store_name)

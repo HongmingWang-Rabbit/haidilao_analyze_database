@@ -19,6 +19,9 @@ from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
+# Import centralized store configuration
+from configs.store_config import get_weekly_mock_data
+
 
 class WeeklyStoreTrackingGenerator:
     """Generator for weekly store performance tracking worksheet."""
@@ -187,98 +190,8 @@ class WeeklyStoreTrackingGenerator:
             return self._get_mock_weekly_store_data()
 
     def _get_mock_weekly_store_data(self) -> List[Dict[str, Any]]:
-        """Get mock weekly store data for development/testing."""
-        # Mock data - weekly aggregated values (7 days totals/averages)
-        return [
-            {
-                'store_id': 5,
-                'store_name': '加拿大五店',
-                'manager_name': '陈浩',
-                'seating_capacity': 55,
-                'annual_avg_turnover_2024': 5.5,
-                'current_avg_turnover_rate': 5.68,  # 7-day average
-                'prev_avg_turnover_rate': 6.42,     # 7-day average previous year
-                'current_total_revenue': 30.8,      # 7-day total revenue
-                'prev_total_revenue': 27.72
-            },
-            {
-                'store_id': 6,
-                'store_name': '加拿大六店',
-                'manager_name': '高新菊',
-                'seating_capacity': 56,
-                'annual_avg_turnover_2024': 3.67,
-                'current_avg_turnover_rate': 4.12,
-                'prev_avg_turnover_rate': 4.08,
-                'current_total_revenue': 21.98,
-                'prev_total_revenue': 17.99
-            },
-            {
-                'store_id': 3,
-                'store_name': '加拿大三店',
-                'manager_name': 'Bao Xiaoyun',
-                'seating_capacity': 48,
-                'annual_avg_turnover_2024': 5.72,
-                'current_avg_turnover_rate': 5.48,
-                'prev_avg_turnover_rate': 7.65,
-                'current_total_revenue': 26.53,
-                'prev_total_revenue': 26.53
-            },
-            {
-                'store_id': 4,
-                'store_name': '加拿大四店',
-                'manager_name': '李俊娟',
-                'seating_capacity': 70,
-                'annual_avg_turnover_2024': 4.49,
-                'current_avg_turnover_rate': 4.58,
-                'prev_avg_turnover_rate': 5.05,
-                'current_total_revenue': 31.78,
-                'prev_total_revenue': 26.88
-            },
-            {
-                'store_id': 1,
-                'store_name': '加拿大一店',
-                'manager_name': '张森磊',
-                'seating_capacity': 53,
-                'annual_avg_turnover_2024': 4.57,
-                'current_avg_turnover_rate': 4.79,
-                'prev_avg_turnover_rate': 5.18,
-                'current_total_revenue': 29.82,
-                'prev_total_revenue': 28.98
-            },
-            {
-                'store_id': 7,
-                'store_name': '加拿大七店',
-                'manager_name': '潘幸远',
-                'seating_capacity': 57,
-                'annual_avg_turnover_2024': 3.32,
-                'current_avg_turnover_rate': 4.75,
-                'prev_avg_turnover_rate': 3.78,
-                'current_total_revenue': 30.17,
-                'prev_total_revenue': 25.48
-            },
-            {
-                'store_id': 2,
-                'store_name': '加拿大二店',
-                'manager_name': '潘幸远',
-                'seating_capacity': 36,
-                'annual_avg_turnover_2024': 4.02,
-                'current_avg_turnover_rate': 2.85,
-                'prev_avg_turnover_rate': 3.98,
-                'current_total_revenue': 11.13,
-                'prev_total_revenue': 13.09
-            },
-            {
-                'store_id': 8,
-                'store_name': '加拿大八店',
-                'manager_name': '李俊娟',
-                'seating_capacity': 56,
-                'annual_avg_turnover_2024': 3.32,
-                'current_avg_turnover_rate': 4.75,
-                'prev_avg_turnover_rate': 3.78,
-                'current_total_revenue': 30.17,
-                'prev_total_revenue': 25.48
-            }
-        ]
+        """Get mock weekly store data for development/testing from centralized config."""
+        return get_weekly_mock_data()
 
     def _add_regional_summary(self, ws: Worksheet, store_data: List[Dict[str, Any]],
                               start_dt: datetime, target_dt: datetime,

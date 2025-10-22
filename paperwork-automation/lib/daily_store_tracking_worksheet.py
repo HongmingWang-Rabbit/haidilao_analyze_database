@@ -6,7 +6,7 @@ that compares current year vs previous year performance with normalized scoring 
 
 The worksheet includes:
 - Table turnover rate comparison and scoring
-- Daily revenue comparison and scoring  
+- Daily revenue comparison and scoring
 - Comprehensive weighted scoring (25% each metric)
 - Automatic ranking system
 """
@@ -18,6 +18,9 @@ from openpyxl import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
+
+# Import centralized store configuration
+from configs.store_config import get_daily_mock_data
 
 
 class DailyStoreTrackingGenerator:
@@ -168,98 +171,8 @@ class DailyStoreTrackingGenerator:
             return self._get_mock_store_data()
 
     def _get_mock_store_data(self) -> List[Dict[str, Any]]:
-        """Get mock store data for development/testing."""
-        # Mock data in the CORRECT order from reference file: 5,6,3,4,1,7,2
-        return [
-            {
-                'store_id': 5,
-                'store_name': '加拿大五店',
-                'manager_name': '陈浩',
-                'seating_capacity': 55,
-                'annual_avg_turnover_2024': 5.5,
-                'current_turnover_rate': 5.73,
-                'prev_turnover_rate': 6.71,
-                'current_revenue': 4.40,
-                'prev_revenue': 3.96
-            },
-            {
-                'store_id': 6,
-                'store_name': '加拿大六店',
-                'manager_name': '高新菊',
-                'seating_capacity': 56,
-                'annual_avg_turnover_2024': 3.67,
-                'current_turnover_rate': 4.05,
-                'prev_turnover_rate': 4.16,
-                'current_revenue': 3.14,
-                'prev_revenue': 2.57
-            },
-            {
-                'store_id': 3,
-                'store_name': '加拿大三店',
-                'manager_name': 'Bao Xiaoyun',
-                'seating_capacity': 48,
-                'annual_avg_turnover_2024': 5.72,
-                'current_turnover_rate': 5.55,
-                'prev_turnover_rate': 7.83,
-                'current_revenue': 3.79,
-                'prev_revenue': 3.79
-            },
-            {
-                'store_id': 4,
-                'store_name': '加拿大四店',
-                'manager_name': '李俊娟',
-                'seating_capacity': 70,
-                'annual_avg_turnover_2024': 4.49,
-                'current_turnover_rate': 4.61,
-                'prev_turnover_rate': 5.14,
-                'current_revenue': 4.54,
-                'prev_revenue': 3.84
-            },
-            {
-                'store_id': 1,
-                'store_name': '加拿大一店',
-                'manager_name': '张森磊',
-                'seating_capacity': 53,
-                'annual_avg_turnover_2024': 4.57,
-                'current_turnover_rate': 4.83,
-                'prev_turnover_rate': 5.28,
-                'current_revenue': 4.26,
-                'prev_revenue': 4.14
-            },
-            {
-                'store_id': 7,
-                'store_name': '加拿大七店',
-                'manager_name': '潘幸远',
-                'seating_capacity': 57,
-                'annual_avg_turnover_2024': 3.32,
-                'current_turnover_rate': 4.86,
-                'prev_turnover_rate': 3.86,
-                'current_revenue': 4.31,
-                'prev_revenue': 3.64
-            },
-            {
-                'store_id': 2,
-                'store_name': '加拿大二店',
-                'manager_name': '潘幸远',
-                'seating_capacity': 36,
-                'annual_avg_turnover_2024': 4.02,
-                'current_turnover_rate': 2.71,
-                'prev_turnover_rate': 4.06,
-                'current_revenue': 1.59,
-                'prev_revenue': 1.87
-            },
-                        {
-                'store_id': 8,
-                'store_name': '加拿大八店',
-                'manager_name': '李俊娟',
-                'seating_capacity': 56,
-                'annual_avg_turnover_2024': 3.32,
-                'current_turnover_rate': 4.86,
-                'prev_turnover_rate': 3.86,
-                'current_revenue': 4.31,
-                'prev_revenue': 3.64
-            },
-        ]
+        """Get mock store data for development/testing from centralized config."""
+        return get_daily_mock_data()
 
     def _add_regional_summary(self, ws: Worksheet, store_data: List[Dict[str, Any]],
                               target_dt: datetime, prev_year_dt: datetime) -> None:
