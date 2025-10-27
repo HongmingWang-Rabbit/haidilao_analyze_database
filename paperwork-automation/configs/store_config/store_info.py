@@ -17,8 +17,7 @@ STORE_MANAGERS: Dict[int, str] = {
     4: '李俊娟',
     5: '陈浩',
     6: '高新菊',
-    7: '潘幸远',
-    8: '李俊娟'
+    7: '潘幸远'
 }
 
 
@@ -33,8 +32,7 @@ STORE_SEATING_CAPACITY: Dict[int, int] = {
     4: 70,
     5: 55,
     6: 56,
-    7: 57,
-    8: 56
+    7: 57
 }
 
 
@@ -53,10 +51,10 @@ REGIONAL_MANAGER: str = '蒋冰遇'
 WESTERN_REGION_STORES = [1, 2, 7]  # 一店, 二店, 七店
 
 # Eastern region stores
-EASTERN_REGION_STORES = [3, 4, 5, 6, 8]  # 三店, 四店, 五店, 六店, 八店
+EASTERN_REGION_STORES = [3, 4, 5, 6]  # 三店, 四店, 五店, 六店
 
 # All Canadian stores
-ALL_CANADIAN_STORES = list(range(1, 9))  # Stores 1-8
+ALL_CANADIAN_STORES = list(range(1, 8))  # Stores 1-7
 
 
 # ============================================================================
@@ -64,7 +62,7 @@ ALL_CANADIAN_STORES = list(range(1, 9))  # Stores 1-8
 # ============================================================================
 
 # Store order for reports (西部 first, then 东部)
-REPORT_STORE_ORDER = [1, 2, 7, 3, 4, 5, 6, 8]
+REPORT_STORE_ORDER = [1, 2, 7, 3, 4, 5, 6]
 
 
 # ============================================================================

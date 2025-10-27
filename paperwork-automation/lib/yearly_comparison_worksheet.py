@@ -9,6 +9,7 @@ from datetime import datetime
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from .base_classes import BaseWorksheetGenerator
+from configs.store_config.store_info import REPORT_STORE_ORDER
 
 
 class YearlyComparisonWorksheetGenerator(BaseWorksheetGenerator):
@@ -198,28 +199,48 @@ class YearlyComparisonWorksheetGenerator(BaseWorksheetGenerator):
         weekdays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日']
         weekday = weekdays[target_dt.weekday()]
 
+        # Calculate dynamic column count
+        num_stores = len(REPORT_STORE_ORDER)
+        total_cols = 2 + num_stores + 1  # 项目 + 内容 + stores + 加拿大片区
+        last_col_letter = get_column_letter(total_cols)
+
         # Title
         title = f"加拿大-各门店{self.current_year}年{self.month}月{self.day}日同比数据-{weekday}"
-        ws.merge_cells('A1:K1')
+        ws.merge_cells(f'A1:{last_col_letter}1')
         ws['A1'] = title
         ws['A1'].font = Font(bold=True, size=12)
         ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
         ws['A1'].fill = PatternFill(
             start_color="FFD700", end_color="FFD700", fill_type="solid")
 
-        # Headers - split into regions like the image
+        # Headers - split into regions dynamically
         # Row 2: Main headers
         ws.merge_cells('A2:B2')
         ws['A2'] = "分类"
-        ws.merge_cells('C2:E2')
-        ws['C2'] = "西部"
-        ws.merge_cells('F2:J2')
-        ws['F2'] = "东部"
-        ws['K2'] = "加拿大片区"
 
-        # Row 3: Store names
-        headers_row3 = ["项目", "内容", "加拿大一店", "加拿大二店", "加拿大七店",
-                        "加拿大三店", "加拿大四店", "加拿大五店", "加拿大六店", "加拿大八店", "加拿大片区"]
+        # Count stores in each region dynamically
+        from configs.store_config.store_info import WESTERN_REGION_STORES, EASTERN_REGION_STORES
+        western_stores_in_report = [s for s in REPORT_STORE_ORDER if s in WESTERN_REGION_STORES]
+        eastern_stores_in_report = [s for s in REPORT_STORE_ORDER if s in EASTERN_REGION_STORES]
+
+        # Western region merge
+        western_start_col = 3  # Column C
+        western_end_col = 2 + len(western_stores_in_report)
+        ws.merge_cells(f'{get_column_letter(western_start_col)}2:{get_column_letter(western_end_col)}2')
+        ws[f'{get_column_letter(western_start_col)}2'] = "西部"
+
+        # Eastern region merge
+        eastern_start_col = western_end_col + 1
+        eastern_end_col = eastern_start_col + len(eastern_stores_in_report) - 1
+        ws.merge_cells(f'{get_column_letter(eastern_start_col)}2:{get_column_letter(eastern_end_col)}2')
+        ws[f'{get_column_letter(eastern_start_col)}2'] = "东部"
+
+        # Total column
+        ws[f'{last_col_letter}2'] = "加拿大片区"
+
+        # Row 3: Store names - dynamically generated from REPORT_STORE_ORDER
+        store_headers = [self.store_names.get(store_id, f"Store {store_id}") for store_id in REPORT_STORE_ORDER]
+        headers_row3 = ["项目", "内容"] + store_headers + ["加拿大片区"]
         for col, header in enumerate(headers_row3, 1):
             cell = ws.cell(row=3, column=col, value=header)
             cell.font = Font(bold=True)
@@ -229,7 +250,7 @@ class YearlyComparisonWorksheetGenerator(BaseWorksheetGenerator):
 
         # Apply header formatting
         for row in [2, 3]:
-            for col in range(1, 12):
+            for col in range(1, total_cols + 1):
                 cell = ws.cell(row=row, column=col)
                 cell.font = Font(bold=True)
                 cell.fill = PatternFill(
@@ -264,9 +285,8 @@ class YearlyComparisonWorksheetGenerator(BaseWorksheetGenerator):
             ("", "单桌消费增长率", "FFFF00"),  # Highlighted
         ]
 
-        # Store order matching the image (西部: 一店,二店,七店; 东部: 三店,四店,五店,六店,八店)
-        store_order = ["加拿大一店", "加拿大二店", "加拿大七店",
-                       "加拿大三店", "加拿大四店", "加拿大五店", "加拿大六店", "加拿大八店", "加拿大片区"]
+        # Store order dynamically generated from REPORT_STORE_ORDER
+        store_order = [self.store_names.get(store_id, f"Store {store_id}") for store_id in REPORT_STORE_ORDER] + ["加拿大片区"]
 
         # Add data to worksheet
         current_row = 4
@@ -354,11 +374,11 @@ class YearlyComparisonWorksheetGenerator(BaseWorksheetGenerator):
         )
 
         for row in range(1, current_row):
-            for col in range(1, 12):
+            for col in range(1, total_cols + 1):
                 ws.cell(row=row, column=col).border = thin_border
 
-        # Set column widths
-        column_widths = [15, 20, 12, 12, 12, 12, 12, 12, 12, 12, 15]
+        # Set column widths dynamically
+        column_widths = [15, 20] + [12] * num_stores + [15]  # 项目, 内容, stores, 加拿大片区
         for i, width in enumerate(column_widths, 1):
             ws.column_dimensions[get_column_letter(i)].width = width
 
