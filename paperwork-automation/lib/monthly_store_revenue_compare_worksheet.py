@@ -126,8 +126,9 @@ class MonthlyStoreRevenueCompareWorksheet:
             query = """
                 SELECT
                     s.name as store_name,
+                    s.seats_total as seating_capacity,
                     COALESCE(SUM(d.revenue_tax_not_included), 0) as total_revenue,
-                    COALESCE(AVG(d.turnover_rate), 0) as avg_turnover_rate,
+                    COALESCE(SUM(d.tables_served_validated), 0) as total_tables_served,
                     COALESCE(AVG(d.tables_served), 0) as avg_tables_served,
                     COALESCE(AVG(d.tables_served_validated), 0) as avg_tables_validated,
                     COUNT(DISTINCT d.date) as operating_days
@@ -136,7 +137,7 @@ class MonthlyStoreRevenueCompareWorksheet:
                     AND d.date >= %s
                     AND d.date <= %s
                 WHERE s.id <= 8  -- Only Canadian stores
-                GROUP BY s.id, s.name
+                GROUP BY s.id, s.name, s.seats_total
                 ORDER BY s.id
             """
             
@@ -151,19 +152,46 @@ class MonthlyStoreRevenueCompareWorksheet:
                 # Handle both tuple and dict cursor results
                 if isinstance(row, dict):
                     store_name = row['store_name']
+                    seating_capacity = float(row['seating_capacity']) if row['seating_capacity'] else 50
+                    total_tables_served = float(row['total_tables_served']) if row['total_tables_served'] else 0
+                    operating_days = row['operating_days'] if row['operating_days'] else 0
+
+                    # Calculate correct monthly average turnover rate
+                    # Formula: total_tables_served / (operating_days × seating_capacity)
+                    if operating_days > 0 and seating_capacity > 0:
+                        turnover_rate = total_tables_served / (operating_days * seating_capacity)
+                    else:
+                        turnover_rate = 0
+
                     data[store_name] = {
                         'revenue': float(row['total_revenue']) if row['total_revenue'] else 0,
-                        'turnover_rate': float(row['avg_turnover_rate']) if row['avg_turnover_rate'] else 0,
+                        'turnover_rate': turnover_rate,
                         'tables_served': float(row['avg_tables_served']) if row['avg_tables_served'] else 0,
                         'tables_validated': float(row['avg_tables_validated']) if row['avg_tables_validated'] else 0,
-                        'operating_days': row['operating_days'] if row['operating_days'] else 0
+                        'operating_days': operating_days,
+                        'seating_capacity': seating_capacity,
+                        'total_tables_served': total_tables_served
                     }
                 else:
+                    # Tuple format handling
                     store_name = row[0]
+                    seating_capacity = float(row[1]) if row[1] else 50
+                    total_revenue = float(row[2]) if row[2] else 0
+                    total_tables_served = float(row[3]) if row[3] else 0
+                    operating_days = row[6] if row[6] else 0
+
+                    # Calculate correct monthly average turnover rate
+                    if operating_days > 0 and seating_capacity > 0:
+                        turnover_rate = total_tables_served / (operating_days * seating_capacity)
+                    else:
+                        turnover_rate = 0
+
                     data[store_name] = {
-                        'revenue': float(row[1]) if row[1] else 0,
-                        'turnover_rate': float(row[2]) if row[2] else 0,
-                        'operating_days': row[3] if row[3] else 0
+                        'revenue': total_revenue,
+                        'turnover_rate': turnover_rate,
+                        'operating_days': operating_days,
+                        'seating_capacity': seating_capacity,
+                        'total_tables_served': total_tables_served
                     }
             
             logger.info(f"Fetched data for {len(data)} stores for {year}-{month:02d}")
@@ -336,8 +364,57 @@ class MonthlyStoreRevenueCompareWorksheet:
             if prev_month_turnover > 0:
                 self._write_cell_value(ws, f'L{row}', round(prev_month_turnover, 2))  # 环比 - last month
         
-        # Row 10 has SUM formulas in the template, no need to fill
-        
+        # Row 10 - Override the USD section (H, I, L columns) with weighted average for turnover rates
+        # The left section (C, D, F) has SUM formulas for revenue which are correct
+        # The right section (H, I, L) should use weighted average for turnover rates
+
+        # Calculate weighted average for current period turnover (same calculation as row 24)
+        total_weighted_turnover_10 = 0
+        total_capacity_10 = 0
+
+        for store_name in store_mapping.keys():
+            capacity = self._get_store_seats(store_name)
+            turnover = current_data.get(store_name, {}).get('turnover_rate', 0)
+            if turnover > 0:
+                total_weighted_turnover_10 += turnover * capacity
+                total_capacity_10 += capacity
+
+        current_weighted_avg_10 = total_weighted_turnover_10 / total_capacity_10 if total_capacity_10 > 0 else 0
+
+        # Calculate weighted average for previous year
+        total_weighted_prev_year_10 = 0
+        total_capacity_prev_year_10 = 0
+
+        for store_name in store_mapping.keys():
+            capacity = self._get_store_seats(store_name)
+            turnover = prev_year_data.get(store_name, {}).get('turnover_rate', 0)
+            if turnover > 0:
+                total_weighted_prev_year_10 += turnover * capacity
+                total_capacity_prev_year_10 += capacity
+
+        prev_year_weighted_avg_10 = total_weighted_prev_year_10 / total_capacity_prev_year_10 if total_capacity_prev_year_10 > 0 else 0
+
+        # Calculate weighted average for previous month
+        total_weighted_prev_month_10 = 0
+        total_capacity_prev_month_10 = 0
+
+        for store_name in store_mapping.keys():
+            capacity = self._get_store_seats(store_name)
+            turnover = prev_month_data.get(store_name, {}).get('turnover_rate', 0)
+            if turnover > 0:
+                total_weighted_prev_month_10 += turnover * capacity
+                total_capacity_prev_month_10 += capacity
+
+        prev_month_weighted_avg_10 = total_weighted_prev_month_10 / total_capacity_prev_month_10 if total_capacity_prev_month_10 > 0 else 0
+
+        # Write weighted averages to row 10 (revenue section, USD/turnover columns)
+        if current_weighted_avg_10 > 0:
+            self._write_cell_value(ws, 'H10', round(current_weighted_avg_10, 2))
+        if prev_year_weighted_avg_10 > 0:
+            self._write_cell_value(ws, 'I10', round(prev_year_weighted_avg_10, 2))
+        if prev_month_weighted_avg_10 > 0:
+            self._write_cell_value(ws, 'L10', round(prev_month_weighted_avg_10, 2))
+
         # Fill turnover rate data (bottom section, rows 17-23)
         # Note: Turnover section starts at row 17, not 16
         # IMPORTANT: Based on Sheet1 example analysis:
@@ -389,8 +466,58 @@ class MonthlyStoreRevenueCompareWorksheet:
             if prev_month_turnover > 0:
                 self._write_cell_value(ws, f'L{turnover_row}', round(prev_month_turnover, 2))  # 环比
         
-        # Row 24 has AVERAGE formulas in the template, no need to fill
-        
-        # The template already has all the necessary formulas for calculations
-        
+        # Row 24 - Calculate weighted averages for turnover rates (not simple AVERAGE)
+        # Use weighted average by seating capacity for accuracy (same as daily tracking and time segment sheets)
+
+        # Calculate weighted average for current period turnover (column H, row 24)
+        total_weighted_turnover = 0
+        total_capacity = 0
+
+        for store_name in store_mapping.keys():
+            capacity = self._get_store_seats(store_name)
+            turnover = current_data.get(store_name, {}).get('turnover_rate', 0)
+            if turnover > 0:  # Only include stores with data
+                total_weighted_turnover += turnover * capacity
+                total_capacity += capacity
+
+        current_weighted_avg = total_weighted_turnover / total_capacity if total_capacity > 0 else 0
+
+        # Calculate weighted average for previous year (同比)
+        total_weighted_prev_year = 0
+        total_capacity_prev_year = 0
+
+        for store_name in store_mapping.keys():
+            capacity = self._get_store_seats(store_name)
+            turnover = prev_year_data.get(store_name, {}).get('turnover_rate', 0)
+            if turnover > 0:
+                total_weighted_prev_year += turnover * capacity
+                total_capacity_prev_year += capacity
+
+        prev_year_weighted_avg = total_weighted_prev_year / total_capacity_prev_year if total_capacity_prev_year > 0 else 0
+
+        # Calculate weighted average for previous month (环比)
+        total_weighted_prev_month = 0
+        total_capacity_prev_month = 0
+
+        for store_name in store_mapping.keys():
+            capacity = self._get_store_seats(store_name)
+            turnover = prev_month_data.get(store_name, {}).get('turnover_rate', 0)
+            if turnover > 0:
+                total_weighted_prev_month += turnover * capacity
+                total_capacity_prev_month += capacity
+
+        prev_month_weighted_avg = total_weighted_prev_month / total_capacity_prev_month if total_capacity_prev_month > 0 else 0
+
+        # Write weighted averages to row 24 (turnover section)
+        # Row 24 is the average row for the turnover section
+        if current_weighted_avg > 0:
+            self._write_cell_value(ws, 'H24', round(current_weighted_avg, 2))
+        if prev_year_weighted_avg > 0:
+            self._write_cell_value(ws, 'I24', round(prev_year_weighted_avg, 2))
+        if prev_month_weighted_avg > 0:
+            self._write_cell_value(ws, 'L24', round(prev_month_weighted_avg, 2))
+
+        # The template already has formulas for revenue totals (rows 10) and calculations
+        # We override the turnover average (row 24) with weighted average for accuracy
+
         logger.info(f"Filled worksheet with data for {year}-{month:02d}")
