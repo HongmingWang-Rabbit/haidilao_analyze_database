@@ -663,6 +663,13 @@ class ReportDataProvider:
         prev_year_start = prev_year_start_dt.strftime('%Y-%m-%d')
         prev_year_end = prev_year_end_dt.strftime('%Y-%m-%d')
 
+        # Calculate full year range for annual average (previous calendar year from end_date)
+        # Note: The key name 'annual_avg_turnover_2024' is kept for backward compatibility,
+        # but the actual year is dynamically calculated based on prev_year_end_dt
+        annual_year = prev_year_end_dt.year  # Use previous year's year
+        annual_start = f"{annual_year}-01-01"
+        annual_end = f"{annual_year}-12-31"
+
         # Store managers from centralized config
         store_managers = STORE_MANAGERS
 
@@ -672,32 +679,59 @@ class ReportDataProvider:
             s.name as store_name,
             s.seats_total as seating_capacity,
             COALESCE(
-                (SELECT AVG(turnover_rate) 
-                 FROM daily_report dr2 
-                 WHERE dr2.store_id = s.id 
-                   AND dr2.date >= '2024-01-01' 
-                   AND dr2.date <= '2024-12-31'), 
+                (SELECT AVG(turnover_rate)
+                 FROM daily_report dr2
+                 WHERE dr2.store_id = s.id
+                   AND dr2.date >= %s
+                   AND dr2.date <= %s),
                 5.0
             ) as annual_avg_turnover_2024,
-            -- Current year weekly data (7-day aggregation)
-            COALESCE(AVG(dr_current.turnover_rate), 0) as current_avg_turnover_rate,
-            COALESCE(SUM(dr_current.revenue_tax_not_included) / 10000.0, 0) as current_total_revenue,
-            -- Previous year weekly data (7-day aggregation)
-            COALESCE(AVG(dr_prev.turnover_rate), 0) as prev_avg_turnover_rate,
-            COALESCE(SUM(dr_prev.revenue_tax_not_included) / 10000.0, 0) as prev_total_revenue
+            -- Current year weekly data (7-day aggregation) - using subqueries to avoid Cartesian product
+            COALESCE(
+                (SELECT AVG(turnover_rate)
+                 FROM daily_report
+                 WHERE store_id = s.id
+                   AND date >= %s AND date <= %s),
+                0
+            ) as current_avg_turnover_rate,
+            COALESCE(
+                (SELECT SUM(revenue_tax_not_included) / 10000.0
+                 FROM daily_report
+                 WHERE store_id = s.id
+                   AND date >= %s AND date <= %s),
+                0
+            ) as current_total_revenue,
+            -- Previous year weekly data (7-day aggregation) - using subqueries to avoid Cartesian product
+            COALESCE(
+                (SELECT AVG(turnover_rate)
+                 FROM daily_report
+                 WHERE store_id = s.id
+                   AND date >= %s AND date <= %s),
+                0
+            ) as prev_avg_turnover_rate,
+            COALESCE(
+                (SELECT SUM(revenue_tax_not_included) / 10000.0
+                 FROM daily_report
+                 WHERE store_id = s.id
+                   AND date >= %s AND date <= %s),
+                0
+            ) as prev_total_revenue
         FROM store s
-        LEFT JOIN daily_report dr_current ON s.id = dr_current.store_id
-            AND dr_current.date >= %s AND dr_current.date <= %s
-        LEFT JOIN daily_report dr_prev ON s.id = dr_prev.store_id
-            AND dr_prev.date >= %s AND dr_prev.date <= %s
         WHERE s.id BETWEEN 1 AND 8
-        GROUP BY s.id, s.name, s.seats_total
         ORDER BY s.id
         """
 
         try:
+            # Pass date parameters for each subquery:
+            # annual avg (2 params), current turnover (2 params), current revenue (2 params),
+            # prev turnover (2 params), prev revenue (2 params)
             results = self.db_manager.fetch_all(
-                sql, (start_date, end_date, prev_year_start, prev_year_end))
+                sql, (annual_start, annual_end,  # annual_avg_turnover_2024
+                      start_date, end_date,      # current_avg_turnover_rate
+                      start_date, end_date,      # current_total_revenue
+                      prev_year_start, prev_year_end,  # prev_avg_turnover_rate
+                      prev_year_start, prev_year_end)  # prev_total_revenue
+            )
 
             # Convert to expected format
             performance_data = []
