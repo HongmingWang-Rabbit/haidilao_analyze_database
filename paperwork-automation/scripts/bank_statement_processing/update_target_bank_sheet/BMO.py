@@ -40,27 +40,47 @@ def match_transaction_rules(record: BankRecord) -> Dict:
             result["品名"] = classification.get("品名", "待确认")
             result["付款详情"] = classification.get("付款详情", "")
             
-            # For the confirmation fields, set "待确认" if True, empty string otherwise
-            if classification.get("单据号", False) == True:
+            # For the confirmation fields, set "待确认" if True, use string value if string, empty string otherwise
+            doc_number = classification.get("单据号", False)
+            if doc_number == True:
                 result["单据号"] = "待确认"
+            elif isinstance(doc_number, str):
+                result["单据号"] = doc_number
             else:
                 result["单据号"] = ""
-                
-            if classification.get("附件", False) == True:
+
+            attachment = classification.get("附件", False)
+            if attachment == True:
                 result["附件"] = "待确认"
+            elif isinstance(attachment, str):
+                result["附件"] = attachment
             else:
                 result["附件"] = ""
-                
-            if classification.get("是否登记线下付款表", False) == True:
+
+            offline_payment = classification.get("是否登记线下付款表", False)
+            if offline_payment == True:
                 result["是否登记线下付款表"] = "待确认"
+            elif isinstance(offline_payment, str):
+                result["是否登记线下付款表"] = offline_payment
             else:
                 result["是否登记线下付款表"] = ""
-                
-            if classification.get("是否登记支票使用表", False) == True:
+
+            check_usage = classification.get("是否登记支票使用表", False)
+            if check_usage == True:
                 result["是否登记支票使用表"] = "待确认"
+            elif isinstance(check_usage, str):
+                result["是否登记支票使用表"] = check_usage
             else:
                 result["是否登记支票使用表"] = ""
-                    
+
+            note = classification.get("备注", False)
+            if note == True:
+                result["备注"] = "待确认"
+            elif isinstance(note, str):
+                result["备注"] = note
+            else:
+                result["备注"] = ""
+
             return result
     
     # Default if no rule matches - only 品名 is marked as pending
@@ -70,7 +90,8 @@ def match_transaction_rules(record: BankRecord) -> Dict:
         "单据号": "",
         "附件": "",
         "是否登记线下付款表": "",
-        "是否登记支票使用表": ""
+        "是否登记支票使用表": "",
+        "备注": ""
     }
 
 def append_bmo_records_to_worksheet(wb, sheet_name: str, new_records: List[BankRecord]):
@@ -173,7 +194,10 @@ def append_bmo_records_to_worksheet(wb, sheet_name: str, new_records: List[BankR
         
         # Column N: 是否登记支票使用表 (Check Usage Registration)
         ws.cell(row=current_row, column=14, value=classification.get("是否登记支票使用表", ""))
-        
+
+        # Column O: 备注 (Note)
+        ws.cell(row=current_row, column=15, value=classification.get("备注", ""))
+
         current_row += 1
     
     logger.debug(f"Completed appending {len(new_records)} BMO records to {sheet_name}")

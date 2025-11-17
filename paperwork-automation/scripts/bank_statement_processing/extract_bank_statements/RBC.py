@@ -63,14 +63,24 @@ def extract_rbc_sheet_infomation(
         # Read the CSV file
         df = pd.read_csv(target_file_path)
         
-        # Expected columns
-        expected_columns = ['Date', 'Company Name', 'Account Name', 'Account Nickname', 
-                          'Account Number', 'Transit Number', 'Description 1', 
-                          'Description 2', 'Description 3', 'Description 4', 
+        # Expected columns (handle both 'Date' and 'Posted Date' for different file formats)
+        expected_columns = ['Date', 'Company Name', 'Account Name', 'Account Nickname',
+                          'Account Number', 'Transit Number', 'Description 1',
+                          'Description 2', 'Description 3', 'Description 4',
                           'Description 5', 'Currency', 'Withdrawals', 'Deposits', 'Balance']
-        
-        # Verify columns exist
-        missing_columns = [col for col in ['Date', 'Withdrawals', 'Deposits'] if col not in df.columns]
+
+        # Determine which date column is present
+        date_column = None
+        if 'Date' in df.columns:
+            date_column = 'Date'
+        elif 'Posted Date' in df.columns:
+            date_column = 'Posted Date'
+        else:
+            logger.error(f"Missing date column: neither 'Date' nor 'Posted Date' found")
+            raise ValueError(f"Missing date column: neither 'Date' nor 'Posted Date' found")
+
+        # Verify other required columns exist
+        missing_columns = [col for col in ['Withdrawals', 'Deposits'] if col not in df.columns]
         if missing_columns:
             logger.error(f"Missing required columns: {missing_columns}")
             raise ValueError(f"Missing required columns: {missing_columns}")
@@ -99,14 +109,14 @@ def extract_rbc_sheet_infomation(
                         continue  # Skip rows until we find one with balance
                 
                 record = BankRecord()
-                
-                # Parse date from integer format (YYYYMMDD)
-                date_value = row['Date']
+
+                # Parse date from integer format (YYYYMMDD) using the detected date column
+                date_value = row[date_column]
                 if pd.notna(date_value):
                     # Convert integer date to string then to datetime
                     date_str = str(int(date_value))
                     record.date = datetime.strptime(date_str, '%Y%m%d')
-                    
+
                     # Only process records within the current month
                     if not (month_start <= record.date <= month_end):
                         continue

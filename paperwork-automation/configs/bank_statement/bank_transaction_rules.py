@@ -1,6 +1,23 @@
 """
 Bank Transaction Classification Rules
 Contains all the tuple-based rules for bank transaction matching.
+
+Classification Field Behavior:
+- For fields "单据号", "附件", "是否登记线下付款表", "是否登记支票使用表", "备注":
+  - True: Will be converted to "待确认" in the generated Excel file
+  - False: Will be converted to empty string "" in the generated Excel file
+  - String value: Will be used as-is in the generated Excel file
+
+Example:
+    {
+        "品名": TransactionType.RENT.value,
+        "付款详情": "门店租金",
+        "单据号": "RENT-2024-001",  # Custom string value
+        "附件": True,                # Will become "待确认"
+        "是否登记线下付款表": True,   # Will become "待确认"
+        "是否登记支票使用表": False, # Will become ""
+        "备注": "需要核对金额",       # Custom note
+    }
 """
 
 from pickle import TRUE
@@ -483,6 +500,17 @@ BANK_TRANSACTION_RULES: List[Tuple[TransactionMatchRule, Dict]] = [
         "是否登记线下付款表": True,
         "是否登记支票使用表": False,
     }),
+        (TransactionMatchRule(
+        description_pattern=re.compile(r'PAYROLL R0O.*BUS/ENT', re.IGNORECASE),
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.WAGES_PLUS_INSURANCE.value,
+        "付款详情": "八店工资",
+        "单据号": False,
+        "附件": True,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
     
     (TransactionMatchRule(
         description_pattern=re.compile(r'PAYROLL RX3.*BUS/ENT', re.IGNORECASE),
@@ -573,19 +601,6 @@ BANK_TRANSACTION_RULES: List[Tuple[TransactionMatchRule, Dict]] = [
         "是否登记线下付款表": False,
         "是否登记支票使用表": False,
     }),
-    # ICBC Insurance - 6x occurrences
-    (TransactionMatchRule(
-        description_pattern=re.compile(r'ICBC.*INS/ASS', re.IGNORECASE),
-        transaction_type='debit'
-    ), {
-        "品名": TransactionType.INSURANCE_FEE.value,
-        "付款详情": "ICBC保险费",
-        "单据号": True,
-        "附件": False,
-        "是否登记线下付款表": True,
-        "是否登记支票使用表": False,
-    }),
-
     # ===== LEGACY PATTERNS (Essential ones only) =====
 
     # General service fees (for patterns not covered above)
@@ -954,21 +969,45 @@ FIRST DATA CANADA\(J\)''', re.IGNORECASE | re.MULTILINE),
     ), {
         "品名": TransactionType.INSURANCE_FEE.value,
         "付款详情": "七店采购用车保险费",
+        "单据号": "让七店上报单据",
+        "附件": False,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern="ICBC            INS/ASS",
+        amount_pattern=265.42,
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.INSURANCE_FEE.value,
+        "付款详情": "一店新采购用车保险费",
         "单据号": True,
         "附件": False,
         "是否登记线下付款表": True,
         "是否登记支票使用表": False,
     }),
 
-
     (TransactionMatchRule(
         description_pattern="ICBC            INS/ASS",
-        amount_pattern=182.44,
+        amount_pattern=203.86,
         transaction_type='debit'
     ), {
         "品名": TransactionType.INSURANCE_FEE.value,
-        "付款详情": "二店采购用车保险费",
+        "付款详情": "一店采购用车保险费",
         "单据号": True,
+        "附件": False,
+        "是否登记线下付款表": True,
+        "是否登记支票使用表": False,
+    }),
+        (TransactionMatchRule(
+        description_pattern="ICBC            INS/ASS",
+        amount_pattern=192.95,
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.INSURANCE_FEE.value,
+        "付款详情": "蒋冰遇租车保险",
+        "单据号": "让MIA上报单据",
         "附件": False,
         "是否登记线下付款表": True,
         "是否登记支票使用表": False,
@@ -1262,6 +1301,42 @@ FIRST DATA CANADA\(J\)''', re.IGNORECASE | re.MULTILINE),
         "付款详情": "GST",
         "单据号": False,
         "附件": False,
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern="RBC Life Insura",
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.INSURANCE_FEE.value,
+        "付款详情": "待处理",
+        "单据号": False,
+        "附件": "Jacky会发在群里",
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern="ADP",
+        transaction_type='credit'
+    ), {
+        "品名": TransactionType.INSURANCE_FEE.value,
+        "付款详情": "平台费退款",
+        "单据号": False,
+        "附件": "Jacky会发在群里",
+        "是否登记线下付款表": False,
+        "是否登记支票使用表": False,
+    }),
+
+    (TransactionMatchRule(
+        description_pattern="ADP",
+        transaction_type='debit'
+    ), {
+        "品名": TransactionType.INSURANCE_FEE.value,
+        "付款详情": "平台费",
+        "单据号": False,
+        "附件": "Jacky会发在群里",
         "是否登记线下付款表": False,
         "是否登记支票使用表": False,
     }),
