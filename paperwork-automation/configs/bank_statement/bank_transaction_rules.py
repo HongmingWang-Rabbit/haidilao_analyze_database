@@ -629,19 +629,6 @@ BANK_TRANSACTION_RULES: List[Tuple[TransactionMatchRule, Dict]] = [
         "是否登记支票使用表": False,
     }),
 
-    # Credit card transactions
-    (TransactionMatchRule(
-        description_pattern=re.compile(
-            r'CREDIT\s+CARD|VISA|MASTERCARD|AMEX', re.IGNORECASE)
-    ), {
-        "品名": TransactionType.CREDIT_CARD_PAYMENT.value,
-        "付款详情": "信用卡相关交易",
-        "单据号": False,
-        "附件": False,
-        "是否登记线下付款表": True,
-        "是否登记支票使用表": False,
-    }),
-
     # ===== AMOUNT-BASED PATTERNS (Examples of range/comparison usage) =====
 
     # Generic UBER patterns (fallback for any UBER not caught above)

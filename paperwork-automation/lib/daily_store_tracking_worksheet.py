@@ -181,7 +181,7 @@ class DailyStoreTrackingGenerator:
 
         # Regional identifier
         ws.cell(row=row, column=4, value="区域")  # D3
-        ws.cell(row=row, column=5, value="蒋冰遇")  # E3 - Regional manager
+        ws.cell(row=row, column=5, value="李俊娟")  # E3 - Regional manager
 
         # Calculate regional statistics with high precision
         if store_data:

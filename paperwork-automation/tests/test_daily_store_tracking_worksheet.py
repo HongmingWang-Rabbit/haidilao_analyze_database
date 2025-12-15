@@ -33,30 +33,7 @@ class TestDailyStoreTrackingGenerator(unittest.TestCase):
         self.mock_data_provider = Mock()
         self.generator = DailyStoreTrackingGenerator(self.mock_data_provider)
         self.test_date = "2025-06-28"
-        self.sample_store_data = [
-            {
-                'store_id': 5,
-                'store_name': '加拿大五店',
-                'manager_name': '陈浩',
-                'seating_capacity': 55,
-                'annual_avg_turnover_2024': 5.5,
-                'current_turnover_rate': 5.73,
-                'prev_turnover_rate': 6.71,
-                'current_revenue': 4.396,
-                'prev_revenue': 3.964
-            },
-            {
-                'store_id': 6,
-                'store_name': '加拿大六店',
-                'manager_name': '高新菊',
-                'seating_capacity': 56,
-                'annual_avg_turnover_2024': 3.67,
-                'current_turnover_rate': 4.05,
-                'prev_turnover_rate': 4.16,
-                'current_revenue': 2.851,
-                'prev_revenue': 2.474
-            }
-        ]
+        
 
     def test_generator_initialization(self):
         """Test generator initialization with data provider."""
@@ -174,7 +151,7 @@ class TestDailyStoreTrackingGenerator(unittest.TestCase):
 
         # Check regional identifiers
         self.assertEqual(ws.cell(row=3, column=4).value, "区域")
-        self.assertEqual(ws.cell(row=3, column=5).value, "蒋冰遇")
+        self.assertEqual(ws.cell(row=3, column=5).value, "李俊娟")
 
         # Check formulas
         self.assertEqual(ws.cell(row=3, column=8).value, "=F3-G3")
