@@ -64,6 +64,9 @@ python3 scripts/generate_monthly_material_report.py --date YYYY-MM-DD
 python3 scripts/generate_monthly_gross_margin_report.py --date YYYY-MM-DD
 python3 scripts/generate_monthly_beverage_report.py --date YYYY-MM-DD
 
+# Generate Weekly YoY MTD report with challenge tracking
+python3 scripts/generate_weekly_yoy_report.py --target-date YYYY-MM-DD
+
 # Generate inventory and material division reports
 python3 scripts/generate_inventory_count.py
 python3 scripts/generate_materials_use_with_division.py
@@ -222,10 +225,45 @@ python3 scripts/automation-menu.py  # Then select 'r' for reset
 ## Store and Data Configuration
 
 - **7 Canadian Stores**: 加拿大一店 through 加拿大七店 (IDs 1-7)
+- **Store 8**: 加拿大八店 (ID 8) - New store opened Oct 2025, excluded from regional YoY
 - **Hi Bowl Store**: ID 101 for Hi Bowl data integration
 - **Material Types**: 11 primary types with 6 child categories
 - **Time Segments**: 16 segments covering 10:00-02:00 (next day)
 - **Discount Types**: 8 types including 会员折扣, 生日优惠, 节日优惠
+
+## Q1 2026 Challenge Targets Configuration
+
+Challenge targets are centralized in `configs/challenge_targets/`:
+
+```python
+# configs/challenge_targets/q1_2026_targets.py
+
+# Standard improvement target
+DEFAULT_TURNOVER_IMPROVEMENT = 0.18  # +0.18 over last year same period
+
+# Store-specific fixed targets
+STORE_6_TURNOVER_TARGET = 3.65  # Road construction exemption
+STORE_8_TURNOVER_TARGET = 4.0   # New store, no YoY comparison
+
+# Time segment targets (daily table improvement)
+AFTERNOON_SLOW_TARGETS = {1: 3, 2: 2, 3: 3, 4: 4, 5: 3, 6: 3, 7: 4, 8: 40}
+LATE_NIGHT_TARGETS = {1: 3, 2: 2, 3: 3, 4: 4, 5: 3, 6: 3, 7: 4, 8: 44}
+```
+
+### Target Calculation Logic
+
+1. **Turnover Rate Target**:
+   - Store 6: Fixed 3.65 (road construction)
+   - Store 8: Fixed 4.0 (new store)
+   - Others: Last year MTD turnover + 0.18
+
+2. **Table Count Target**:
+   - Derived from: `target_turnover × seating_capacity × num_days`
+   - Store 8: Excluded from tables target
+
+3. **Time Segment Targets**:
+   - Slow times (14:00-16:59, 22:00-07:59): Hardcoded daily targets per store
+   - Busy times (08:00-13:59, 17:00-21:59): Leftover distributed proportionally by turnover
 
 ## Common Debugging Patterns
 

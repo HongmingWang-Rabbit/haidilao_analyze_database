@@ -1074,6 +1074,7 @@ class AutomationMenu:
                 ("g", "Gross Margin Report (毛利报表)", "gross_margin_report"),
                 ("v", "Monthly Beverage Report", "monthly_beverage_report"),
                 ("r", "Monthly Store Revenue & Turnover Compare", "monthly_revenue_compare"),
+                ("w", "Weekly YoY Report (周对比上年表 + Q1挑战)", "weekly_yoy_report"),
                 ("b", "← Back to Main Menu", "back")
             ]
 
@@ -1107,6 +1108,8 @@ class AutomationMenu:
                 self.generate_monthly_beverage_report()
             elif choice == 'r':
                 self.generate_monthly_revenue_compare_report()
+            elif choice == 'w':
+                self.generate_weekly_yoy_report()
             else:
                 print("❌ Invalid choice. Please try again.")
                 input("Press Enter to continue...")
@@ -1924,6 +1927,71 @@ except Exception as e:
             print(f"❌ Error generating report: {str(e)}")
             import traceback
             traceback.print_exc()
+
+        input("\nPress Enter to continue...")
+
+    def generate_weekly_yoy_report(self):
+        """Generate weekly year-over-year comparison report with Q1 2026 challenge sheet"""
+        print("📊 WEEKLY YEAR-OVER-YEAR COMPARISON REPORT")
+        print("=" * 50)
+        print("This will generate a weekly comparison report showing:")
+        print("✅ 周对比上年表 - Weekly YoY comparison with detailed metrics")
+        print("✅ 2026 Q1 挑战 - Q1 2026 challenge tracking (Jan-Mar 2026 only)")
+        print()
+        print("Metrics included:")
+        print("   • 翻台率 (Table Turnover Rate)")
+        print("   • 桌数 (Tables Served)")
+        print("   • 营业额 (Revenue)")
+        print("   • 单桌消费 (Per Table Spending)")
+        print("   • 人均消费 (Per Capita Spending)")
+        print()
+
+        # Get target date from user
+        print("📅 Enter target date (end of 7-day period):")
+        print("Format: YYYY-MM-DD (e.g., 2026-01-07)")
+        print("The report will cover: [target_date - 6 days] to [target_date]")
+
+        date_input = input("\nEnter date: ").strip()
+
+        # Parse and validate the date
+        if not date_input:
+            from datetime import datetime
+            target_date = datetime.now().strftime('%Y-%m-%d')
+        else:
+            try:
+                from datetime import datetime
+                datetime.strptime(date_input, '%Y-%m-%d')
+                target_date = date_input
+            except ValueError:
+                print("❌ Invalid date format. Please use YYYY-MM-DD format.")
+                input("Press Enter to continue...")
+                return
+
+        # Calculate week range for display
+        from datetime import datetime, timedelta
+        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
+        start_dt = target_dt - timedelta(days=6)
+
+        print(f"\n📅 Week range: {start_dt.strftime('%Y-%m-%d')} to {target_date}")
+
+        # Check if Q1 2026
+        if target_dt.year == 2026 and 1 <= target_dt.month <= 3:
+            print("📌 Q1 2026 detected - Challenge sheet will be included!")
+        else:
+            print("ℹ️  Not in Q1 2026 - Only weekly comparison sheet will be generated")
+
+        confirm = input("\nGenerate weekly YoY report? (y/N): ").lower()
+        if confirm != 'y':
+            return
+
+        # Run the report generation
+        command = f'{self.python_cmd} scripts/generate_weekly_yoy_report.py --target-date {target_date}'
+        success = self.run_command(command, "Generate Weekly YoY Report")
+
+        if success:
+            print("✅ Weekly YoY report generated successfully!")
+        else:
+            print("❌ Failed to generate weekly YoY report")
 
         input("\nPress Enter to continue...")
 

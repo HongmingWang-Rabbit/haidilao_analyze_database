@@ -643,30 +643,31 @@ class ReportDataProvider:
         """
         from datetime import datetime, timedelta
 
-        # Parse dates to get previous year equivalent period with same weekday alignment
+        # Parse dates
         start_dt = datetime.strptime(start_date, '%Y-%m-%d')
         end_dt = datetime.strptime(end_date, '%Y-%m-%d')
-        
-        # Calculate previous year dates with same weekday alignment
-        prev_year_base_end = end_dt.replace(year=end_dt.year - 1)
-        
-        # Find the nearest date with the same weekday as end_dt
-        weekday_diff = end_dt.weekday() - prev_year_base_end.weekday()
-        if weekday_diff > 3:  # If difference is more than 3 days forward, go back a week
-            weekday_diff -= 7
-        elif weekday_diff < -3:  # If difference is more than 3 days backward, go forward a week
-            weekday_diff += 7
-        
-        prev_year_end_dt = prev_year_base_end + timedelta(days=weekday_diff)
-        prev_year_start_dt = prev_year_end_dt - timedelta(days=6)  # 7 days including end date
-        
+
+        # Calculate previous year dates with same calendar dates
+        prev_year = end_dt.year - 1
+
+        # Handle leap year dates (Feb 29 -> Feb 28 in non-leap year)
+        try:
+            prev_year_end_dt = end_dt.replace(year=prev_year)
+        except ValueError:
+            prev_year_end_dt = end_dt.replace(year=prev_year, day=28)
+
+        try:
+            prev_year_start_dt = start_dt.replace(year=prev_year)
+        except ValueError:
+            prev_year_start_dt = start_dt.replace(year=prev_year, day=28)
+
         prev_year_start = prev_year_start_dt.strftime('%Y-%m-%d')
         prev_year_end = prev_year_end_dt.strftime('%Y-%m-%d')
 
         # Calculate full year range for annual average (previous calendar year from end_date)
         # Note: The key name 'annual_avg_turnover_2024' is kept for backward compatibility,
         # but the actual year is dynamically calculated based on prev_year_end_dt
-        annual_year = prev_year_end_dt.year  # Use previous year's year
+        annual_year = prev_year  # Use previous year
         annual_start = f"{annual_year}-01-01"
         annual_end = f"{annual_year}-12-31"
 
@@ -701,6 +702,20 @@ class ReportDataProvider:
                    AND date >= %s AND date <= %s),
                 0
             ) as current_total_revenue,
+            COALESCE(
+                (SELECT SUM(tables_served_validated)
+                 FROM daily_report
+                 WHERE store_id = s.id
+                   AND date >= %s AND date <= %s),
+                0
+            ) as current_total_tables,
+            COALESCE(
+                (SELECT SUM(customers)
+                 FROM daily_report
+                 WHERE store_id = s.id
+                   AND date >= %s AND date <= %s),
+                0
+            ) as current_total_customers,
             -- Previous year weekly data (7-day aggregation) - using subqueries to avoid Cartesian product
             COALESCE(
                 (SELECT AVG(turnover_rate)
@@ -715,7 +730,21 @@ class ReportDataProvider:
                  WHERE store_id = s.id
                    AND date >= %s AND date <= %s),
                 0
-            ) as prev_total_revenue
+            ) as prev_total_revenue,
+            COALESCE(
+                (SELECT SUM(tables_served_validated)
+                 FROM daily_report
+                 WHERE store_id = s.id
+                   AND date >= %s AND date <= %s),
+                0
+            ) as prev_total_tables,
+            COALESCE(
+                (SELECT SUM(customers)
+                 FROM daily_report
+                 WHERE store_id = s.id
+                   AND date >= %s AND date <= %s),
+                0
+            ) as prev_total_customers
         FROM store s
         WHERE s.id BETWEEN 1 AND 8
         ORDER BY s.id
@@ -723,14 +752,18 @@ class ReportDataProvider:
 
         try:
             # Pass date parameters for each subquery:
-            # annual avg (2 params), current turnover (2 params), current revenue (2 params),
-            # prev turnover (2 params), prev revenue (2 params)
+            # annual avg (2 params), current: turnover/revenue/tables/customers (8 params),
+            # prev: turnover/revenue/tables/customers (8 params)
             results = self.db_manager.fetch_all(
                 sql, (annual_start, annual_end,  # annual_avg_turnover_2024
                       start_date, end_date,      # current_avg_turnover_rate
                       start_date, end_date,      # current_total_revenue
+                      start_date, end_date,      # current_total_tables
+                      start_date, end_date,      # current_total_customers
                       prev_year_start, prev_year_end,  # prev_avg_turnover_rate
-                      prev_year_start, prev_year_end)  # prev_total_revenue
+                      prev_year_start, prev_year_end,  # prev_total_revenue
+                      prev_year_start, prev_year_end,  # prev_total_tables
+                      prev_year_start, prev_year_end)  # prev_total_customers
             )
 
             # Convert to expected format
@@ -747,9 +780,13 @@ class ReportDataProvider:
                     # Current year weekly data (preserve Decimal precision)
                     'current_avg_turnover_rate': row.get('current_avg_turnover_rate', 0),
                     'current_total_revenue': row.get('current_total_revenue', 0),
+                    'current_total_tables': row.get('current_total_tables', 0),
+                    'current_total_customers': row.get('current_total_customers', 0),
                     # Previous year weekly data (preserve Decimal precision)
                     'prev_avg_turnover_rate': row.get('prev_avg_turnover_rate', 0),
-                    'prev_total_revenue': row.get('prev_total_revenue', 0)
+                    'prev_total_revenue': row.get('prev_total_revenue', 0),
+                    'prev_total_tables': row.get('prev_total_tables', 0),
+                    'prev_total_customers': row.get('prev_total_customers', 0)
                 })
 
             return performance_data
@@ -1361,3 +1398,104 @@ class ReportDataProvider:
         except Exception as e:
             print(f"❌ Error getting gross margin discount data: {e}")
             return []
+
+    def get_time_segment_mtd_data(self, target_date: str):
+        """
+        Get MTD time segment data for challenge calculations.
+
+        Args:
+            target_date: Target date in YYYY-MM-DD format
+
+        Returns:
+            Dict with store_id as key, containing time segment data
+        """
+        from datetime import datetime
+
+        # Parse target date
+        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
+        current_year = target_dt.year
+        current_month = target_dt.month
+        target_day = target_dt.day
+        prev_year = current_year - 1
+
+        # Query to get MTD time segment data for current and previous year
+        sql = """
+        WITH current_mtd AS (
+            SELECT
+                store_id,
+                time_segment_id,
+                AVG(turnover_rate) as avg_turnover_rate,
+                SUM(tables_served_validated) as total_tables,
+                COUNT(*) as days_count
+            FROM store_time_report
+            WHERE EXTRACT(YEAR FROM date) = %s
+                AND EXTRACT(MONTH FROM date) = %s
+                AND EXTRACT(DAY FROM date) <= %s
+            GROUP BY store_id, time_segment_id
+        ),
+        prev_year_mtd AS (
+            SELECT
+                store_id,
+                time_segment_id,
+                AVG(turnover_rate) as avg_turnover_rate,
+                SUM(tables_served_validated) as total_tables,
+                COUNT(*) as days_count
+            FROM store_time_report
+            WHERE EXTRACT(YEAR FROM date) = %s
+                AND EXTRACT(MONTH FROM date) = %s
+                AND EXTRACT(DAY FROM date) <= %s
+            GROUP BY store_id, time_segment_id
+        )
+        SELECT
+            s.id as store_id,
+            s.name as store_name,
+            ts.id as time_segment_id,
+            ts.label as time_segment,
+            COALESCE(cm.avg_turnover_rate, 0) as current_avg_turnover,
+            COALESCE(cm.total_tables, 0) as current_total_tables,
+            COALESCE(cm.days_count, 0) as current_days,
+            COALESCE(pm.avg_turnover_rate, 0) as prev_avg_turnover,
+            COALESCE(pm.total_tables, 0) as prev_total_tables,
+            COALESCE(pm.days_count, 0) as prev_days
+        FROM store s
+        CROSS JOIN time_segment ts
+        LEFT JOIN current_mtd cm ON s.id = cm.store_id AND ts.id = cm.time_segment_id
+        LEFT JOIN prev_year_mtd pm ON s.id = pm.store_id AND ts.id = pm.time_segment_id
+        WHERE s.id BETWEEN 1 AND 8
+        ORDER BY s.id, ts.id
+        """
+
+        try:
+            results = self.db_manager.fetch_all(sql, (
+                current_year, current_month, target_day,  # current_mtd
+                prev_year, current_month, target_day       # prev_year_mtd
+            ))
+
+            # Organize by store_id
+            store_data = {}
+            for row in results:
+                store_id = row['store_id']
+                time_segment = row['time_segment']
+
+                if store_id not in store_data:
+                    store_data[store_id] = {
+                        'store_name': row['store_name'],
+                        'time_segments': {}
+                    }
+
+                store_data[store_id]['time_segments'][time_segment] = {
+                    'current_avg_turnover': float(row['current_avg_turnover'] or 0),
+                    'current_total_tables': int(row['current_total_tables'] or 0),
+                    'current_days': int(row['current_days'] or 0),
+                    'prev_avg_turnover': float(row['prev_avg_turnover'] or 0),
+                    'prev_total_tables': int(row['prev_total_tables'] or 0),
+                    'prev_days': int(row['prev_days'] or 0)
+                }
+
+            return store_data
+
+        except Exception as e:
+            print(f"❌ Error getting time segment MTD data: {e}")
+            import traceback
+            traceback.print_exc()
+            return {}

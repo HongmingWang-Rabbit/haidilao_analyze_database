@@ -343,6 +343,53 @@ python3 scripts/generate_monthly_report.py --date 2025-06-01
 
 **Output:** `output/database_report_YYYY_MM_DD.xlsx`
 
+### **Weekly YoY MTD Report (周对比上年表)**
+
+Generate MTD (Month-to-Date) year-over-year comparison reports with Q1 2026 challenge tracking:
+
+```bash
+# Direct command
+python3 scripts/generate_weekly_yoy_report.py --target-date 2026-01-07
+
+# With custom output directory
+python3 scripts/generate_weekly_yoy_report.py --target-date 2026-01-07 --output-dir ./output/reports
+```
+
+**Generated Report Structure:**
+
+- **周对比上年表 (MTD YoY Comparison)**:
+  - **翻台率挑战**: Previous year MTD turnover, target (+0.18), current MTD turnover, gap
+  - **桌数挑战**: Tables derived from turnover rate × seating capacity × days
+  - **时段挑战 (Time Segment Challenge)**:
+    - Low peak times (14:00-16:59, 22:00-07:59): Hardcoded daily improvement targets
+    - High peak times (08:00-13:59, 17:00-21:59): Leftover targets distributed proportionally
+    - Daily and total progress tracking with color-coded indicators
+
+**Key Features:**
+
+- **📊 MTD Calculations**: Compares month-to-date performance vs same period last year
+- **🎯 Challenge Targets**: Configurable via `configs/challenge_targets/q1_2026_targets.py`
+- **🏪 Store-Specific Rules**: Store 6 fixed target (road construction), Store 8 excluded (new store)
+- **⏰ Time Segment Analysis**: Separate targets for slow and busy time periods
+- **🎨 Visual Indicators**: Green (target met) / Red (target not met) color coding
+
+**Configuration (configs/challenge_targets/):**
+
+```python
+# Turnover improvement target
+DEFAULT_TURNOVER_IMPROVEMENT = 0.18  # +0.18 over last year
+
+# Slow time targets (daily table improvement)
+AFTERNOON_SLOW_TARGETS = {1: 3, 2: 2, 3: 3, 4: 4, 5: 3, 6: 3, 7: 4, 8: 40}
+LATE_NIGHT_TARGETS = {1: 3, 2: 2, 3: 3, 4: 4, 5: 3, 6: 3, 7: 4, 8: 44}
+
+# Store-specific configurations
+STORE_6_TURNOVER_TARGET = 3.65  # Fixed due to road construction
+STORE_8_TURNOVER_TARGET = 4.0   # New store, excluded from regional
+```
+
+**Output:** `output/weekly_yoy_report_YYYY-MM-DD.xlsx`
+
 ### **Gross Margin Reports (毛利报表)**
 
 Generate comprehensive gross margin analysis reports:

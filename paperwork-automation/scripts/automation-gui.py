@@ -546,13 +546,23 @@ class HaidilaoAutomationGUI:
                   command=self.generate_monthly_material_report,
                   style='Info.TButton').pack(side='left', padx=(0, 10))
         
-        ttk.Button(material_row, 
+        ttk.Button(material_row,
                   text="🍹 Monthly Beverage Report",
                   command=self.generate_monthly_beverage_report,
                   style='Info.TButton').pack(side='left')
-        
-        material_row.pack(fill='x')
-        
+
+        material_row.pack(fill='x', pady=(0, 10))
+
+        # Weekly Reports row
+        weekly_row = ttk.Frame(additional_reports_frame)
+
+        ttk.Button(weekly_row,
+                  text="📅 Weekly YoY Report (周对比上年表)",
+                  command=self.generate_weekly_yoy_report,
+                  style='Info.TButton').pack(side='left')
+
+        weekly_row.pack(fill='x')
+
         additional_reports_frame.pack(fill='x', pady=(0, 20))
         
         # Report history
@@ -1105,7 +1115,39 @@ Working Directory: {os.getcwd()}
         
         command = f'python3 scripts/generate_monthly_beverage_report.py --date {month_format}'
         self.run_command(command, f'Generate Monthly Beverage Report for {month_format}')
-    
+
+    def generate_weekly_yoy_report(self):
+        """Generate weekly year-over-year comparison report with Q1 2026 challenge sheet"""
+        date = self.date_var.get().strip()
+
+        if not date:
+            messagebox.showerror("Error", "Please enter a target date!")
+            return
+
+        # Validate date format
+        try:
+            dt = datetime.strptime(date, '%Y-%m-%d')
+        except ValueError:
+            messagebox.showerror("Error", "Invalid date format! Use YYYY-MM-DD")
+            return
+
+        # Calculate week range for info message
+        from datetime import timedelta
+        start_dt = dt - timedelta(days=6)
+        week_range = f"{start_dt.strftime('%Y-%m-%d')} to {date}"
+
+        # Show info about Q1 2026
+        if dt.year == 2026 and 1 <= dt.month <= 3:
+            info_msg = f"Week range: {week_range}\n\nQ1 2026 detected - Challenge sheet will be included!"
+        else:
+            info_msg = f"Week range: {week_range}\n\nNot in Q1 2026 - Only weekly comparison sheet will be generated."
+
+        if not messagebox.askyesno("Generate Weekly YoY Report", f"Generate weekly YoY report?\n\n{info_msg}"):
+            return
+
+        command = f'python3 scripts/generate_weekly_yoy_report.py --target-date {date}'
+        self.run_command(command, f'Generate Weekly YoY Report for {week_range}')
+
     def run_command(self, command, description):
         """Run command in background thread"""
         self.log_message(f"\n🚀 {description}")
