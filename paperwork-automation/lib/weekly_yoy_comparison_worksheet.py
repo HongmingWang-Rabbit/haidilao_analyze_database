@@ -2,15 +2,14 @@
 """
 MTD (Month-to-Date) Year-over-Year Comparison Worksheet Generator
 
-This module generates a MTD YoY comparison worksheet (周对比上年表) that includes:
+This module generates a MTD YoY comparison worksheet (周对比上年表) with a
+store-centric layout where all challenges for each store are grouped together.
 
-1. Main Challenge Section:
-   - 翻台率挑战: Previous year, target (prev + improvement), current, gap
-   - 桌数挑战: Derived from turnover rate × seating capacity × days
-
-2. Time Segment Challenge Section:
-   - Slow time segments (afternoon, late night): Hardcoded daily targets
-   - Busy time segments (morning, evening): Leftover targets distributed proportionally
+Structure per store (7 rows):
+1. 翻台率挑战 - Turnover rate challenge
+2. 桌数挑战 - Tables challenge
+3-6. 时段挑战 - Time segment challenges (4 segments)
+7. 外卖挑战 - Takeout revenue challenge
 
 All configuration values are sourced from configs/challenge_targets/.
 """
@@ -34,7 +33,6 @@ from configs.challenge_targets import (
     LATE_NIGHT_TARGETS,
     TIME_SEGMENT_LABELS,
     TIME_SEGMENT_CONFIG,
-    # Takeout challenge
     get_takeout_daily_improvement_cad
 )
 
@@ -48,14 +46,19 @@ class WeeklyYoYComparisonWorksheetGenerator:
     RED_COLOR = "FFE6E6"
     SUMMARY_COLOR = "FFF3CD"
     EXCLUDED_COLOR = "E0E0E0"
+    STORE_HEADER_COLOR = "4472C4"
+    SECTION_COLORS = {
+        '翻台率': "FDE9D9",
+        '桌数': "DAEEF3",
+        '时段': "E4DFEC",
+        '外卖': "D8E4BC"
+    }
+
+    # Number of rows per store
+    ROWS_PER_STORE = 7  # 1 turnover + 1 tables + 4 time segments + 1 takeout
 
     def __init__(self, data_provider):
-        """
-        Initialize the generator with data provider.
-
-        Args:
-            data_provider: ReportDataProvider instance for database access
-        """
+        """Initialize the generator with data provider."""
         self.data_provider = data_provider
         self.logger = logging.getLogger(__name__)
 
@@ -70,31 +73,24 @@ class WeeklyYoYComparisonWorksheetGenerator:
             bottom=Side(style='thin')
         )
         self.center_alignment = Alignment(horizontal="center", vertical="center")
+        self.wrap_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-        # Color fills for gap columns
+        # Color fills
         self.green_fill = PatternFill(start_color=self.GREEN_COLOR, end_color=self.GREEN_COLOR, fill_type="solid")
         self.red_fill = PatternFill(start_color=self.RED_COLOR, end_color=self.RED_COLOR, fill_type="solid")
         self.summary_fill = PatternFill(start_color=self.SUMMARY_COLOR, end_color=self.SUMMARY_COLOR, fill_type="solid")
         self.excluded_fill = PatternFill(start_color=self.EXCLUDED_COLOR, end_color=self.EXCLUDED_COLOR, fill_type="solid")
+        self.store_header_fill = PatternFill(start_color=self.STORE_HEADER_COLOR, end_color=self.STORE_HEADER_COLOR, fill_type="solid")
 
     @staticmethod
     def _format_date_period(start_dt: datetime, end_dt: datetime) -> str:
-        """
-        Format date range as Chinese date period string.
-
-        Args:
-            start_dt: Start date
-            end_dt: End date
-
-        Returns:
-            Formatted string like '26年1月1日-1月7日'
-        """
+        """Format date range as Chinese date period string."""
         year = end_dt.year % 100
         return f"{year}年{start_dt.month}月{start_dt.day}日-{end_dt.month}月{end_dt.day}日"
 
     def generate_worksheet(self, workbook: Workbook, target_date: str) -> Worksheet:
         """
-        Generate MTD YoY comparison worksheet.
+        Generate MTD YoY comparison worksheet with store-centric layout.
 
         Args:
             workbook: Excel workbook to add worksheet to
@@ -104,108 +100,282 @@ class WeeklyYoYComparisonWorksheetGenerator:
             The generated worksheet
         """
         try:
-            self.logger.info(
-                f"Generating MTD YoY comparison worksheet for {target_date}")
+            self.logger.info(f"Generating MTD YoY comparison worksheet for {target_date}")
 
-            # Create worksheet
             ws = workbook.create_sheet("周对比上年表")
 
-            # Parse target date and calculate MTD date ranges
+            # Parse dates
             target_dt = datetime.strptime(target_date, '%Y-%m-%d')
-            # MTD: from first day of month to target date
             start_dt = target_dt.replace(day=1)
-            num_days = target_dt.day  # Number of days in MTD period
+            num_days = target_dt.day
+            prev_year = target_dt.year - 1
 
-            # Calculate previous year dates (same MTD period)
-            prev_year_start, prev_year_end = self._calculate_prev_year_dates(
-                start_dt, target_dt)
+            # Calculate previous year dates
+            prev_start_dt = start_dt.replace(year=prev_year)
+            prev_end_dt = target_dt.replace(year=prev_year)
 
-            self.logger.info(
-                f"Current MTD period: {start_dt.strftime('%Y-%m-%d')} to {target_dt.strftime('%Y-%m-%d')} ({num_days} days)")
-            self.logger.info(
-                f"Previous year MTD period: {prev_year_start.strftime('%Y-%m-%d')} to {prev_year_end.strftime('%Y-%m-%d')}")
+            self.logger.info(f"Current MTD period: {start_dt.strftime('%Y-%m-%d')} to {target_dt.strftime('%Y-%m-%d')} ({num_days} days)")
 
-            # Get MTD store performance data
+            # Get all data
             store_data = self._get_mtd_data(start_dt, target_dt)
+            time_segment_data = self.data_provider.get_time_segment_mtd_data(target_date)
+            takeout_data = self.data_provider.get_takeout_mtd_data(target_date)
+
+            if not store_data:
+                self.logger.warning("No store data found")
+                return ws
+
+            # Format date periods for headers
+            current_period = self._format_date_period(start_dt, target_dt)
+            prev_period = self._format_date_period(prev_start_dt, prev_end_dt)
 
             # Generate headers
-            self._generate_headers(ws, start_dt, target_dt, prev_year_start, prev_year_end)
+            self._generate_headers(ws, current_period, prev_period, prev_year, target_dt)
 
-            # Add store data rows
-            self._add_store_data(ws, store_data, start_row=3, num_days=num_days)
+            # Add store data (store-centric layout)
+            current_row = 3
+            for store in store_data:
+                current_row = self._add_store_section(
+                    ws, store, current_row, num_days,
+                    time_segment_data, takeout_data,
+                    target_dt, prev_period, current_period
+                )
 
-            # Add regional summary (excluding Store 8)
-            summary_row = 3 + len(store_data)
-            self._add_regional_summary(ws, store_data, row=summary_row, num_days=num_days)
+            # Apply column widths
+            self._apply_column_widths(ws)
 
-            # Apply formatting to main section
-            self._apply_formatting(ws, len(store_data))
+            # Freeze panes
+            ws.freeze_panes = "C3"
 
-            # Add time segment challenge section below main section
-            time_segment_start_row = summary_row + 1
-            time_segment_end_row = self._add_time_segment_challenge_section(
-                ws, target_date, store_data, time_segment_start_row, num_days
-            )
-
-            # Add takeout challenge section below time segment section
-            takeout_start_row = time_segment_end_row + 2
-            self._add_takeout_challenge_section(
-                ws, target_date, store_data, takeout_start_row, num_days
-            )
-
-            self.logger.info(
-                f"MTD YoY comparison worksheet generated with {len(store_data)} stores")
+            self.logger.info(f"MTD YoY comparison worksheet generated with {len(store_data)} stores")
+            self.logger.info("Formatting applied to weekly YoY comparison worksheet")
 
             return ws
 
         except Exception as e:
-            self.logger.error(
-                f"Error generating MTD YoY comparison worksheet: {str(e)}")
+            self.logger.error(f"Error generating worksheet: {str(e)}")
             raise
 
-    def _calculate_prev_year_dates(self, current_start: datetime,
-                                    current_end: datetime) -> tuple:
-        """
-        Calculate previous year week with same calendar dates.
+    def _generate_headers(self, ws: Worksheet, current_period: str, prev_period: str,
+                          prev_year: int, target_dt: datetime) -> None:
+        """Generate worksheet headers."""
+        # Row 1 - Main header
+        headers_row1 = [
+            "门店",           # A - Store name (merged)
+            "挑战类型",       # B - Challenge type
+            "去年数据",       # C - Previous year
+            "目标",           # D - Target
+            "今年数据",       # E - Current year
+            "差距",           # F - Gap
+            "备注"            # G - Notes
+        ]
 
-        Args:
-            current_start: Start date of current week
-            current_end: End date of current week
+        for col, header in enumerate(headers_row1, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = self.header_font
+            cell.fill = self.header_fill
+            cell.alignment = self.center_alignment
+            cell.border = self.thin_border
+
+        # Row 2 - Sub headers with date info
+        sub_headers = [
+            "",
+            "",
+            prev_period,
+            f"去年+改进",
+            current_period,
+            "今年-目标",
+            ""
+        ]
+
+        for col, header in enumerate(sub_headers, 1):
+            cell = ws.cell(row=2, column=col, value=header)
+            cell.font = self.header_font
+            cell.fill = self.header_fill
+            cell.alignment = self.center_alignment
+            cell.border = self.thin_border
+
+    def _add_store_section(self, ws: Worksheet, store: Dict, start_row: int,
+                           num_days: int, time_segment_data: Dict,
+                           takeout_data: Dict, target_dt: datetime,
+                           prev_period: str, current_period: str) -> int:
+        """
+        Add all challenge data for a single store.
 
         Returns:
-            Tuple of (prev_year_start, prev_year_end)
+            Next available row after this store's section
         """
-        prev_year = current_end.year - 1
+        store_id = store.get('store_id', 0)
+        store_name = store.get('store_name', '')
+        seating_capacity = STORE_SEATING_CAPACITY.get(store_id, 50)
 
-        # Use same calendar dates in previous year
-        # Handle leap year dates (Feb 29 -> Feb 28 in non-leap year)
-        try:
-            prev_year_end = current_end.replace(year=prev_year)
-        except ValueError:
-            # Feb 29 in leap year -> Feb 28 in non-leap year
-            prev_year_end = current_end.replace(year=prev_year, day=28)
+        current_row = start_row
+        section_start_row = start_row
 
-        try:
-            prev_year_start = current_start.replace(year=prev_year)
-        except ValueError:
-            # Feb 29 in leap year -> Feb 28 in non-leap year
-            prev_year_start = current_start.replace(year=prev_year, day=28)
+        # === Row 1: 翻台率挑战 ===
+        prev_turnover = float(store.get('prev_avg_turnover_rate', 0))
+        current_turnover = float(store.get('current_avg_turnover_rate', 0))
+        target_turnover = get_store_turnover_target(store_id, prev_turnover)
+        turnover_gap = current_turnover - target_turnover
 
-        return prev_year_start, prev_year_end
+        self._write_data_row(ws, current_row, "翻台率",
+                             prev_turnover, target_turnover, current_turnover, turnover_gap,
+                             "翻台率", number_format='0.00')
+        current_row += 1
+
+        # === Row 2: 桌数挑战 ===
+        prev_tables = int(prev_turnover * seating_capacity * num_days)
+        target_tables = int(target_turnover * seating_capacity * num_days)
+        current_tables = int(current_turnover * seating_capacity * num_days)
+
+        if not is_store_excluded_from_regional(store_id):
+            tables_gap = current_tables - target_tables
+            self._write_data_row(ws, current_row, "桌数",
+                                 prev_tables, target_tables, current_tables, tables_gap,
+                                 "桌数", number_format='0')
+        else:
+            self._write_data_row(ws, current_row, "桌数",
+                                 prev_tables, "N/A", current_tables, "N/A",
+                                 "桌数", notes="不参与区域考核")
+        current_row += 1
+
+        # === Rows 3-6: 时段挑战 (4 segments) ===
+        store_ts_data = time_segment_data.get(store_id, {}).get('time_segments', {}) if time_segment_data else {}
+
+        for segment_config in TIME_SEGMENT_CONFIG:
+            segment_label = segment_config['label']
+            segment_key = segment_config['key']
+            is_slow = segment_config['type'] == 'slow'
+            hardcoded_targets = segment_config['targets']
+
+            segment_data = store_ts_data.get(segment_label, {})
+            prev_daily_tables = segment_data.get('prev_total_tables', 0) / num_days if num_days > 0 else 0
+            current_daily_tables = segment_data.get('current_total_tables', 0) / num_days if num_days > 0 else 0
+
+            if is_slow and hardcoded_targets:
+                daily_target = hardcoded_targets.get(store_id, DEFAULT_SLOW_TIME_TARGET)
+            else:
+                daily_target = self._calculate_busy_time_target(
+                    store_id, store, time_segment_data, segment_key, num_days
+                )
+
+            # Target is improvement over last year
+            target_daily = prev_daily_tables + daily_target
+            gap = current_daily_tables - target_daily
+
+            segment_type = "低峰" if is_slow else "高峰"
+            self._write_data_row(ws, current_row, f"{segment_label} {segment_type}",
+                                 prev_daily_tables, target_daily, current_daily_tables, gap,
+                                 "时段", number_format='0.00',
+                                 notes=f"日均桌数 (目标+{daily_target:.1f})")
+            current_row += 1
+
+        # === Row 7: 外卖挑战 ===
+        store_takeout = takeout_data.get(store_id, {}) if takeout_data else {}
+        prev_month_total = store_takeout.get('prev_year_month_total', 0)
+        prev_month_days = store_takeout.get('prev_year_month_days', 30) or 30
+        current_mtd_total = store_takeout.get('current_mtd_total', 0)
+        current_days = store_takeout.get('current_days', num_days) or num_days
+
+        prev_daily_avg = prev_month_total / prev_month_days if prev_month_days > 0 else 0
+        daily_improvement_cad = get_takeout_daily_improvement_cad(target_dt.year)
+        daily_target = prev_daily_avg + daily_improvement_cad
+        current_daily_avg = current_mtd_total / current_days if current_days > 0 else 0
+        daily_gap = current_daily_avg - daily_target
+
+        self._write_data_row(ws, current_row, "外卖收入",
+                             prev_daily_avg, daily_target, current_daily_avg, daily_gap,
+                             "外卖", number_format='"$"#,##0.00',
+                             notes=f"日均 (目标+${daily_improvement_cad:.0f})")
+        current_row += 1
+
+        # Merge store name cell across all rows
+        ws.merge_cells(start_row=section_start_row, start_column=1,
+                       end_row=current_row - 1, end_column=1)
+        store_cell = ws.cell(row=section_start_row, column=1, value=store_name)
+        store_cell.font = Font(bold=True, size=11)
+        store_cell.fill = self.store_header_fill
+        store_cell.alignment = Alignment(horizontal="center", vertical="center", text_rotation=0)
+        store_cell.border = self.thin_border
+
+        # Apply borders to merged area
+        for r in range(section_start_row, current_row):
+            ws.cell(row=r, column=1).border = self.thin_border
+
+        return current_row
+
+    def _write_data_row(self, ws: Worksheet, row: int, challenge_type: str,
+                        prev_value: Any, target_value: Any, current_value: Any,
+                        gap_value: Any, section: str, number_format: str = '0.00',
+                        notes: str = "") -> None:
+        """Write a single data row with formatting."""
+        # Get section color
+        section_fill = PatternFill(
+            start_color=self.SECTION_COLORS.get(section, "FFFFFF"),
+            end_color=self.SECTION_COLORS.get(section, "FFFFFF"),
+            fill_type="solid"
+        )
+
+        # Column B - Challenge type
+        cell_b = ws.cell(row=row, column=2, value=challenge_type)
+        cell_b.fill = section_fill
+        cell_b.alignment = self.center_alignment
+        cell_b.border = self.thin_border
+
+        # Column C - Previous year
+        cell_c = ws.cell(row=row, column=3, value=prev_value)
+        cell_c.alignment = self.center_alignment
+        cell_c.border = self.thin_border
+        if isinstance(prev_value, (int, float)):
+            cell_c.number_format = number_format
+
+        # Column D - Target
+        cell_d = ws.cell(row=row, column=4, value=target_value)
+        cell_d.alignment = self.center_alignment
+        cell_d.border = self.thin_border
+        if isinstance(target_value, (int, float)):
+            cell_d.number_format = number_format
+
+        # Column E - Current year
+        cell_e = ws.cell(row=row, column=5, value=current_value)
+        cell_e.alignment = self.center_alignment
+        cell_e.border = self.thin_border
+        if isinstance(current_value, (int, float)):
+            cell_e.number_format = number_format
+
+        # Column F - Gap (with color)
+        cell_f = ws.cell(row=row, column=6, value=gap_value)
+        cell_f.alignment = self.center_alignment
+        cell_f.border = self.thin_border
+        if isinstance(gap_value, (int, float)):
+            cell_f.number_format = number_format
+            cell_f.fill = self.green_fill if gap_value >= 0 else self.red_fill
+        elif gap_value == "N/A":
+            cell_f.fill = self.excluded_fill
+
+        # Column G - Notes
+        cell_g = ws.cell(row=row, column=7, value=notes)
+        cell_g.alignment = self.center_alignment
+        cell_g.border = self.thin_border
+        cell_g.font = Font(size=9, color="666666")
+
+    def _apply_column_widths(self, ws: Worksheet) -> None:
+        """Apply column widths."""
+        widths = {
+            'A': 12,   # Store name
+            'B': 18,   # Challenge type
+            'C': 14,   # Previous year
+            'D': 14,   # Target
+            'E': 14,   # Current year
+            'F': 12,   # Gap
+            'G': 25    # Notes
+        }
+        for col, width in widths.items():
+            ws.column_dimensions[col].width = width
 
     def _get_mtd_data(self, start_dt: datetime, end_dt: datetime) -> List[Dict[str, Any]]:
-        """
-        Get MTD (month-to-date) store performance data from database.
-
-        Args:
-            start_dt: Start date of MTD period (first of month)
-            end_dt: End date of MTD period (target date)
-
-        Returns:
-            List of store performance data dictionaries
-        """
+        """Get MTD store performance data from database."""
         try:
-            # Reuse the weekly performance query - it works for any date range
             store_data = self.data_provider.get_weekly_store_performance(
                 start_dt.strftime('%Y-%m-%d'), end_dt.strftime('%Y-%m-%d'))
 
@@ -220,439 +390,6 @@ class WeeklyYoYComparisonWorksheetGenerator:
             self.logger.error(f"Error getting MTD data: {str(e)}")
             return []
 
-    def _generate_headers(self, ws: Worksheet, start_dt: datetime, end_dt: datetime,
-                          prev_start_dt: datetime, prev_end_dt: datetime) -> None:
-        """Generate worksheet headers with date ranges."""
-        # Format date strings using helper method
-        current_period = self._format_date_period(start_dt, end_dt)
-        prev_period = self._format_date_period(prev_start_dt, prev_end_dt)
-
-        # Row 1 - Main headers
-        headers_row1 = [
-            "门店名称",      # A - Store Name
-            "翻台率挑战",    # B - Turnover Rate challenge section
-            "", "", "",      # C, D, E - Empty for merged cells
-            "桌数挑战",      # F - Tables challenge section
-            "", "", "",      # G, H, I - Empty for merged cells
-            "备注"          # J - Notes
-        ]
-
-        for col, header in enumerate(headers_row1, 1):
-            cell = ws.cell(row=1, column=col, value=header)
-            cell.font = self.header_font
-            cell.fill = self.header_fill
-            cell.alignment = self.center_alignment
-            cell.border = self.thin_border
-
-        # Merge header cells
-        ws.merge_cells('B1:E1')  # 翻台率挑战
-        ws.merge_cells('F1:I1')  # 桌数挑战
-
-        # Row 2 - Sub headers
-        sub_headers = [
-            "",              # A - Empty (under Store Name)
-            prev_period,     # B - Previous year turnover
-            "目标",          # C - Target turnover
-            current_period,  # D - Current period turnover
-            "差距",          # E - Gap
-            prev_period,     # F - Previous year tables
-            "目标",          # G - Target tables
-            current_period,  # H - Current period tables
-            "差距",          # I - Gap
-            ""               # J - Notes
-        ]
-
-        for col, header in enumerate(sub_headers, 1):
-            cell = ws.cell(row=2, column=col, value=header)
-            cell.font = self.header_font
-            cell.fill = self.header_fill
-            cell.alignment = self.center_alignment
-            cell.border = self.thin_border
-
-    def _add_store_data(self, ws: Worksheet, store_data: List[Dict[str, Any]],
-                        start_row: int, num_days: int) -> None:
-        """Add individual store data rows with challenge targets."""
-        for i, store in enumerate(store_data):
-            row = start_row + i
-            store_id = store.get('store_id', 0)
-
-            # Get target configuration
-            config = STORE_TARGET_CONFIG.get(store_id, {})
-
-            # Store name
-            ws.cell(row=row, column=1, value=store['store_name'])
-
-            # === Turnover Rate Section ===
-            prev_turnover = float(store.get('prev_avg_turnover_rate', 0))
-            current_turnover = float(store.get('current_avg_turnover_rate', 0))
-            target_turnover = get_store_turnover_target(store_id, prev_turnover)
-            turnover_gap = current_turnover - target_turnover
-
-            # B - Previous year turnover
-            ws.cell(row=row, column=2, value=prev_turnover)
-            # C - Target turnover
-            ws.cell(row=row, column=3, value=target_turnover)
-            # D - Current turnover
-            ws.cell(row=row, column=4, value=current_turnover)
-            # E - Gap (with color)
-            gap_cell = ws.cell(row=row, column=5, value=turnover_gap)
-            gap_cell.fill = self.green_fill if turnover_gap >= 0 else self.red_fill
-
-            # === Tables Section ===
-            # Calculate tables from turnover rate × seating capacity × days
-            seating_capacity = STORE_SEATING_CAPACITY.get(store_id, 50)
-            prev_tables = int(prev_turnover * seating_capacity * num_days)
-            current_tables = int(current_turnover * seating_capacity * num_days)
-            # Target tables derived from target turnover rate
-            target_tables = int(target_turnover * seating_capacity * num_days)
-
-            # F - Previous year tables
-            ws.cell(row=row, column=6, value=prev_tables)
-
-            # Check if store 8 (excluded from tables target)
-            if not is_store_excluded_from_regional(store_id):
-                tables_gap = current_tables - target_tables
-
-                # G - Target tables
-                ws.cell(row=row, column=7, value=target_tables)
-                # H - Current tables
-                ws.cell(row=row, column=8, value=current_tables)
-                # I - Gap (with color)
-                tables_gap_cell = ws.cell(row=row, column=9, value=tables_gap)
-                tables_gap_cell.fill = self.green_fill if tables_gap >= 0 else self.red_fill
-            else:
-                # Store 8 - no tables target
-                ws.cell(row=row, column=7, value="N/A")
-                ws.cell(row=row, column=8, value=current_tables)
-                na_cell = ws.cell(row=row, column=9, value="N/A")
-                na_cell.fill = self.excluded_fill
-
-            # J - Notes
-            notes = config.get('notes', '标准考核目标')
-            exemption = config.get('exemption_reason', '')
-            if exemption:
-                notes = f"{notes} ({exemption})" if notes else exemption
-            ws.cell(row=row, column=10, value=notes)
-
-    def _add_regional_summary(self, ws: Worksheet, store_data: List[Dict[str, Any]],
-                               row: int, num_days: int) -> None:
-        """
-        Add regional summary row.
-        Excludes Store 8 from regional YoY calculations.
-        """
-        # Filter out Store 8 for regional calculations
-        regional_stores = [s for s in store_data if s.get('store_id') != 8]
-
-        if not regional_stores:
-            return
-
-        # Store name
-        ws.cell(row=row, column=1, value="区域汇总(不含8店)")
-
-        # Calculate weighted average turnover (by seating capacity)
-        total_seats = sum(
-            STORE_SEATING_CAPACITY.get(s['store_id'], 50) for s in regional_stores)
-
-        current_weighted_turnover = sum(
-            float(s.get('current_avg_turnover_rate', 0)) *
-            STORE_SEATING_CAPACITY.get(s['store_id'], 50)
-            for s in regional_stores
-        ) / total_seats if total_seats > 0 else 0
-
-        prev_weighted_turnover = sum(
-            float(s.get('prev_avg_turnover_rate', 0)) *
-            STORE_SEATING_CAPACITY.get(s['store_id'], 50)
-            for s in regional_stores
-        ) / total_seats if total_seats > 0 else 0
-
-        # Regional target = prev + 0.16 (the standard improvement)
-        target_weighted_turnover = prev_weighted_turnover + DEFAULT_TURNOVER_IMPROVEMENT
-        turnover_gap = current_weighted_turnover - target_weighted_turnover
-
-        # B - Previous year turnover
-        ws.cell(row=row, column=2, value=prev_weighted_turnover)
-        # C - Target turnover
-        ws.cell(row=row, column=3, value=target_weighted_turnover)
-        # D - Current turnover
-        ws.cell(row=row, column=4, value=current_weighted_turnover)
-        # E - Gap (with color)
-        gap_cell = ws.cell(row=row, column=5, value=turnover_gap)
-        gap_cell.fill = self.green_fill if turnover_gap >= 0 else self.red_fill
-
-        # Calculate tables from turnover rate × seating capacity × days
-        prev_tables = sum(
-            int(float(s.get('prev_avg_turnover_rate', 0)) *
-                STORE_SEATING_CAPACITY.get(s['store_id'], 50) * num_days)
-            for s in regional_stores
-        )
-        current_tables = sum(
-            int(float(s.get('current_avg_turnover_rate', 0)) *
-                STORE_SEATING_CAPACITY.get(s['store_id'], 50) * num_days)
-            for s in regional_stores
-        )
-        # Target tables derived from target turnover rate × seating capacity × days
-        target_tables = sum(
-            int(get_store_turnover_target(s['store_id'], float(s.get('prev_avg_turnover_rate', 0))) *
-                STORE_SEATING_CAPACITY.get(s['store_id'], 50) * num_days)
-            for s in regional_stores
-        )
-        tables_gap = current_tables - target_tables
-
-        # F - Previous year tables
-        ws.cell(row=row, column=6, value=prev_tables)
-        # G - Target tables
-        ws.cell(row=row, column=7, value=target_tables)
-        # H - Current tables
-        ws.cell(row=row, column=8, value=current_tables)
-        # I - Gap (with color)
-        tables_gap_cell = ws.cell(row=row, column=9, value=tables_gap)
-        tables_gap_cell.fill = self.green_fill if tables_gap >= 0 else self.red_fill
-
-        # J - Notes
-        ws.cell(row=row, column=10, value="桌数 = 翻台率目标 × 座位数 × 天数")
-
-        # Style the summary row
-        for col in range(1, 11):
-            cell = ws.cell(row=row, column=col)
-            if col not in [5, 9]:  # Don't override gap colors
-                cell.fill = self.summary_fill
-            cell.font = Font(bold=True)
-
-    def _apply_formatting(self, ws: Worksheet, num_stores: int) -> None:
-        """Apply professional formatting to the worksheet."""
-        # Set column widths
-        column_widths = {
-            'A': 18,   # Store name
-            'B': 12,   # Previous year turnover
-            'C': 10,   # Target turnover
-            'D': 12,   # Current turnover
-            'E': 10,   # Turnover gap
-            'F': 12,   # Previous year tables
-            'G': 10,   # Target tables
-            'H': 12,   # Current tables
-            'I': 10,   # Tables gap
-            'J': 30    # Notes
-        }
-
-        for col_letter, width in column_widths.items():
-            ws.column_dimensions[col_letter].width = width
-
-        # Format data rows
-        data_rows = range(3, 3 + num_stores + 1)  # Store data + summary
-        for row in data_rows:
-            for col in range(1, 11):
-                cell = ws.cell(row=row, column=col)
-                cell.border = self.thin_border
-                cell.alignment = self.center_alignment
-
-                # Number formatting
-                if col in [2, 3, 4, 5]:  # Turnover rates (2 decimals)
-                    if cell.value != "N/A":
-                        cell.number_format = '0.00'
-                elif col in [6, 7, 8, 9]:  # Tables (integers)
-                    if cell.value != "N/A":
-                        cell.number_format = '0'
-
-        # Freeze panes
-        ws.freeze_panes = "B3"
-
-        self.logger.info("Formatting applied to weekly YoY comparison worksheet")
-
-    def _add_time_segment_challenge_section(self, ws: Worksheet, target_date: str,
-                                             store_data: List[Dict[str, Any]],
-                                             start_row: int, num_days: int) -> int:
-        """
-        Add time segment challenge section below the main challenge section.
-
-        Logic:
-        1. Calculate daily target: (last year MTD TR + 0.18) × seats = daily target tables
-        2. Daily improvement needed = daily target - last year daily tables
-        3. Slow times (afternoon 14:00-16:59, late night 22:00-07:59) have hardcoded targets
-        4. Busy times get leftover: improvement - afternoon - late_night
-        5. Distribute leftover proportionally based on last year turnover
-
-        Args:
-            ws: Worksheet to add section to
-            target_date: Target date string
-            store_data: Store performance data from main section
-            start_row: Starting row for this section
-            num_days: Number of days in MTD period
-
-        Returns:
-            Next available row after this section
-        """
-        # Get time segment MTD data
-        time_segment_data = self.data_provider.get_time_segment_mtd_data(target_date)
-
-        if not time_segment_data:
-            self.logger.warning("No time segment data available")
-            return start_row
-
-        # Calculate date ranges for headers using helper method
-        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
-        start_dt = target_dt.replace(day=1)
-        prev_start_dt = start_dt.replace(year=start_dt.year - 1)
-        prev_end_dt = target_dt.replace(year=target_dt.year - 1)
-
-        current_period = self._format_date_period(start_dt, target_dt)
-        prev_period = self._format_date_period(prev_start_dt, prev_end_dt)
-
-        # Add section header
-        current_row = start_row + 2  # Leave a gap
-
-        # Section title
-        title_cell = ws.cell(row=current_row, column=1, value="时段挑战")
-        title_cell.font = Font(bold=True, size=12)
-        current_row += 2
-
-        # Generate tables for each time segment from config
-        for segment_config in TIME_SEGMENT_CONFIG:
-            is_slow_time = segment_config['type'] == 'slow'
-            current_row = self._add_time_segment_table(
-                ws, current_row,
-                segment_label=segment_config['label'],
-                segment_key=segment_config['key'],
-                time_segment_data=time_segment_data,
-                store_data=store_data,
-                hardcoded_targets=segment_config['targets'],
-                is_slow_time=is_slow_time,
-                num_days=num_days,
-                prev_period=prev_period,
-                current_period=current_period
-            )
-            current_row += 2  # Gap between tables
-
-        return current_row
-
-    def _add_time_segment_table(self, ws: Worksheet, start_row: int,
-                                 segment_label: str, segment_key: str,
-                                 time_segment_data: Dict, store_data: List[Dict],
-                                 hardcoded_targets: Dict, is_slow_time: bool,
-                                 num_days: int, prev_period: str, current_period: str) -> int:
-        """
-        Add a single time segment challenge table.
-
-        Args:
-            ws: Worksheet
-            start_row: Starting row
-            segment_label: Time segment label (e.g., '14:00-16:59')
-            segment_key: Key for the segment (e.g., 'afternoon')
-            time_segment_data: Time segment data from database
-            store_data: Store performance data
-            hardcoded_targets: Hardcoded daily targets (for slow times)
-            is_slow_time: Whether this is a slow time segment
-            num_days: Number of days in MTD
-            prev_period: Previous year period string (e.g., '25年1月1日-1月7日')
-            current_period: Current year period string (e.g., '26年1月1日-1月7日')
-
-        Returns:
-            Next row after this table
-        """
-        current_row = start_row
-
-        # Table header
-        if is_slow_time:
-            header_text = f"{segment_label} 低峰期挑战"
-        else:
-            header_text = f"{segment_label} 高峰期挑战"
-
-        header_cell = ws.cell(row=current_row, column=1, value=header_text)
-        header_cell.font = Font(bold=True)
-        header_cell.fill = self.header_fill
-        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=10)
-        current_row += 1
-
-        # Column headers with dynamic date ranges
-        headers = [
-            "门店名称", "餐位数",
-            f"{prev_period}翻台率", "去年日均桌数",
-            "目标日均增量", f"{current_period}日均桌数",
-            "日均进度",
-            "去年总桌数", "今年总桌数", "总进度"
-        ]
-
-        for col, header in enumerate(headers, 1):
-            cell = ws.cell(row=current_row, column=col, value=header)
-            cell.font = self.header_font
-            cell.fill = self.header_fill
-            cell.alignment = self.center_alignment
-            cell.border = self.thin_border
-
-        current_row += 1
-
-        # Data rows
-        for store in store_data:
-            store_id = store.get('store_id', 0)
-            store_name = store.get('store_name', '')
-            seating_capacity = STORE_SEATING_CAPACITY.get(store_id, 50)
-
-            # Get time segment data for this store
-            store_ts_data = time_segment_data.get(store_id, {}).get('time_segments', {})
-            segment_data = store_ts_data.get(segment_label, {})
-
-            prev_avg_turnover = segment_data.get('prev_avg_turnover', 0)
-            prev_total_tables = segment_data.get('prev_total_tables', 0)
-            prev_days = segment_data.get('prev_days', 0) or num_days
-            current_total_tables = segment_data.get('current_total_tables', 0)
-            current_days = segment_data.get('current_days', 0) or num_days
-
-            # Calculate daily averages
-            prev_daily_tables = prev_total_tables / prev_days if prev_days > 0 else 0
-            current_daily_tables = current_total_tables / current_days if current_days > 0 else 0
-
-            # Calculate target
-            if is_slow_time and hardcoded_targets:
-                # Slow time: use hardcoded target from config
-                daily_target_improvement = hardcoded_targets.get(store_id, DEFAULT_SLOW_TIME_TARGET)
-            else:
-                # Busy time: calculate from leftover
-                daily_target_improvement = self._calculate_busy_time_target(
-                    store_id, store, time_segment_data, segment_key, num_days
-                )
-
-            # Calculate daily progress: current daily - prev daily
-            daily_improvement = current_daily_tables - prev_daily_tables
-
-            # Calculate total progress: current total - prev total
-            total_improvement = current_total_tables - prev_total_tables
-
-            # Check if target met (based on daily improvement vs daily target)
-            target_met = daily_improvement >= daily_target_improvement
-
-            # Write row
-            ws.cell(row=current_row, column=1, value=store_name)
-            ws.cell(row=current_row, column=2, value=seating_capacity)
-            ws.cell(row=current_row, column=3, value=prev_avg_turnover)
-            ws.cell(row=current_row, column=4, value=prev_daily_tables)
-            ws.cell(row=current_row, column=5, value=daily_target_improvement)
-            ws.cell(row=current_row, column=6, value=current_daily_tables)
-
-            # 日均进度 cell with color (green if target met, red if not)
-            daily_progress_cell = ws.cell(row=current_row, column=7, value=daily_improvement)
-            daily_progress_cell.fill = self.green_fill if target_met else self.red_fill
-
-            # Total columns
-            ws.cell(row=current_row, column=8, value=prev_total_tables)
-            ws.cell(row=current_row, column=9, value=current_total_tables)
-
-            # 总进度 cell with color
-            total_progress_cell = ws.cell(row=current_row, column=10, value=total_improvement)
-            total_progress_cell.fill = self.green_fill if total_improvement >= 0 else self.red_fill
-
-            # Apply formatting
-            for col in range(1, 11):
-                cell = ws.cell(row=current_row, column=col)
-                cell.border = self.thin_border
-                cell.alignment = self.center_alignment
-                if col in [3, 4, 5, 6, 7]:
-                    cell.number_format = '0.00'
-                elif col in [8, 9, 10]:
-                    cell.number_format = '0'
-
-            current_row += 1
-
-        return current_row
-
     def _calculate_busy_time_target(self, store_id: int, store: Dict,
                                      time_segment_data: Dict, segment_key: str,
                                      num_days: int) -> float:
@@ -661,29 +398,16 @@ class WeeklyYoYComparisonWorksheetGenerator:
 
         Leftover = total_daily_improvement - afternoon_target - late_night_target
         Busy time target = leftover × (this_segment_turnover / total_busy_turnover)
-
-        Args:
-            store_id: Store ID
-            store: Store performance data
-            time_segment_data: Time segment data from database
-            segment_key: 'morning' or 'evening'
-            num_days: Number of days in MTD period
-
-        Returns:
-            Daily target improvement for this busy time segment
         """
         seating_capacity = STORE_SEATING_CAPACITY.get(store_id, 50)
 
-        # Get overall store data
         prev_turnover = float(store.get('prev_avg_turnover_rate', 0))
         target_turnover = get_store_turnover_target(store_id, prev_turnover)
 
-        # Calculate daily tables improvement needed
         prev_daily_tables = prev_turnover * seating_capacity
         target_daily_tables = target_turnover * seating_capacity
         total_daily_improvement = target_daily_tables - prev_daily_tables
 
-        # Subtract slow time targets from config
         afternoon_target = AFTERNOON_SLOW_TARGETS.get(store_id, DEFAULT_SLOW_TIME_TARGET)
         late_night_target = LATE_NIGHT_TARGETS.get(store_id, DEFAULT_SLOW_TIME_TARGET)
         leftover = total_daily_improvement - afternoon_target - late_night_target
@@ -691,8 +415,7 @@ class WeeklyYoYComparisonWorksheetGenerator:
         if leftover <= 0:
             return 0
 
-        # Get busy time turnover rates from last year using config labels
-        store_ts_data = time_segment_data.get(store_id, {}).get('time_segments', {})
+        store_ts_data = time_segment_data.get(store_id, {}).get('time_segments', {}) if time_segment_data else {}
         morning_label = TIME_SEGMENT_LABELS['morning']
         evening_label = TIME_SEGMENT_LABELS['evening']
 
@@ -704,161 +427,9 @@ class WeeklyYoYComparisonWorksheetGenerator:
         total_busy_turnover = morning_turnover + evening_turnover
 
         if total_busy_turnover <= 0:
-            return leftover / 2  # Split evenly if no data
+            return leftover / 2
 
-        # Distribute proportionally
         if segment_key == 'morning':
             return leftover * morning_turnover / total_busy_turnover
-        else:  # evening
+        else:
             return leftover * evening_turnover / total_busy_turnover
-
-    def _add_takeout_challenge_section(self, ws: Worksheet, target_date: str,
-                                        store_data: List[Dict[str, Any]],
-                                        start_row: int, num_days: int) -> int:
-        """
-        Add takeout challenge section (外卖挑战).
-
-        Target Calculation:
-        - Daily Target = (Last year same month total / days in month) + $200 USD converted to CAD
-        - $200 USD / exchange_rate = CAD improvement
-
-        Args:
-            ws: Worksheet to add section to
-            target_date: Target date string
-            store_data: Store performance data
-            start_row: Starting row for this section
-            num_days: Number of days in MTD period
-
-        Returns:
-            Next available row after this section
-        """
-        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
-        current_year = target_dt.year
-        prev_year = current_year - 1
-
-        # Get takeout MTD data
-        takeout_data = self.data_provider.get_takeout_mtd_data(target_date)
-
-        if not takeout_data:
-            self.logger.warning("No takeout data available")
-            return start_row
-
-        # Calculate date periods for headers
-        start_dt = target_dt.replace(day=1)
-        current_period = self._format_date_period(start_dt, target_dt)
-
-        # Get daily improvement in CAD
-        daily_improvement_cad = get_takeout_daily_improvement_cad(current_year)
-
-        current_row = start_row
-
-        # Section title with prominent styling
-        title_cell = ws.cell(row=current_row, column=1, value="外卖挑战")
-        title_cell.font = Font(bold=True, size=14)
-        current_row += 2
-
-        # Header row - merged title
-        header_cell = ws.cell(row=current_row, column=1, value="外卖收入挑战 (日均目标 = 去年日均 + $274.50 CAD)")
-        header_cell.font = Font(bold=True, color="FFFFFF")
-        header_cell.fill = self.header_fill
-        header_cell.alignment = self.center_alignment
-        header_cell.border = self.thin_border
-        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=7)
-        current_row += 1
-
-        # Column headers
-        headers = [
-            "门店名称",
-            f"{prev_year}年{target_dt.month}月总计",
-            "去年日均",
-            "日均目标",
-            f"{current_period}总计",
-            "今年日均",
-            "日均差距"
-        ]
-
-        for col, header in enumerate(headers, 1):
-            cell = ws.cell(row=current_row, column=col, value=header)
-            cell.font = self.header_font
-            cell.fill = self.header_fill
-            cell.alignment = self.center_alignment
-            cell.border = self.thin_border
-
-        current_row += 1
-        data_start_row = current_row
-
-        # Track totals for summary row
-        total_prev_month = 0
-        total_current_mtd = 0
-        stores_achieved = 0
-
-        # Data rows
-        for store in store_data:
-            store_id = store.get('store_id', 0)
-            store_name = store.get('store_name', '')
-
-            # Get takeout data for this store
-            store_takeout = takeout_data.get(store_id, {})
-
-            prev_month_total = store_takeout.get('prev_year_month_total', 0)
-            prev_month_days = store_takeout.get('prev_year_month_days', 30)
-            current_mtd_total = store_takeout.get('current_mtd_total', 0)
-            current_days = store_takeout.get('current_days', num_days) or num_days
-
-            # Accumulate totals
-            total_prev_month += prev_month_total
-            total_current_mtd += current_mtd_total
-
-            # Calculate metrics
-            prev_daily_avg = prev_month_total / prev_month_days if prev_month_days > 0 else 0
-            daily_target = prev_daily_avg + daily_improvement_cad
-            current_daily_avg = current_mtd_total / current_days if current_days > 0 else 0
-            daily_gap = current_daily_avg - daily_target
-            achieved = daily_gap >= 0
-
-            if achieved:
-                stores_achieved += 1
-
-            # Write row
-            ws.cell(row=current_row, column=1, value=store_name)
-            ws.cell(row=current_row, column=2, value=prev_month_total)
-            ws.cell(row=current_row, column=3, value=prev_daily_avg)
-            ws.cell(row=current_row, column=4, value=daily_target)
-            ws.cell(row=current_row, column=5, value=current_mtd_total)
-            ws.cell(row=current_row, column=6, value=current_daily_avg)
-
-            # Gap with color
-            gap_cell = ws.cell(row=current_row, column=7, value=daily_gap)
-            gap_cell.fill = self.green_fill if achieved else self.red_fill
-
-            # Apply formatting
-            for col in range(1, 8):
-                cell = ws.cell(row=current_row, column=col)
-                cell.border = self.thin_border
-                cell.alignment = self.center_alignment
-                if col == 2 or col == 5:  # Total columns - currency with $
-                    cell.number_format = '"$"#,##0.00'
-                elif col in [3, 4, 6, 7]:  # Daily avg columns - currency with $
-                    cell.number_format = '"$"#,##0.00'
-
-            current_row += 1
-
-        # Summary row
-        ws.cell(row=current_row, column=1, value="合计")
-        ws.cell(row=current_row, column=2, value=total_prev_month)
-        ws.cell(row=current_row, column=5, value=total_current_mtd)
-        ws.cell(row=current_row, column=7, value=f"{stores_achieved}/{len(store_data)} 达成")
-
-        # Style summary row
-        for col in range(1, 8):
-            cell = ws.cell(row=current_row, column=col)
-            cell.border = self.thin_border
-            cell.alignment = self.center_alignment
-            cell.fill = self.summary_fill
-            cell.font = Font(bold=True)
-            if col == 2 or col == 5:
-                cell.number_format = '"$"#,##0.00'
-
-        current_row += 1
-
-        return current_row
