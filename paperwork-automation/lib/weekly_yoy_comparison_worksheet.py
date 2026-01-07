@@ -153,9 +153,14 @@ class WeeklyYoYComparisonWorksheetGenerator:
                     target_dt, prev_period, current_period,
                     store_index
                 )
-                # Add separator row between stores (except after last store)
-                if store_index < len(store_data) - 1:
-                    current_row = self._add_separator_row(ws, current_row)
+                # Add separator row between stores
+                current_row = self._add_separator_row(ws, current_row)
+
+            # Add Canada total summary section
+            current_row = self._add_canada_summary(
+                ws, store_data, current_row, num_days,
+                time_segment_data, takeout_data, target_dt
+            )
 
             # Apply column widths
             self._apply_column_widths(ws)
@@ -411,6 +416,205 @@ class WeeklyYoYComparisonWorksheetGenerator:
         ws.row_dimensions[row].height = 6
 
         return row + 1
+
+    def _add_canada_summary(self, ws: Worksheet, store_data: List[Dict],
+                            start_row: int, num_days: int,
+                            time_segment_data: Dict, takeout_data: Dict,
+                            target_dt: datetime) -> int:
+        """
+        Add Canada total summary section at the end.
+
+        Returns:
+            Next available row after summary section
+        """
+        current_row = start_row
+        section_start_row = start_row
+
+        # Calculate totals (exclude store 8 for regional metrics)
+        regional_stores = [s for s in store_data if s.get('store_id') != 8]
+        all_stores = store_data
+
+        # === Row 1: 翻台率 (weighted average by seating capacity) ===
+        total_seats_regional = sum(STORE_SEATING_CAPACITY.get(s['store_id'], 50) for s in regional_stores)
+
+        prev_weighted_turnover = sum(
+            float(s.get('prev_avg_turnover_rate', 0)) * STORE_SEATING_CAPACITY.get(s['store_id'], 50)
+            for s in regional_stores
+        ) / total_seats_regional if total_seats_regional > 0 else 0
+
+        current_weighted_turnover = sum(
+            float(s.get('current_avg_turnover_rate', 0)) * STORE_SEATING_CAPACITY.get(s['store_id'], 50)
+            for s in regional_stores
+        ) / total_seats_regional if total_seats_regional > 0 else 0
+
+        target_weighted_turnover = prev_weighted_turnover + DEFAULT_TURNOVER_IMPROVEMENT
+        turnover_gap = current_weighted_turnover - target_weighted_turnover
+
+        self._write_summary_row(ws, current_row, "翻台率 (加权平均)",
+                                prev_weighted_turnover, target_weighted_turnover,
+                                current_weighted_turnover, turnover_gap,
+                                number_format='0.00', notes="不含8店")
+        current_row += 1
+
+        # === Row 2: 桌数 (sum of all regional stores) ===
+        prev_tables_total = sum(
+            int(float(s.get('prev_avg_turnover_rate', 0)) * STORE_SEATING_CAPACITY.get(s['store_id'], 50) * num_days)
+            for s in regional_stores
+        )
+        target_tables_total = sum(
+            int(get_store_turnover_target(s['store_id'], float(s.get('prev_avg_turnover_rate', 0))) *
+                STORE_SEATING_CAPACITY.get(s['store_id'], 50) * num_days)
+            for s in regional_stores
+        )
+        current_tables_total = sum(
+            int(float(s.get('current_avg_turnover_rate', 0)) * STORE_SEATING_CAPACITY.get(s['store_id'], 50) * num_days)
+            for s in regional_stores
+        )
+        tables_gap = current_tables_total - target_tables_total
+
+        self._write_summary_row(ws, current_row, "桌数 (合计)",
+                                prev_tables_total, target_tables_total,
+                                current_tables_total, tables_gap,
+                                number_format='0', notes="不含8店")
+        current_row += 1
+
+        # === Rows 3-6: 时段 (sum of all stores) ===
+        for segment_config in TIME_SEGMENT_CONFIG:
+            segment_label = segment_config['label']
+            is_slow = segment_config['type'] == 'slow'
+
+            prev_total = 0
+            current_total = 0
+            target_total = 0
+
+            for store in all_stores:
+                store_id = store.get('store_id', 0)
+                store_ts_data = time_segment_data.get(store_id, {}).get('time_segments', {}) if time_segment_data else {}
+                segment_data = store_ts_data.get(segment_label, {})
+
+                prev_daily = segment_data.get('prev_total_tables', 0) / num_days if num_days > 0 else 0
+                current_daily = segment_data.get('current_total_tables', 0) / num_days if num_days > 0 else 0
+
+                # Get target for this store
+                if is_slow and segment_config['targets']:
+                    daily_target_improvement = segment_config['targets'].get(store_id, DEFAULT_SLOW_TIME_TARGET)
+                else:
+                    daily_target_improvement = self._calculate_busy_time_target(
+                        store_id, store, time_segment_data, segment_config['key'], num_days
+                    )
+
+                prev_total += prev_daily
+                current_total += current_daily
+                target_total += prev_daily + daily_target_improvement
+
+            gap = current_total - target_total
+            segment_type = "低峰" if is_slow else "高峰"
+
+            self._write_summary_row(ws, current_row, f"{segment_label} {segment_type}",
+                                    prev_total, target_total, current_total, gap,
+                                    number_format='0.00', notes="日均合计")
+            current_row += 1
+
+        # === Row 7: 外卖 (sum of all stores) ===
+        prev_takeout_total = 0
+        current_takeout_total = 0
+        target_takeout_total = 0
+
+        daily_improvement_cad = get_takeout_daily_improvement_cad(target_dt.year)
+
+        for store in all_stores:
+            store_id = store.get('store_id', 0)
+            store_takeout = takeout_data.get(store_id, {}) if takeout_data else {}
+
+            prev_month_total = store_takeout.get('prev_year_month_total', 0)
+            prev_month_days = store_takeout.get('prev_year_month_days', 30) or 30
+            current_mtd_total = store_takeout.get('current_mtd_total', 0)
+            current_days = store_takeout.get('current_days', num_days) or num_days
+
+            prev_daily = prev_month_total / prev_month_days if prev_month_days > 0 else 0
+            current_daily = current_mtd_total / current_days if current_days > 0 else 0
+
+            prev_takeout_total += prev_daily
+            current_takeout_total += current_daily
+            target_takeout_total += prev_daily + daily_improvement_cad
+
+        takeout_gap = current_takeout_total - target_takeout_total
+
+        self._write_summary_row(ws, current_row, "外卖收入 (合计)",
+                                prev_takeout_total, target_takeout_total,
+                                current_takeout_total, takeout_gap,
+                                number_format='"$"#,##0.00', notes="日均合计")
+        current_row += 1
+
+        # Merge "加拿大合计" cell across all rows
+        ws.merge_cells(start_row=section_start_row, start_column=1,
+                       end_row=current_row - 1, end_column=1)
+        summary_cell = ws.cell(row=section_start_row, column=1, value="加拿大合计")
+        summary_cell.font = Font(bold=True, size=12, color="FFFFFF")
+        summary_cell.fill = PatternFill(start_color="C00000", end_color="C00000", fill_type="solid")
+        summary_cell.alignment = Alignment(horizontal="center", vertical="center")
+        summary_cell.border = self.thin_border
+
+        # Apply borders to merged area
+        for r in range(section_start_row, current_row):
+            ws.cell(row=r, column=1).border = self.thin_border
+
+        return current_row
+
+    def _write_summary_row(self, ws: Worksheet, row: int, challenge_type: str,
+                           prev_value: Any, target_value: Any, current_value: Any,
+                           gap_value: Any, number_format: str = '0.00',
+                           notes: str = "") -> None:
+        """Write a summary row with special formatting."""
+        # Column B - Challenge type
+        cell_b = ws.cell(row=row, column=2, value=challenge_type)
+        cell_b.fill = self.summary_fill
+        cell_b.alignment = self.center_alignment
+        cell_b.border = self.thin_border
+        cell_b.font = Font(bold=True)
+
+        # Column C - Previous year
+        cell_c = ws.cell(row=row, column=3, value=prev_value)
+        cell_c.fill = self.summary_fill
+        cell_c.alignment = self.center_alignment
+        cell_c.border = self.thin_border
+        cell_c.font = Font(bold=True)
+        if isinstance(prev_value, (int, float)):
+            cell_c.number_format = number_format
+
+        # Column D - Target
+        cell_d = ws.cell(row=row, column=4, value=target_value)
+        cell_d.fill = self.summary_fill
+        cell_d.alignment = self.center_alignment
+        cell_d.border = self.thin_border
+        cell_d.font = Font(bold=True)
+        if isinstance(target_value, (int, float)):
+            cell_d.number_format = number_format
+
+        # Column E - Current year
+        cell_e = ws.cell(row=row, column=5, value=current_value)
+        cell_e.fill = self.summary_fill
+        cell_e.alignment = self.center_alignment
+        cell_e.border = self.thin_border
+        cell_e.font = Font(bold=True)
+        if isinstance(current_value, (int, float)):
+            cell_e.number_format = number_format
+
+        # Column F - Gap (with color)
+        cell_f = ws.cell(row=row, column=6, value=gap_value)
+        cell_f.alignment = self.center_alignment
+        cell_f.border = self.thin_border
+        cell_f.font = Font(bold=True)
+        if isinstance(gap_value, (int, float)):
+            cell_f.number_format = number_format
+            cell_f.fill = self.green_fill if gap_value >= 0 else self.red_fill
+
+        # Column G - Notes
+        cell_g = ws.cell(row=row, column=7, value=notes)
+        cell_g.fill = self.summary_fill
+        cell_g.alignment = self.center_alignment
+        cell_g.border = self.thin_border
+        cell_g.font = Font(size=9, color="666666", bold=True)
 
     def _get_mtd_data(self, start_dt: datetime, end_dt: datetime) -> List[Dict[str, Any]]:
         """Get MTD store performance data from database."""
