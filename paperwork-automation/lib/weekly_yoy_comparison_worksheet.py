@@ -46,7 +46,20 @@ class WeeklyYoYComparisonWorksheetGenerator:
     RED_COLOR = "FFE6E6"
     SUMMARY_COLOR = "FFF3CD"
     EXCLUDED_COLOR = "E0E0E0"
-    STORE_HEADER_COLOR = "4472C4"
+    SEPARATOR_COLOR = "333333"
+
+    # Different colors for each store (8 stores)
+    STORE_COLORS = [
+        "4472C4",  # Store 1 - Blue
+        "ED7D31",  # Store 2 - Orange
+        "A5A5A5",  # Store 3 - Gray
+        "FFC000",  # Store 4 - Gold
+        "5B9BD5",  # Store 5 - Light Blue
+        "70AD47",  # Store 6 - Green
+        "9E480E",  # Store 7 - Brown
+        "7030A0",  # Store 8 - Purple
+    ]
+
     SECTION_COLORS = {
         '翻台率': "FDE9D9",
         '桌数': "DAEEF3",
@@ -80,7 +93,6 @@ class WeeklyYoYComparisonWorksheetGenerator:
         self.red_fill = PatternFill(start_color=self.RED_COLOR, end_color=self.RED_COLOR, fill_type="solid")
         self.summary_fill = PatternFill(start_color=self.SUMMARY_COLOR, end_color=self.SUMMARY_COLOR, fill_type="solid")
         self.excluded_fill = PatternFill(start_color=self.EXCLUDED_COLOR, end_color=self.EXCLUDED_COLOR, fill_type="solid")
-        self.store_header_fill = PatternFill(start_color=self.STORE_HEADER_COLOR, end_color=self.STORE_HEADER_COLOR, fill_type="solid")
 
     @staticmethod
     def _format_date_period(start_dt: datetime, end_dt: datetime) -> str:
@@ -134,12 +146,16 @@ class WeeklyYoYComparisonWorksheetGenerator:
 
             # Add store data (store-centric layout)
             current_row = 3
-            for store in store_data:
+            for store_index, store in enumerate(store_data):
                 current_row = self._add_store_section(
                     ws, store, current_row, num_days,
                     time_segment_data, takeout_data,
-                    target_dt, prev_period, current_period
+                    target_dt, prev_period, current_period,
+                    store_index
                 )
+                # Add separator row between stores (except after last store)
+                if store_index < len(store_data) - 1:
+                    current_row = self._add_separator_row(ws, current_row)
 
             # Apply column widths
             self._apply_column_widths(ws)
@@ -198,7 +214,8 @@ class WeeklyYoYComparisonWorksheetGenerator:
     def _add_store_section(self, ws: Worksheet, store: Dict, start_row: int,
                            num_days: int, time_segment_data: Dict,
                            takeout_data: Dict, target_dt: datetime,
-                           prev_period: str, current_period: str) -> int:
+                           prev_period: str, current_period: str,
+                           store_index: int = 0) -> int:
         """
         Add all challenge data for a single store.
 
@@ -208,6 +225,10 @@ class WeeklyYoYComparisonWorksheetGenerator:
         store_id = store.get('store_id', 0)
         store_name = store.get('store_name', '')
         seating_capacity = STORE_SEATING_CAPACITY.get(store_id, 50)
+
+        # Get store-specific color
+        store_color = self.STORE_COLORS[store_index % len(self.STORE_COLORS)]
+        store_fill = PatternFill(start_color=store_color, end_color=store_color, fill_type="solid")
 
         current_row = start_row
         section_start_row = start_row
@@ -283,18 +304,19 @@ class WeeklyYoYComparisonWorksheetGenerator:
         current_daily_avg = current_mtd_total / current_days if current_days > 0 else 0
         daily_gap = current_daily_avg - daily_target
 
+        # Note: Input data is in CAD, target improvement is $200 USD converted to CAD
         self._write_data_row(ws, current_row, "外卖收入",
                              prev_daily_avg, daily_target, current_daily_avg, daily_gap,
                              "外卖", number_format='"$"#,##0.00',
-                             notes=f"日均 (目标+${daily_improvement_cad:.0f})")
+                             notes="日均 (目标+$200 USD)")
         current_row += 1
 
         # Merge store name cell across all rows
         ws.merge_cells(start_row=section_start_row, start_column=1,
                        end_row=current_row - 1, end_column=1)
         store_cell = ws.cell(row=section_start_row, column=1, value=store_name)
-        store_cell.font = Font(bold=True, size=11)
-        store_cell.fill = self.store_header_fill
+        store_cell.font = Font(bold=True, size=11, color="FFFFFF")
+        store_cell.fill = store_fill
         store_cell.alignment = Alignment(horizontal="center", vertical="center", text_rotation=0)
         store_cell.border = self.thin_border
 
@@ -372,6 +394,23 @@ class WeeklyYoYComparisonWorksheetGenerator:
         }
         for col, width in widths.items():
             ws.column_dimensions[col].width = width
+
+    def _add_separator_row(self, ws: Worksheet, row: int) -> int:
+        """Add a dark separator row between stores."""
+        separator_fill = PatternFill(
+            start_color=self.SEPARATOR_COLOR,
+            end_color=self.SEPARATOR_COLOR,
+            fill_type="solid"
+        )
+        for col in range(1, 8):
+            cell = ws.cell(row=row, column=col, value="")
+            cell.fill = separator_fill
+            cell.border = self.thin_border
+
+        # Set row height to be thin
+        ws.row_dimensions[row].height = 6
+
+        return row + 1
 
     def _get_mtd_data(self, start_dt: datetime, end_dt: datetime) -> List[Dict[str, Any]]:
         """Get MTD store performance data from database."""
