@@ -1077,7 +1077,7 @@ class AutomationMenu:
                 ("g", "Gross Margin Report (毛利报表)", "gross_margin_report"),
                 ("v", "Monthly Beverage Report", "monthly_beverage_report"),
                 ("r", "Monthly Store Revenue & Turnover Compare", "monthly_revenue_compare"),
-                ("w", "Weekly YoY Report (周对比上年表 + Q1挑战)", "weekly_yoy_report"),
+                ("w", "MTD YoY Report (周对比上年表 + 挑战)", "weekly_yoy_report"),
                 ("b", "← Back to Main Menu", "back")
             ]
 
@@ -1934,25 +1934,21 @@ except Exception as e:
         input("\nPress Enter to continue...")
 
     def generate_weekly_yoy_report(self):
-        """Generate weekly year-over-year comparison report with Q1 2026 challenge sheet"""
-        print("📊 WEEKLY YEAR-OVER-YEAR COMPARISON REPORT")
+        """Generate MTD year-over-year comparison report with challenge tracking"""
+        print("📊 MTD YEAR-OVER-YEAR COMPARISON REPORT (周对比上年表)")
         print("=" * 50)
-        print("This will generate a weekly comparison report showing:")
-        print("✅ 周对比上年表 - Weekly YoY comparison with detailed metrics")
-        print("✅ 2026 Q1 挑战 - Q1 2026 challenge tracking (Jan-Mar 2026 only)")
-        print()
-        print("Metrics included:")
-        print("   • 翻台率 (Table Turnover Rate)")
-        print("   • 桌数 (Tables Served)")
-        print("   • 营业额 (Revenue)")
-        print("   • 单桌消费 (Per Table Spending)")
-        print("   • 人均消费 (Per Capita Spending)")
+        print("This will generate a Month-to-Date comparison report showing:")
+        print("✅ 周对比上年表 - MTD YoY comparison with challenge targets")
+        print("✅ 翻台率挑战 - Turnover rate challenge (去年 + 0.16/0.18)")
+        print("✅ 桌数挑战 - Tables challenge derived from turnover")
+        print("✅ 时段挑战 - Time segment challenges")
+        print("✅ 外卖挑战 - Takeout revenue challenge")
         print()
 
         # Get target date from user
-        print("📅 Enter target date (end of 7-day period):")
+        print("📅 Enter target date:")
         print("Format: YYYY-MM-DD (e.g., 2026-01-07)")
-        print("The report will cover: [target_date - 6 days] to [target_date]")
+        print("The report will cover: 1st of month to target_date (MTD)")
 
         date_input = input("\nEnter date: ").strip()
 
@@ -1970,12 +1966,12 @@ except Exception as e:
                 input("Press Enter to continue...")
                 return
 
-        # Calculate week range for display
-        from datetime import datetime, timedelta
+        # Calculate MTD range for display
+        from datetime import datetime
         target_dt = datetime.strptime(target_date, '%Y-%m-%d')
-        start_dt = target_dt - timedelta(days=6)
+        start_dt = target_dt.replace(day=1)
 
-        print(f"\n📅 Week range: {start_dt.strftime('%Y-%m-%d')} to {target_date}")
+        print(f"\n📅 MTD range: {start_dt.strftime('%Y-%m-%d')} to {target_date} ({target_dt.day} days)")
 
         # Check if Q1 2026
         if target_dt.year == 2026 and 1 <= target_dt.month <= 3:
