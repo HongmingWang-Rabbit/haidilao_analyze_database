@@ -33,7 +33,9 @@ from configs.challenge_targets import (
     AFTERNOON_SLOW_TARGETS,
     LATE_NIGHT_TARGETS,
     TIME_SEGMENT_LABELS,
-    TIME_SEGMENT_CONFIG
+    TIME_SEGMENT_CONFIG,
+    # Takeout challenge
+    get_takeout_daily_improvement_cad
 )
 
 
@@ -141,8 +143,14 @@ class WeeklyYoYComparisonWorksheetGenerator:
 
             # Add time segment challenge section below main section
             time_segment_start_row = summary_row + 1
-            self._add_time_segment_challenge_section(
+            time_segment_end_row = self._add_time_segment_challenge_section(
                 ws, target_date, store_data, time_segment_start_row, num_days
+            )
+
+            # Add takeout challenge section below time segment section
+            takeout_start_row = time_segment_end_row + 2
+            self._add_takeout_challenge_section(
+                ws, target_date, store_data, takeout_start_row, num_days
             )
 
             self.logger.info(
@@ -703,3 +711,119 @@ class WeeklyYoYComparisonWorksheetGenerator:
             return leftover * morning_turnover / total_busy_turnover
         else:  # evening
             return leftover * evening_turnover / total_busy_turnover
+
+    def _add_takeout_challenge_section(self, ws: Worksheet, target_date: str,
+                                        store_data: List[Dict[str, Any]],
+                                        start_row: int, num_days: int) -> int:
+        """
+        Add takeout challenge section (外卖挑战).
+
+        Target Calculation:
+        - Daily Target = (Last year same month total / days in month) + $200 USD converted to CAD
+        - $200 USD / exchange_rate = CAD improvement
+
+        Args:
+            ws: Worksheet to add section to
+            target_date: Target date string
+            store_data: Store performance data
+            start_row: Starting row for this section
+            num_days: Number of days in MTD period
+
+        Returns:
+            Next available row after this section
+        """
+        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
+        current_year = target_dt.year
+        prev_year = current_year - 1
+
+        # Get takeout MTD data
+        takeout_data = self.data_provider.get_takeout_mtd_data(target_date)
+
+        if not takeout_data:
+            self.logger.warning("No takeout data available")
+            return start_row
+
+        # Calculate date periods for headers
+        start_dt = target_dt.replace(day=1)
+        current_period = self._format_date_period(start_dt, target_dt)
+
+        # Get daily improvement in CAD
+        daily_improvement_cad = get_takeout_daily_improvement_cad(current_year)
+
+        current_row = start_row
+
+        # Section title
+        title_cell = ws.cell(row=current_row, column=1, value="外卖挑战")
+        title_cell.font = Font(bold=True, size=12)
+        current_row += 2
+
+        # Header row
+        header_cell = ws.cell(row=current_row, column=1, value="外卖收入挑战")
+        header_cell.font = Font(bold=True, color="FFFFFF")
+        header_cell.fill = self.header_fill
+        ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=7)
+        current_row += 1
+
+        # Column headers
+        headers = [
+            "门店名称",
+            f"{prev_year}年{target_dt.month}月总计",
+            "去年日均",
+            "日均目标",
+            f"{current_period}总计",
+            "今年日均",
+            "日均差距"
+        ]
+
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=current_row, column=col, value=header)
+            cell.font = self.header_font
+            cell.fill = self.header_fill
+            cell.alignment = self.center_alignment
+            cell.border = self.thin_border
+
+        current_row += 1
+
+        # Data rows
+        for store in store_data:
+            store_id = store.get('store_id', 0)
+            store_name = store.get('store_name', '')
+
+            # Get takeout data for this store
+            store_takeout = takeout_data.get(store_id, {})
+
+            prev_month_total = store_takeout.get('prev_year_month_total', 0)
+            prev_month_days = store_takeout.get('prev_year_month_days', 30)
+            current_mtd_total = store_takeout.get('current_mtd_total', 0)
+            current_days = store_takeout.get('current_days', num_days) or num_days
+
+            # Calculate metrics
+            prev_daily_avg = prev_month_total / prev_month_days if prev_month_days > 0 else 0
+            daily_target = prev_daily_avg + daily_improvement_cad
+            current_daily_avg = current_mtd_total / current_days if current_days > 0 else 0
+            daily_gap = current_daily_avg - daily_target
+            achieved = daily_gap >= 0
+
+            # Write row
+            ws.cell(row=current_row, column=1, value=store_name)
+            ws.cell(row=current_row, column=2, value=prev_month_total)
+            ws.cell(row=current_row, column=3, value=prev_daily_avg)
+            ws.cell(row=current_row, column=4, value=daily_target)
+            ws.cell(row=current_row, column=5, value=current_mtd_total)
+            ws.cell(row=current_row, column=6, value=current_daily_avg)
+
+            # Gap with color
+            gap_cell = ws.cell(row=current_row, column=7, value=daily_gap)
+            gap_cell.fill = self.green_fill if achieved else self.red_fill
+
+            # Apply formatting
+            for col in range(1, 8):
+                cell = ws.cell(row=current_row, column=col)
+                cell.border = self.thin_border
+                cell.alignment = self.center_alignment
+                if col in [2, 3, 4, 5, 6, 7]:
+                    cell.number_format = '#,##0.00'
+
+            current_row += 1
+
+        return current_row

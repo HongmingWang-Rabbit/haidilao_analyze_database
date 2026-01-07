@@ -981,6 +981,7 @@ class AutomationMenu:
                 ("i", "📊 Inventory Calculation Data (All Months)",
                  "inventory_calculation"),
                 ("t", "🏦 Bank Transaction Processing (Daily)", "bank_transactions"),
+                ("w", "🥡 Takeout Revenue Data (File → Database)", "takeout_revenue"),
                 ("b", "← Back to Main Menu", "back")
             ]
 
@@ -1027,6 +1028,8 @@ class AutomationMenu:
                 self.extract_inventory_calculation_data()
             elif choice == 't':
                 self.process_bank_transactions()
+            elif choice == 'w':
+                self.extract_takeout_revenue()
             else:
                 print("❌ Invalid choice. Please try again.")
                 input("Press Enter to continue...")
@@ -2708,6 +2711,50 @@ except Exception as e:
             print("   • Items needing confirmation marked as '待确认'")
         else:
             print("❌ Bank statement processing failed. Please check the logs.")
+
+        input("Press Enter to continue...")
+
+    def extract_takeout_revenue(self):
+        """Extract takeout revenue data from Excel files"""
+        print("🥡 TAKEOUT REVENUE EXTRACTION")
+        print("=" * 40)
+        print("This will extract takeout revenue data from Excel files")
+        print("in Input/daily_report/takeout_report/ and insert to database.")
+        print()
+        print("📂 Expected files: 2025.XLSX, 2026.XLSX")
+        print()
+
+        # Ask for year (optional)
+        print("Enter year to process (2025, 2026) or press Enter for all:")
+        year_input = input("Year: ").strip()
+
+        year = None
+        if year_input:
+            try:
+                year = int(year_input)
+                if year not in [2025, 2026]:
+                    print("Invalid year. Processing all files.")
+                    year = None
+            except ValueError:
+                print("Invalid input. Processing all files.")
+
+        confirm = input("\n🚀 Start extraction? (y/n): ").lower()
+        if confirm != 'y':
+            print("Cancelled.")
+            input("Press Enter to continue...")
+            return
+
+        # Build and run command
+        year_arg = f" --year {year}" if year else ""
+        command = f'{self.python_cmd} -c "import sys; sys.path.insert(0, \\".\\"); from lib.takeout_extraction import extract_takeout_revenue; extract_takeout_revenue({f\"year={year}\" if year else \"\"})"'
+
+        success = self.run_command(command, "Takeout Revenue Extraction")
+
+        if success:
+            print()
+            print("🎉 Takeout revenue extraction completed!")
+        else:
+            print("❌ Takeout extraction failed. Please check the logs.")
 
         input("Press Enter to continue...")
 

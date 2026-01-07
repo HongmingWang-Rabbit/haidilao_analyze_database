@@ -21,7 +21,11 @@ from .q1_2026_targets import (
     get_store_turnover_target,
     get_store_tables_target,
     is_store_excluded_from_regional,
-    is_q1_2026_active
+    is_q1_2026_active,
+    # Takeout challenge
+    TAKEOUT_EXCHANGE_RATES,
+    TAKEOUT_DAILY_IMPROVEMENT_USD,
+    get_takeout_daily_improvement_cad
 )
 
 __all__ = [
@@ -40,5 +44,9 @@ __all__ = [
     'get_store_turnover_target',
     'get_store_tables_target',
     'is_store_excluded_from_regional',
-    'is_q1_2026_active'
+    'is_q1_2026_active',
+    # Takeout challenge
+    'TAKEOUT_EXCHANGE_RATES',
+    'TAKEOUT_DAILY_IMPROVEMENT_USD',
+    'get_takeout_daily_improvement_cad'
 ]

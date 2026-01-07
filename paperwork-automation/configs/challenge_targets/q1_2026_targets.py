@@ -282,6 +282,36 @@ def get_store_target_notes(store_id: int) -> str:
 
 
 # ============================================================================
+# TAKEOUT CHALLENGE CONFIGURATION
+# ============================================================================
+
+# Exchange rates for converting $200 USD daily improvement to CAD
+# Formula: $200 USD / exchange_rate = CAD amount
+# Rate meaning: 1 CAD = X USD
+TAKEOUT_EXCHANGE_RATES: Dict[int, float] = {
+    2025: 0.6952,    # 1 CAD = 0.6952 USD (so $200 USD = $287.68 CAD)
+    2026: 0.728597,  # 1 CAD = 0.728597 USD (so $200 USD = $274.50 CAD)
+}
+
+# Daily takeout improvement target in USD
+TAKEOUT_DAILY_IMPROVEMENT_USD = 200
+
+
+def get_takeout_daily_improvement_cad(year: int) -> float:
+    """
+    Calculate daily takeout improvement target in CAD.
+
+    Args:
+        year: Target year (2025 or 2026)
+
+    Returns:
+        Daily improvement target in CAD ($200 USD converted)
+    """
+    rate = TAKEOUT_EXCHANGE_RATES.get(year, TAKEOUT_EXCHANGE_RATES[2026])
+    return TAKEOUT_DAILY_IMPROVEMENT_USD / rate
+
+
+# ============================================================================
 # EXPORTS
 # ============================================================================
 
@@ -303,5 +333,9 @@ __all__ = [
     'get_store_tables_target',
     'is_store_excluded_from_regional',
     'is_q1_2026_active',
-    'get_store_target_notes'
+    'get_store_target_notes',
+    # Takeout challenge
+    'TAKEOUT_EXCHANGE_RATES',
+    'TAKEOUT_DAILY_IMPROVEMENT_USD',
+    'get_takeout_daily_improvement_cad'
 ]

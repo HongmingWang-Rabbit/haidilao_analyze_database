@@ -1499,3 +1499,93 @@ class ReportDataProvider:
             import traceback
             traceback.print_exc()
             return {}
+
+    def get_takeout_mtd_data(self, target_date: str):
+        """
+        Get MTD takeout revenue data for challenge calculations.
+
+        Args:
+            target_date: Target date in YYYY-MM-DD format
+
+        Returns:
+            Dict with store_id as key, containing:
+            - store_name: Store name
+            - current_mtd_total: Current year MTD takeout total
+            - current_days: Number of days with data in current MTD
+            - prev_year_month_total: Previous year same month total
+            - prev_year_days: Number of days with data in prev year month
+            - prev_year_month_days: Total days in previous year same month
+        """
+        from datetime import datetime
+        import calendar
+
+        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
+        current_year = target_dt.year
+        current_month = target_dt.month
+        target_day = target_dt.day
+        prev_year = current_year - 1
+
+        # Get days in previous year same month
+        prev_year_month_days = calendar.monthrange(prev_year, current_month)[1]
+
+        sql = """
+        WITH current_mtd AS (
+            SELECT
+                store_id,
+                SUM(amount) as total_amount,
+                COUNT(*) as days_count
+            FROM daily_takeout_revenue
+            WHERE EXTRACT(YEAR FROM date) = %s
+                AND EXTRACT(MONTH FROM date) = %s
+                AND EXTRACT(DAY FROM date) <= %s
+            GROUP BY store_id
+        ),
+        prev_year_month AS (
+            SELECT
+                store_id,
+                SUM(amount) as total_amount,
+                COUNT(*) as days_count
+            FROM daily_takeout_revenue
+            WHERE EXTRACT(YEAR FROM date) = %s
+                AND EXTRACT(MONTH FROM date) = %s
+            GROUP BY store_id
+        )
+        SELECT
+            s.id as store_id,
+            s.name as store_name,
+            COALESCE(cm.total_amount, 0) as current_mtd_total,
+            COALESCE(cm.days_count, 0) as current_days,
+            COALESCE(pm.total_amount, 0) as prev_year_month_total,
+            COALESCE(pm.days_count, 0) as prev_year_days
+        FROM store s
+        LEFT JOIN current_mtd cm ON s.id = cm.store_id
+        LEFT JOIN prev_year_month pm ON s.id = pm.store_id
+        WHERE s.id BETWEEN 1 AND 8
+        ORDER BY s.id
+        """
+
+        try:
+            results = self.db_manager.fetch_all(sql, (
+                current_year, current_month, target_day,  # current_mtd
+                prev_year, current_month                   # prev_year_month
+            ))
+
+            store_data = {}
+            for row in results:
+                store_id = row['store_id']
+                store_data[store_id] = {
+                    'store_name': row['store_name'],
+                    'current_mtd_total': float(row['current_mtd_total'] or 0),
+                    'current_days': int(row['current_days'] or 0),
+                    'prev_year_month_total': float(row['prev_year_month_total'] or 0),
+                    'prev_year_days': int(row['prev_year_days'] or 0),
+                    'prev_year_month_days': prev_year_month_days
+                }
+
+            return store_data
+
+        except Exception as e:
+            print(f"❌ Error getting takeout MTD data: {e}")
+            import traceback
+            traceback.print_exc()
+            return {}
