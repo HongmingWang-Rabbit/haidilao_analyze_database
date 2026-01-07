@@ -752,15 +752,17 @@ class WeeklyYoYComparisonWorksheetGenerator:
 
         current_row = start_row
 
-        # Section title
+        # Section title with prominent styling
         title_cell = ws.cell(row=current_row, column=1, value="外卖挑战")
-        title_cell.font = Font(bold=True, size=12)
+        title_cell.font = Font(bold=True, size=14)
         current_row += 2
 
-        # Header row
-        header_cell = ws.cell(row=current_row, column=1, value="外卖收入挑战")
+        # Header row - merged title
+        header_cell = ws.cell(row=current_row, column=1, value="外卖收入挑战 (日均目标 = 去年日均 + $274.50 CAD)")
         header_cell.font = Font(bold=True, color="FFFFFF")
         header_cell.fill = self.header_fill
+        header_cell.alignment = self.center_alignment
+        header_cell.border = self.thin_border
         ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=7)
         current_row += 1
 
@@ -783,6 +785,12 @@ class WeeklyYoYComparisonWorksheetGenerator:
             cell.border = self.thin_border
 
         current_row += 1
+        data_start_row = current_row
+
+        # Track totals for summary row
+        total_prev_month = 0
+        total_current_mtd = 0
+        stores_achieved = 0
 
         # Data rows
         for store in store_data:
@@ -797,12 +805,19 @@ class WeeklyYoYComparisonWorksheetGenerator:
             current_mtd_total = store_takeout.get('current_mtd_total', 0)
             current_days = store_takeout.get('current_days', num_days) or num_days
 
+            # Accumulate totals
+            total_prev_month += prev_month_total
+            total_current_mtd += current_mtd_total
+
             # Calculate metrics
             prev_daily_avg = prev_month_total / prev_month_days if prev_month_days > 0 else 0
             daily_target = prev_daily_avg + daily_improvement_cad
             current_daily_avg = current_mtd_total / current_days if current_days > 0 else 0
             daily_gap = current_daily_avg - daily_target
             achieved = daily_gap >= 0
+
+            if achieved:
+                stores_achieved += 1
 
             # Write row
             ws.cell(row=current_row, column=1, value=store_name)
@@ -821,9 +836,29 @@ class WeeklyYoYComparisonWorksheetGenerator:
                 cell = ws.cell(row=current_row, column=col)
                 cell.border = self.thin_border
                 cell.alignment = self.center_alignment
-                if col in [2, 3, 4, 5, 6, 7]:
-                    cell.number_format = '#,##0.00'
+                if col == 2 or col == 5:  # Total columns - currency with $
+                    cell.number_format = '"$"#,##0.00'
+                elif col in [3, 4, 6, 7]:  # Daily avg columns - currency with $
+                    cell.number_format = '"$"#,##0.00'
 
             current_row += 1
+
+        # Summary row
+        ws.cell(row=current_row, column=1, value="合计")
+        ws.cell(row=current_row, column=2, value=total_prev_month)
+        ws.cell(row=current_row, column=5, value=total_current_mtd)
+        ws.cell(row=current_row, column=7, value=f"{stores_achieved}/{len(store_data)} 达成")
+
+        # Style summary row
+        for col in range(1, 8):
+            cell = ws.cell(row=current_row, column=col)
+            cell.border = self.thin_border
+            cell.alignment = self.center_alignment
+            cell.fill = self.summary_fill
+            cell.font = Font(bold=True)
+            if col == 2 or col == 5:
+                cell.number_format = '"$"#,##0.00'
+
+        current_row += 1
 
         return current_row

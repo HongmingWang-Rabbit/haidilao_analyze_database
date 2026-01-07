@@ -2745,8 +2745,10 @@ except Exception as e:
             return
 
         # Build and run command
-        year_arg = f" --year {year}" if year else ""
-        command = f'{self.python_cmd} -c "import sys; sys.path.insert(0, \\".\\"); from lib.takeout_extraction import extract_takeout_revenue; extract_takeout_revenue({f\"year={year}\" if year else \"\"})"'
+        if year:
+            command = f'{self.python_cmd} -c "import sys; sys.path.insert(0, \'.\'); from lib.takeout_extraction import extract_takeout_revenue; extract_takeout_revenue(year={year})"'
+        else:
+            command = f'{self.python_cmd} -c "import sys; sys.path.insert(0, \'.\'); from lib.takeout_extraction import extract_takeout_revenue; extract_takeout_revenue()"'
 
         success = self.run_command(command, "Takeout Revenue Extraction")
 
