@@ -343,35 +343,61 @@ python3 scripts/generate_monthly_report.py --date 2025-06-01
 
 **Output:** `output/database_report_YYYY_MM_DD.xlsx`
 
-### **Weekly YoY MTD Report (周对比上年表)**
+### **MTD YoY Report (周对比上年表)**
 
-Generate MTD (Month-to-Date) year-over-year comparison reports with Q1 2026 challenge tracking:
+Generate MTD (Month-to-Date) year-over-year comparison reports with challenge tracking:
 
 ```bash
 # Direct command
 python3 scripts/generate_weekly_yoy_report.py --target-date 2026-01-07
 
-# With custom output directory
-python3 scripts/generate_weekly_yoy_report.py --target-date 2026-01-07 --output-dir ./output/reports
+# Via automation menu
+python3 scripts/automation-menu.py
+# Select: 📊 Single Report Generation → w) MTD YoY Report
 ```
 
-**Generated Report Structure:**
+**Generated Report Structure (Store-Centric Layout):**
 
-- **周对比上年表 (MTD YoY Comparison)**:
-  - **翻台率挑战**: Previous year MTD turnover, target (+0.18), current MTD turnover, gap
-  - **桌数挑战**: Tables derived from turnover rate × seating capacity × days
-  - **时段挑战 (Time Segment Challenge)**:
-    - Low peak times (14:00-16:59, 22:00-07:59): Hardcoded daily improvement targets
-    - High peak times (08:00-13:59, 17:00-21:59): Leftover targets distributed proportionally
-    - Daily and total progress tracking with color-coded indicators
+Each store has 7 rows with all challenges grouped together:
+
+| 门店 | 挑战类型 | 去年数据 | 目标 | 今年数据 | 差距 | 备注 |
+|------|----------|----------|------|----------|------|------|
+| 加拿大一店 (Blue) | 翻台率 | 5.20 | 5.38 | 5.23 | -0.15 | |
+| | 桌数 | 826 | 854 | 830 | -24 | |
+| | 14:00-16:59 低峰 | 45.67 | 48.67 | 37.67 | -11 | 日均桌数 |
+| | 22:00-07:59 低峰 | 51.67 | 54.67 | 48.33 | -6.33 | 日均桌数 |
+| | 08:00-13:59 高峰 | 62 | 63.24 | 66.33 | +3.10 | 日均桌数 |
+| | 17:00-21:59 高峰 | 115.67 | 117.97 | 124 | +6.03 | 日均桌数 |
+| | 外卖收入 | $2,921 | $3,196 | $3,164 | -$31 | 日均 +$200 USD |
+| --- | (Separator) | --- | --- | --- | --- | --- |
+| 加拿大二店 (Orange) | ... | ... | ... | ... | ... | ... |
+| ... | | | | | | |
+| **加拿大合计** (Red) | 翻台率 (加权平均) | 5.22 | 5.40 | 3.97 | -1.44 | 不含8店 |
+
+**Challenge Types:**
+- **翻台率挑战**: Previous year MTD turnover, target (+0.18), current MTD turnover, gap
+- **桌数挑战**: Tables derived from turnover rate × seating capacity × days
+- **时段挑战**: Time segment daily improvement targets (slow/busy periods)
+- **外卖挑战**: Takeout revenue daily target = last year daily avg + $200 USD (converted to CAD)
 
 **Key Features:**
 
-- **📊 MTD Calculations**: Compares month-to-date performance vs same period last year
+- **🏪 Store-Centric Layout**: All challenges grouped by store with merged store name column
+- **🎨 Store Colors**: 8 unique colors per store (Blue, Orange, Gray, Gold, Light Blue, Green, Brown, Purple)
+- **📊 Canada Summary**: Aggregated totals at end (翻台率/桌数 exclude Store 8)
+- **🥡 Takeout Challenge**: Daily revenue targets with USD to CAD conversion
 - **🎯 Challenge Targets**: Configurable via `configs/challenge_targets/q1_2026_targets.py`
-- **🏪 Store-Specific Rules**: Store 6 fixed target (road construction), Store 8 excluded (new store)
-- **⏰ Time Segment Analysis**: Separate targets for slow and busy time periods
 - **🎨 Visual Indicators**: Green (target met) / Red (target not met) color coding
+
+**Takeout Data Extraction:**
+
+```bash
+# Extract takeout revenue from Excel files to database
+python3 scripts/automation-menu.py
+# Select: w) Takeout Revenue Data (File → Database)
+
+# Data source: Input/daily_report/takeout_report/2025.XLSX, 2026.XLSX
+```
 
 **Configuration (configs/challenge_targets/):**
 
@@ -379,7 +405,11 @@ python3 scripts/generate_weekly_yoy_report.py --target-date 2026-01-07 --output-
 # Turnover improvement target
 DEFAULT_TURNOVER_IMPROVEMENT = 0.18  # +0.18 over last year
 
-# Slow time targets (daily table improvement)
+# Takeout challenge: $200 USD daily improvement
+TAKEOUT_DAILY_IMPROVEMENT_USD = 200
+TAKEOUT_EXCHANGE_RATES = {2025: 0.6952, 2026: 0.728597}  # 1 CAD = X USD
+
+# Time segment targets (daily table improvement)
 AFTERNOON_SLOW_TARGETS = {1: 3, 2: 2, 3: 3, 4: 4, 5: 3, 6: 3, 7: 4, 8: 40}
 LATE_NIGHT_TARGETS = {1: 3, 2: 2, 3: 3, 4: 4, 5: 3, 6: 3, 7: 4, 8: 44}
 

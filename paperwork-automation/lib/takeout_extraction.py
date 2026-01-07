@@ -11,7 +11,6 @@ Data Source Format:
 - Amount is negative (revenue/credit), needs to be converted to positive
 """
 
-import re
 import logging
 import pandas as pd
 from pathlib import Path
@@ -19,21 +18,10 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 from utils.database import get_database_manager
+from lib.config import STORE_NAME_MAPPING
 
 # Configure logging
 logger = logging.getLogger(__name__)
-
-# Store name pattern to ID mapping
-STORE_NAME_PATTERNS = {
-    r'加拿大一店': 1,
-    r'加拿大二店': 2,
-    r'加拿大三店': 3,
-    r'加拿大四店': 4,
-    r'加拿大五店': 5,
-    r'加拿大六店': 6,
-    r'加拿大七店': 7,
-    r'加拿大八店': 8,
-}
 
 
 def extract_store_id_from_text(text: str) -> Optional[int]:
@@ -50,8 +38,9 @@ def extract_store_id_from_text(text: str) -> Optional[int]:
         return None
 
     text_str = str(text)
-    for pattern, store_id in STORE_NAME_PATTERNS.items():
-        if re.search(pattern, text_str):
+    # Use centralized store name mapping from lib/config.py
+    for store_name, store_id in STORE_NAME_MAPPING.items():
+        if store_name in text_str:
             return store_id
 
     return None
