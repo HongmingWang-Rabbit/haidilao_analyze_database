@@ -97,6 +97,16 @@ class WeeklyYoYReportGenerator:
         except Exception as e:
             print(f"  ❌ Error generating MTD YoY worksheet: {e}")
 
+        # Generate detailed daily data worksheet
+        print("Generating 每日详细数据 worksheet...")
+        try:
+            detail_ws = self.weekly_yoy_generator.generate_detail_worksheet(wb, self.target_date)
+            if detail_ws:
+                worksheets_generated.append("每日详细数据")
+                print("  ✅ 每日详细数据 worksheet generated")
+        except Exception as e:
+            print(f"  ❌ Error generating detail worksheet: {e}")
+
         if not worksheets_generated:
             print("❌ No worksheets were generated")
             return None

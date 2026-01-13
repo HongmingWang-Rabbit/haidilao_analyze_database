@@ -981,7 +981,7 @@ class AutomationMenu:
                 ("i", "📊 Inventory Calculation Data (All Months)",
                  "inventory_calculation"),
                 ("t", "🏦 Bank Transaction Processing (Daily)", "bank_transactions"),
-                ("w", "🥡 Takeout Revenue Data (File → Database)", "takeout_revenue"),
+                ("w", "🥡 Takeout Revenue Info (Now from Daily Reports)", "takeout_revenue"),
                 ("b", "← Back to Main Menu", "back")
             ]
 
@@ -1035,10 +1035,34 @@ class AutomationMenu:
                 input("Press Enter to continue...")
 
     def extract_with_file_selection(self, extraction_type: str, description: str):
-        """Extract data with file selection"""
-        excel_file = self.get_excel_file()
+        """Extract data with auto-detection or file selection"""
+        # Auto-detect folders for common extraction types
+        auto_detect_folders = {
+            'daily_store': self.input_folder / "daily_report" / "daily_store_report",
+            'time_segment': self.input_folder / "daily_report" / "time_segment_store_report",
+        }
+
+        excel_file = None
+
+        # Try auto-detection for supported types
+        if extraction_type in auto_detect_folders:
+            folder = auto_detect_folders[extraction_type]
+            if folder.exists():
+                files = list(folder.glob("*.xls*")) + list(folder.glob("*.XLS*"))
+                files = [f for f in files if not f.name.startswith("~$")]
+                if files:
+                    # Sort by modification time, newest first
+                    files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+                    excel_file = str(files[0])
+                    print(f"📂 Auto-detected file: {files[0].name}")
+                    if len(files) > 1:
+                        print(f"   ({len(files)} files found, using newest)")
+
+        # Fall back to manual selection if no file found
         if not excel_file:
-            return
+            excel_file = self.get_excel_file()
+            if not excel_file:
+                return
 
         commands = {
             'daily_store': f'{self.python_cmd} scripts/extract_all.py "{excel_file}" --daily-only --direct-db',
@@ -2711,48 +2735,27 @@ except Exception as e:
         input("Press Enter to continue...")
 
     def extract_takeout_revenue(self):
-        """Extract takeout revenue data from Excel files"""
-        print("🥡 TAKEOUT REVENUE EXTRACTION")
+        """Info about takeout revenue extraction (now from daily reports)"""
+        print("🥡 TAKEOUT REVENUE EXTRACTION INFO")
         print("=" * 40)
-        print("This will extract takeout revenue data from Excel files")
-        print("in Input/daily_report/takeout_report/ and insert to database.")
         print()
-        print("📂 Expected files: 2025.XLSX, 2026.XLSX")
+        print("ℹ️  IMPORTANT: Takeout revenue is now extracted automatically")
+        print("   from daily store reports during daily data extraction.")
         print()
-
-        # Ask for year (optional)
-        print("Enter year to process (2025, 2026) or press Enter for all:")
-        year_input = input("Year: ").strip()
-
-        year = None
-        if year_input:
-            try:
-                year = int(year_input)
-                if year not in [2025, 2026]:
-                    print("Invalid year. Processing all files.")
-                    year = None
-            except ValueError:
-                print("Invalid input. Processing all files.")
-
-        confirm = input("\n🚀 Start extraction? (y/n): ").lower()
-        if confirm != 'y':
-            print("Cancelled.")
-            input("Press Enter to continue...")
-            return
-
-        # Build and run command
-        if year:
-            command = f'{self.python_cmd} -c "import sys; sys.path.insert(0, \'.\'); from lib.takeout_extraction import extract_takeout_revenue; extract_takeout_revenue(year={year})"'
-        else:
-            command = f'{self.python_cmd} -c "import sys; sys.path.insert(0, \'.\'); from lib.takeout_extraction import extract_takeout_revenue; extract_takeout_revenue()"'
-
-        success = self.run_command(command, "Takeout Revenue Extraction")
-
-        if success:
-            print()
-            print("🎉 Takeout revenue extraction completed!")
-        else:
-            print("❌ Takeout extraction failed. Please check the logs.")
+        print("📂 Data Source:")
+        print("   Input/daily_report/daily_store_report/")
+        print("   Column: '营业收入(外卖)(不含税)'")
+        print()
+        print("📝 How it works:")
+        print("   1. When you run 'Daily Store Report' extraction")
+        print("   2. The takeout revenue column is automatically extracted")
+        print("   3. Data is inserted into 'daily_takeout_revenue' table")
+        print()
+        print("❌ The separate 'takeout_report' folder is no longer needed.")
+        print()
+        print("✅ To extract takeout data, simply run:")
+        print("   Option '1' - Daily Store Report from the extraction menu")
+        print()
 
         input("Press Enter to continue...")
 

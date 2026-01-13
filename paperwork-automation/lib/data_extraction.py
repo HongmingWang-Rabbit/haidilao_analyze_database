@@ -369,7 +369,9 @@ def transform_daily_report_data(df):
             'revenue_tax_not_included': safe_float_conversion(row['营业收入(不含税)']),
             'takeout_tables': safe_float_conversion(row['营业桌数(考核)(外卖)']),
             'customers': safe_float_conversion(row['就餐人数']),
-            'discount_total': safe_float_conversion(row['优惠总金额(不含税)'])
+            'discount_total': safe_float_conversion(row['优惠总金额(不含税)']),
+            # Takeout revenue from daily store report (replaces separate takeout_report folder)
+            'takeout_revenue': safe_float_conversion(row.get('营业收入(外卖)(不含税)', 0))
         }
 
         transformed_data.append(daily_data)
@@ -750,13 +752,13 @@ def save_discount_details(data, db_manager):
                     discount_type_id = cursor.fetchone()['id']
                 else:
                     discount_type_id = result['id']
-                
+
                 # Insert discount details
                 inserted = 0
                 for record in data:
                     if record.get('discount_total', 0) > 0:
                         cursor.execute("""
-                            INSERT INTO daily_discount_detail 
+                            INSERT INTO daily_discount_detail
                             (store_id, date, discount_type_id, discount_amount, discount_count)
                             VALUES (%s, %s, %s, %s, %s)
                             ON CONFLICT (store_id, date, discount_type_id) DO UPDATE
@@ -771,12 +773,60 @@ def save_discount_details(data, db_manager):
                             1  # Default count as we don't have detailed info
                         ))
                         inserted += 1
-                
+
                 conn.commit()
                 print(f"   ✅ Saved {inserted} discount records")
-                
+
     except Exception as e:
         print(f"   ⚠️  Error saving discount details: {e}")
+
+
+def save_takeout_revenue(data, db_manager):
+    """
+    Save takeout revenue to daily_takeout_revenue table.
+
+    Extracts takeout_revenue field from daily report data and inserts into
+    the daily_takeout_revenue table. This replaces the standalone takeout_report
+    folder extraction.
+    """
+    try:
+        with db_manager.get_connection() as conn:
+            with conn.cursor() as cursor:
+                inserted = 0
+                updated = 0
+
+                for record in data:
+                    takeout_revenue = record.get('takeout_revenue', 0)
+                    # Only insert if there's actual revenue data
+                    if takeout_revenue is None:
+                        continue
+
+                    cursor.execute("""
+                        INSERT INTO daily_takeout_revenue (store_id, date, amount, currency)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (store_id, date) DO UPDATE SET
+                            amount = EXCLUDED.amount,
+                            currency = EXCLUDED.currency,
+                            updated_at = CURRENT_TIMESTAMP
+                        RETURNING (xmax = 0) AS inserted
+                    """, (
+                        record['store_id'],
+                        record['date'],
+                        takeout_revenue,
+                        'CAD'
+                    ))
+
+                    result = cursor.fetchone()
+                    if result and (result.get('inserted', False) if isinstance(result, dict) else result[0]):
+                        inserted += 1
+                    else:
+                        updated += 1
+
+                conn.commit()
+                print(f"   ✅ Takeout revenue: {inserted} new, {updated} updated")
+
+    except Exception as e:
+        print(f"   ⚠️  Error saving takeout revenue: {e}")
 
 
 def insert_daily_data_to_database(data, is_test=False):
@@ -851,6 +901,11 @@ def insert_daily_data_to_database(data, is_test=False):
                 if any(record.get('discount_total', 0) > 0 for record in data):
                     print("\n📊 Saving discount details...")
                     save_discount_details(data, db_manager)
+
+                # Save takeout revenue (from daily store report)
+                if any(record.get('takeout_revenue') is not None for record in data):
+                    print("\n📦 Saving takeout revenue...")
+                    save_takeout_revenue(data, db_manager)
 
                 return True
 

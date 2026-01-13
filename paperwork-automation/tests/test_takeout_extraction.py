@@ -1,15 +1,25 @@
 #!/usr/bin/env python3
-"""Tests for takeout revenue extraction module."""
+"""
+Tests for takeout revenue extraction module.
+
+DEPRECATED: This test module tests the deprecated takeout_extraction module.
+Takeout revenue is now extracted from daily store reports via data_extraction.py.
+See lib/data_extraction.py: transform_daily_report_data() and save_takeout_revenue()
+"""
 
 import unittest
 import pandas as pd
 import sys
+import warnings
 from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from lib.takeout_extraction import extract_store_id_from_text, transform_takeout_data
+# Suppress deprecation warning for tests
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from lib.takeout_extraction import extract_store_id_from_text, transform_takeout_data
 
 
 class TestTakeoutExtraction(unittest.TestCase):

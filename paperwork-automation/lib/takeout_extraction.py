@@ -2,6 +2,17 @@
 """
 Takeout Revenue Data Extraction Module
 
+DEPRECATED: This module is deprecated as of January 2026.
+Takeout revenue is now extracted directly from daily store reports during
+the daily data extraction process.
+
+See: lib/data_extraction.py - transform_daily_report_data() and save_takeout_revenue()
+Column: '营业收入(外卖)(不含税)' in daily_store_report files
+
+The Input/daily_report/takeout_report/ folder is no longer needed.
+
+---
+Legacy Documentation (for reference):
 Extracts daily takeout revenue data from Excel files in Input/daily_report/takeout_report/
 and inserts into daily_takeout_revenue database table.
 
@@ -10,6 +21,14 @@ Data Source Format:
 - Text format: "MM-DD日加拿大X店外卖收入" where X is store number (Chinese)
 - Amount is negative (revenue/credit), needs to be converted to positive
 """
+
+import warnings
+warnings.warn(
+    "takeout_extraction module is deprecated. "
+    "Takeout revenue is now extracted from daily store reports via data_extraction.py",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 import logging
 import pandas as pd
