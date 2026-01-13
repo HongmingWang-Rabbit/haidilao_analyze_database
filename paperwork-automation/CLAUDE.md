@@ -231,39 +231,79 @@ python3 scripts/automation-menu.py  # Then select 'r' for reset
 - **Time Segments**: 16 segments covering 10:00-02:00 (next day)
 - **Discount Types**: 8 types including 会员折扣, 生日优惠, 节日优惠
 
-## Q1 2026 Challenge Targets Configuration
+## Challenge Targets Configuration
 
-Challenge targets are centralized in `configs/challenge_targets/`:
+Challenge targets are centralized in `configs/challenge_targets/` with a modular, scalable architecture.
+
+### Architecture
 
 ```python
 # configs/challenge_targets/q1_2026_targets.py
 
-# Standard improvement target
-DEFAULT_TURNOVER_IMPROVEMENT = 0.18  # +0.18 over last year same period
-
-# Store-specific fixed targets
-STORE_6_TURNOVER_TARGET = 3.65  # Road construction exemption
-STORE_8_TURNOVER_TARGET = 4.0   # New store, no YoY comparison
-
-# Time segment targets (daily table improvement)
-AFTERNOON_SLOW_TARGETS = {1: 3, 2: 2, 3: 3, 4: 4, 5: 3, 6: 3, 7: 4, 8: 40}
-LATE_NIGHT_TARGETS = {1: 3, 2: 2, 3: 3, 4: 4, 5: 3, 6: 3, 7: 4, 8: 44}
+# Central configuration - keyed by (year, month) tuple
+MONTHLY_TARGETS = {
+    (2026, 1): {
+        'description': '2026年1月门店目标',
+        'target_type': 'absolute',  # vs 'improvement'
+        'turnover': {1: 4.47, 2: 3.88, ...},
+        'afternoon_tables': {1: 37.6, 2: 22.0, ...},
+        'late_night_tables': {1: 42.2, 2: 15.1, ...},
+        'profit': {1: 6.77, 2: 3.82, ...},      # 万加币
+        'takeout': {1: 9.95, 2: 5.64, ...},     # 万加币
+    },
+    # Add new months as needed: (2026, 2): {...}
+}
 ```
 
-### Target Calculation Logic
+### Adding New Monthly Targets
 
-1. **Turnover Rate Target**:
-   - Store 6: Fixed 3.65 (road construction)
-   - Store 8: Fixed 4.0 (new store)
-   - Others: Last year MTD turnover + 0.18
+1. Add entry to `MONTHLY_TARGETS` with key `(year, month)`
+2. Include all target types (turnover, afternoon_tables, late_night_tables, profit, takeout)
+3. No code changes needed - helper functions automatically use it
 
-2. **Table Count Target**:
-   - Derived from: `target_turnover × seating_capacity × num_days`
-   - Store 8: Excluded from tables target
+### Helper Functions
 
-3. **Time Segment Targets**:
-   - Slow times (14:00-16:59, 22:00-07:59): Hardcoded daily targets per store
-   - Busy times (08:00-13:59, 17:00-21:59): Leftover distributed proportionally by turnover
+```python
+from configs.challenge_targets import (
+    get_monthly_config,           # Get config for any date
+    get_store_turnover_target,    # Turnover target
+    get_absolute_time_segment_target,  # Time segment target
+    get_profit_target,            # Profit target (万加币)
+    get_takeout_target,           # Takeout target (万加币)
+    is_using_absolute_targets,    # Check if absolute or improvement-based
+)
+```
+
+### Target Types
+
+- **Absolute targets**: Fixed values for the month (e.g., January 2026)
+- **Improvement targets**: Delta over previous year (fallback when no monthly config)
+
+### MTD Normalization Pattern
+
+For fair year-over-year comparisons, use normalized calculations:
+
+```python
+# Helper methods in WeeklyYoYComparisonWorksheetGenerator:
+_normalize_to_mtd(full_month_total, full_month_days, current_days)
+# Formula: full_month_total / full_month_days * current_days
+
+_prorate_monthly_target(monthly_target, target_year, target_month, current_days)
+# Formula: monthly_target / days_in_month * current_days
+```
+
+### Database Queries for MTD Data
+
+```python
+# lib/database_queries.py - ReportDataProvider class
+get_takeout_mtd_data(target_date) # Takeout from daily_takeout_revenue
+
+# Returns dict with:
+# - current_mtd_total, current_days
+# - prev_year_mtd_total, prev_year_mtd_days
+# - prev_year_month_total, prev_year_days
+# - prev_year_month_days (for normalization)
+```
 
 ## Common Debugging Patterns
 

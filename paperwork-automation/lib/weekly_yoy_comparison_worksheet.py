@@ -12,8 +12,14 @@ Structure per store (7 rows):
 7. 外卖挑战 - Takeout revenue challenge
 
 All configuration values are sourced from configs/challenge_targets/.
+
+Normalization Formula:
+For MTD comparisons, previous year data is normalized using:
+    prev_year_normalized = prev_year_month_total / prev_year_month_days * current_days
+This ensures fair comparison between periods with different number of days.
 """
 
+import calendar
 import logging
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
@@ -33,7 +39,11 @@ from configs.challenge_targets import (
     LATE_NIGHT_TARGETS,
     TIME_SEGMENT_LABELS,
     TIME_SEGMENT_CONFIG,
-    get_takeout_daily_improvement_cad
+    get_takeout_daily_improvement_cad,
+    get_absolute_time_segment_target,
+    get_takeout_target,
+    is_using_absolute_targets,
+    JANUARY_2026_TURNOVER_TARGETS,
 )
 
 
@@ -64,7 +74,7 @@ class WeeklyYoYComparisonWorksheetGenerator:
         '翻台率': "FDE9D9",
         '桌数': "DAEEF3",
         '时段': "E4DFEC",
-        '外卖': "D8E4BC"
+        '外卖': "D8E4BC",
     }
 
     # Number of rows per store
@@ -99,6 +109,42 @@ class WeeklyYoYComparisonWorksheetGenerator:
         """Format date range as Chinese date period string."""
         year = end_dt.year % 100
         return f"{year}年{start_dt.month}月{start_dt.day}日-{end_dt.month}月{end_dt.day}日"
+
+    @staticmethod
+    def _normalize_to_mtd(full_month_total: float, full_month_days: int, current_days: int) -> float:
+        """
+        Normalize a full month total to MTD (Month-to-Date) period.
+
+        Formula: full_month_total / full_month_days * current_days
+
+        Args:
+            full_month_total: Total value for the full month
+            full_month_days: Number of days in the full month
+            current_days: Number of days in current MTD period
+
+        Returns:
+            Normalized value for the MTD period
+        """
+        if full_month_days <= 0:
+            return 0
+        return full_month_total / full_month_days * current_days
+
+    @staticmethod
+    def _prorate_monthly_target(monthly_target: float, target_year: int, target_month: int, current_days: int) -> float:
+        """
+        Prorate a monthly target to MTD (Month-to-Date) period.
+
+        Args:
+            monthly_target: Full monthly target value
+            target_year: Year of the target month
+            target_month: Month number (1-12)
+            current_days: Number of days in current MTD period
+
+        Returns:
+            Prorated target for the MTD period
+        """
+        days_in_month = calendar.monthrange(target_year, target_month)[1]
+        return monthly_target / days_in_month * current_days
 
     def generate_worksheet(self, workbook: Workbook, target_date: str) -> Worksheet:
         """
@@ -203,7 +249,7 @@ class WeeklyYoYComparisonWorksheetGenerator:
             "",
             "",
             prev_period,
-            f"去年+改进",
+            f"去年+精进",
             current_period,
             "今年-目标",
             ""
@@ -230,6 +276,10 @@ class WeeklyYoYComparisonWorksheetGenerator:
         store_id = store.get('store_id', 0)
         store_name = store.get('store_name', '')
         seating_capacity = STORE_SEATING_CAPACITY.get(store_id, 50)
+        target_date_str = target_dt.strftime('%Y-%m-%d')
+
+        # Check if using absolute targets (January 2026)
+        use_absolute = is_using_absolute_targets(target_date_str)
 
         # Get store-specific color
         store_color = self.STORE_COLORS[store_index % len(self.STORE_COLORS)]
@@ -241,7 +291,7 @@ class WeeklyYoYComparisonWorksheetGenerator:
         # === Row 1: 翻台率挑战 ===
         prev_turnover = float(store.get('prev_avg_turnover_rate', 0))
         current_turnover = float(store.get('current_avg_turnover_rate', 0))
-        target_turnover = get_store_turnover_target(store_id, prev_turnover)
+        target_turnover = get_store_turnover_target(store_id, prev_turnover, target_date_str)
         turnover_gap = current_turnover - target_turnover
 
         self._write_data_row(ws, current_row, "翻台率",
@@ -272,25 +322,38 @@ class WeeklyYoYComparisonWorksheetGenerator:
             segment_label = segment_config['label']
             segment_key = segment_config['key']
             is_slow = segment_config['type'] == 'slow'
-            hardcoded_targets = segment_config['targets']
 
             segment_data = store_ts_data.get(segment_label, {})
             prev_daily_tables = segment_data.get('prev_total_tables', 0) / num_days if num_days > 0 else 0
             current_daily_tables = segment_data.get('current_total_tables', 0) / num_days if num_days > 0 else 0
 
+            # For January 2026, use absolute targets for slow times
+            if use_absolute and is_slow:
+                absolute_target = get_absolute_time_segment_target(store_id, segment_key, target_date_str)
+                if absolute_target is not None:
+                    target_daily = absolute_target
+                    gap = current_daily_tables - target_daily
+                    self._write_data_row(ws, current_row, segment_label,
+                                         prev_daily_tables, target_daily, current_daily_tables, gap,
+                                         "时段", number_format='0.00',
+                                         notes="日均桌数 (固定目标)")
+                    current_row += 1
+                    continue
+
+            # Fall back to improvement-based calculation
+            hardcoded_targets = segment_config['targets']
             if is_slow and hardcoded_targets:
                 daily_target = hardcoded_targets.get(store_id, DEFAULT_SLOW_TIME_TARGET)
             else:
                 daily_target = self._calculate_busy_time_target(
-                    store_id, store, time_segment_data, segment_key, num_days
+                    store_id, store, time_segment_data, segment_key, num_days, target_date_str
                 )
 
             # Target is improvement over last year
             target_daily = prev_daily_tables + daily_target
             gap = current_daily_tables - target_daily
 
-            segment_type = "低峰" if is_slow else "高峰"
-            self._write_data_row(ws, current_row, f"{segment_label} {segment_type}",
+            self._write_data_row(ws, current_row, segment_label,
                                  prev_daily_tables, target_daily, current_daily_tables, gap,
                                  "时段", number_format='0.00',
                                  notes=f"日均桌数 (目标+{daily_target:.1f})")
@@ -298,22 +361,40 @@ class WeeklyYoYComparisonWorksheetGenerator:
 
         # === Row 7: 外卖挑战 ===
         store_takeout = takeout_data.get(store_id, {}) if takeout_data else {}
-        prev_month_total = store_takeout.get('prev_year_month_total', 0)
-        prev_month_days = store_takeout.get('prev_year_month_days', 30) or 30
         current_mtd_total = store_takeout.get('current_mtd_total', 0)
-        current_days = store_takeout.get('current_days', num_days) or num_days
+        prev_year_month_total = store_takeout.get('prev_year_month_total', 0)
+        prev_year_month_days = store_takeout.get('prev_year_month_days', 0)
 
-        prev_daily_avg = prev_month_total / prev_month_days if prev_month_days > 0 else 0
-        daily_improvement_cad = get_takeout_daily_improvement_cad(target_dt.year)
-        daily_target = prev_daily_avg + daily_improvement_cad
-        current_daily_avg = current_mtd_total / current_days if current_days > 0 else 0
-        daily_gap = current_daily_avg - daily_target
+        # Normalize previous year data to current MTD period
+        prev_year_normalized = self._normalize_to_mtd(prev_year_month_total, prev_year_month_days, num_days)
 
-        # Note: Input data is in CAD, target improvement is $200 USD converted to CAD
-        self._write_data_row(ws, current_row, "外卖收入",
-                             prev_daily_avg, daily_target, current_daily_avg, daily_gap,
-                             "外卖", number_format='"$"#,##0.00',
-                             notes="日均 (目标+$200 USD)")
+        # Check for fixed takeout target
+        fixed_takeout_target = get_takeout_target(store_id, target_date_str)
+        if fixed_takeout_target is not None:
+            # Fixed target is in 万加币 (10k CAD), convert to CAD and prorate to MTD
+            target_monthly_cad = fixed_takeout_target * 10000
+            target_mtd = self._prorate_monthly_target(target_monthly_cad, target_dt.year, target_dt.month, num_days)
+            monthly_gap = current_mtd_total - target_mtd
+
+            self._write_data_row(ws, current_row, "外卖收入",
+                                 prev_year_normalized, target_mtd, current_mtd_total, monthly_gap,
+                                 "外卖", number_format='"$"#,##0',
+                                 notes=f"月目标 {fixed_takeout_target:.2f}万 (MTD)")
+        else:
+            # Legacy: daily improvement-based calculation
+            prev_month_days = store_takeout.get('prev_year_month_days', 30) or 30
+            current_days = store_takeout.get('current_days', num_days) or num_days
+
+            prev_daily_avg = prev_year_month_total / prev_month_days if prev_month_days > 0 else 0
+            daily_improvement_cad = get_takeout_daily_improvement_cad(target_dt.year)
+            daily_target = prev_daily_avg + daily_improvement_cad
+            current_daily_avg = current_mtd_total / current_days if current_days > 0 else 0
+            daily_gap = current_daily_avg - daily_target
+
+            self._write_data_row(ws, current_row, "外卖收入",
+                                 prev_daily_avg, daily_target, current_daily_avg, daily_gap,
+                                 "外卖", number_format='"$"#,##0.00',
+                                 notes="日均 (目标+$200 USD)")
         current_row += 1
 
         # Merge store name cell across all rows
@@ -429,58 +510,68 @@ class WeeklyYoYComparisonWorksheetGenerator:
         """
         current_row = start_row
         section_start_row = start_row
+        target_date_str = target_dt.strftime('%Y-%m-%d')
+        use_absolute = is_using_absolute_targets(target_date_str)
 
-        # Calculate totals (exclude store 8 for regional metrics)
-        regional_stores = [s for s in store_data if s.get('store_id') != 8]
+        # Use all stores for Canada summary (matches individual store rows)
         all_stores = store_data
+        total_seats = sum(STORE_SEATING_CAPACITY.get(s['store_id'], 50) for s in all_stores)
 
         # === Row 1: 翻台率 (weighted average by seating capacity) ===
-        total_seats_regional = sum(STORE_SEATING_CAPACITY.get(s['store_id'], 50) for s in regional_stores)
-
         prev_weighted_turnover = sum(
             float(s.get('prev_avg_turnover_rate', 0)) * STORE_SEATING_CAPACITY.get(s['store_id'], 50)
-            for s in regional_stores
-        ) / total_seats_regional if total_seats_regional > 0 else 0
+            for s in all_stores
+        ) / total_seats if total_seats > 0 else 0
 
         current_weighted_turnover = sum(
             float(s.get('current_avg_turnover_rate', 0)) * STORE_SEATING_CAPACITY.get(s['store_id'], 50)
-            for s in regional_stores
-        ) / total_seats_regional if total_seats_regional > 0 else 0
+            for s in all_stores
+        ) / total_seats if total_seats > 0 else 0
 
-        target_weighted_turnover = prev_weighted_turnover + DEFAULT_TURNOVER_IMPROVEMENT
+        # Use weighted average of fixed targets when available
+        if use_absolute:
+            target_weighted_turnover = sum(
+                get_store_turnover_target(s['store_id'], float(s.get('prev_avg_turnover_rate', 0)), target_date_str) *
+                STORE_SEATING_CAPACITY.get(s['store_id'], 50)
+                for s in all_stores
+            ) / total_seats if total_seats > 0 else 0
+        else:
+            target_weighted_turnover = prev_weighted_turnover + DEFAULT_TURNOVER_IMPROVEMENT
+
         turnover_gap = current_weighted_turnover - target_weighted_turnover
 
         self._write_summary_row(ws, current_row, "翻台率 (加权平均)",
                                 prev_weighted_turnover, target_weighted_turnover,
                                 current_weighted_turnover, turnover_gap,
-                                number_format='0.00', notes="不含8店")
+                                number_format='0.00', notes="")
         current_row += 1
 
-        # === Row 2: 桌数 (sum of all regional stores) ===
+        # === Row 2: 桌数 (sum of all stores) ===
         prev_tables_total = sum(
             int(float(s.get('prev_avg_turnover_rate', 0)) * STORE_SEATING_CAPACITY.get(s['store_id'], 50) * num_days)
-            for s in regional_stores
+            for s in all_stores
         )
         target_tables_total = sum(
-            int(get_store_turnover_target(s['store_id'], float(s.get('prev_avg_turnover_rate', 0))) *
+            int(get_store_turnover_target(s['store_id'], float(s.get('prev_avg_turnover_rate', 0)), target_date_str) *
                 STORE_SEATING_CAPACITY.get(s['store_id'], 50) * num_days)
-            for s in regional_stores
+            for s in all_stores
         )
         current_tables_total = sum(
             int(float(s.get('current_avg_turnover_rate', 0)) * STORE_SEATING_CAPACITY.get(s['store_id'], 50) * num_days)
-            for s in regional_stores
+            for s in all_stores
         )
         tables_gap = current_tables_total - target_tables_total
 
         self._write_summary_row(ws, current_row, "桌数 (合计)",
                                 prev_tables_total, target_tables_total,
                                 current_tables_total, tables_gap,
-                                number_format='0', notes="不含8店")
+                                number_format='0', notes="")
         current_row += 1
 
         # === Rows 3-6: 时段 (sum of all stores) ===
         for segment_config in TIME_SEGMENT_CONFIG:
             segment_label = segment_config['label']
+            segment_key = segment_config['key']
             is_slow = segment_config['type'] == 'slow'
 
             prev_total = 0
@@ -495,55 +586,93 @@ class WeeklyYoYComparisonWorksheetGenerator:
                 prev_daily = segment_data.get('prev_total_tables', 0) / num_days if num_days > 0 else 0
                 current_daily = segment_data.get('current_total_tables', 0) / num_days if num_days > 0 else 0
 
-                # Get target for this store
-                if is_slow and segment_config['targets']:
-                    daily_target_improvement = segment_config['targets'].get(store_id, DEFAULT_SLOW_TIME_TARGET)
-                else:
-                    daily_target_improvement = self._calculate_busy_time_target(
-                        store_id, store, time_segment_data, segment_config['key'], num_days
-                    )
-
                 prev_total += prev_daily
                 current_total += current_daily
-                target_total += prev_daily + daily_target_improvement
+
+                # For January 2026, use absolute targets for slow times
+                if use_absolute and is_slow:
+                    absolute_target = get_absolute_time_segment_target(store_id, segment_key, target_date_str)
+                    if absolute_target is not None:
+                        target_total += absolute_target
+                        continue
+
+                # Fall back to improvement-based calculation
+                if is_slow and segment_config['targets']:
+                    daily_target_improvement = segment_config['targets'].get(store_id, DEFAULT_SLOW_TIME_TARGET)
+                    target_total += prev_daily + daily_target_improvement
+                else:
+                    daily_target_improvement = self._calculate_busy_time_target(
+                        store_id, store, time_segment_data, segment_key, num_days, target_date_str
+                    )
+                    target_total += prev_daily + daily_target_improvement
 
             gap = current_total - target_total
-            segment_type = "低峰" if is_slow else "高峰"
 
-            self._write_summary_row(ws, current_row, f"{segment_label} {segment_type}",
+            self._write_summary_row(ws, current_row, segment_label,
                                     prev_total, target_total, current_total, gap,
                                     number_format='0.00', notes="日均合计")
             current_row += 1
 
         # === Row 7: 外卖 (sum of all stores) ===
-        prev_takeout_total = 0
         current_takeout_total = 0
         target_takeout_total = 0
+        prev_year_takeout_normalized_total = 0
 
-        daily_improvement_cad = get_takeout_daily_improvement_cad(target_dt.year)
+        # Check if using fixed takeout targets
+        if use_absolute:
+            for store in all_stores:
+                store_id = store.get('store_id', 0)
+                store_takeout = takeout_data.get(store_id, {}) if takeout_data else {}
+                current_mtd_total = store_takeout.get('current_mtd_total', 0)
+                prev_year_month_total = store_takeout.get('prev_year_month_total', 0)
+                prev_year_month_days = store_takeout.get('prev_year_month_days', 0)
 
-        for store in all_stores:
-            store_id = store.get('store_id', 0)
-            store_takeout = takeout_data.get(store_id, {}) if takeout_data else {}
+                # Normalize previous year to current MTD period
+                prev_year_normalized = self._normalize_to_mtd(
+                    prev_year_month_total, prev_year_month_days, num_days
+                )
 
-            prev_month_total = store_takeout.get('prev_year_month_total', 0)
-            prev_month_days = store_takeout.get('prev_year_month_days', 30) or 30
-            current_mtd_total = store_takeout.get('current_mtd_total', 0)
-            current_days = store_takeout.get('current_days', num_days) or num_days
+                fixed_target = get_takeout_target(store_id, target_date_str)
+                if fixed_target is not None:
+                    # Prorate monthly target to MTD
+                    target_takeout_total += self._prorate_monthly_target(
+                        fixed_target * 10000, target_dt.year, target_dt.month, num_days
+                    )
+                current_takeout_total += current_mtd_total
+                prev_year_takeout_normalized_total += prev_year_normalized
 
-            prev_daily = prev_month_total / prev_month_days if prev_month_days > 0 else 0
-            current_daily = current_mtd_total / current_days if current_days > 0 else 0
+            takeout_gap = current_takeout_total - target_takeout_total
 
-            prev_takeout_total += prev_daily
-            current_takeout_total += current_daily
-            target_takeout_total += prev_daily + daily_improvement_cad
+            self._write_summary_row(ws, current_row, "外卖收入 (合计)",
+                                    prev_year_takeout_normalized_total, target_takeout_total, current_takeout_total, takeout_gap,
+                                    number_format='"$"#,##0', notes="MTD目标合计")
+        else:
+            # Legacy: daily improvement-based calculation
+            prev_takeout_total = 0
+            daily_improvement_cad = get_takeout_daily_improvement_cad(target_dt.year)
 
-        takeout_gap = current_takeout_total - target_takeout_total
+            for store in all_stores:
+                store_id = store.get('store_id', 0)
+                store_takeout = takeout_data.get(store_id, {}) if takeout_data else {}
 
-        self._write_summary_row(ws, current_row, "外卖收入 (合计)",
-                                prev_takeout_total, target_takeout_total,
-                                current_takeout_total, takeout_gap,
-                                number_format='"$"#,##0.00', notes="日均合计")
+                prev_month_total = store_takeout.get('prev_year_month_total', 0)
+                prev_month_days = store_takeout.get('prev_year_month_days', 30) or 30
+                current_mtd_total = store_takeout.get('current_mtd_total', 0)
+                current_days = store_takeout.get('current_days', num_days) or num_days
+
+                prev_daily = prev_month_total / prev_month_days if prev_month_days > 0 else 0
+                current_daily = current_mtd_total / current_days if current_days > 0 else 0
+
+                prev_takeout_total += prev_daily
+                current_takeout_total += current_daily
+                target_takeout_total += prev_daily + daily_improvement_cad
+
+            takeout_gap = current_takeout_total - target_takeout_total
+
+            self._write_summary_row(ws, current_row, "外卖收入 (合计)",
+                                    prev_takeout_total, target_takeout_total,
+                                    current_takeout_total, takeout_gap,
+                                    number_format='"$"#,##0.00', notes="日均合计")
         current_row += 1
 
         # Merge "加拿大合计" cell across all rows
@@ -635,25 +764,42 @@ class WeeklyYoYComparisonWorksheetGenerator:
 
     def _calculate_busy_time_target(self, store_id: int, store: Dict,
                                      time_segment_data: Dict, segment_key: str,
-                                     num_days: int) -> float:
+                                     num_days: int, target_date: str = None) -> float:
         """
         Calculate busy time target from leftover after slow times.
 
-        Leftover = total_daily_improvement - afternoon_target - late_night_target
-        Busy time target = leftover × (this_segment_turnover / total_busy_turnover)
+        For January 2026 with absolute targets:
+        - Total daily tables = target_turnover × seating_capacity
+        - Leftover = total_daily_tables - afternoon_absolute - late_night_absolute
+        - Busy time target = leftover × (this_segment_turnover / total_busy_turnover)
+
+        For other periods (improvement-based):
+        - Leftover = total_daily_improvement - afternoon_improvement - late_night_improvement
+        - Busy time target = leftover × (this_segment_turnover / total_busy_turnover)
         """
         seating_capacity = STORE_SEATING_CAPACITY.get(store_id, 50)
 
         prev_turnover = float(store.get('prev_avg_turnover_rate', 0))
-        target_turnover = get_store_turnover_target(store_id, prev_turnover)
+        target_turnover = get_store_turnover_target(store_id, prev_turnover, target_date)
 
-        prev_daily_tables = prev_turnover * seating_capacity
-        target_daily_tables = target_turnover * seating_capacity
-        total_daily_improvement = target_daily_tables - prev_daily_tables
+        # Check if using absolute targets (January 2026)
+        use_absolute = is_using_absolute_targets(target_date) if target_date else False
 
-        afternoon_target = AFTERNOON_SLOW_TARGETS.get(store_id, DEFAULT_SLOW_TIME_TARGET)
-        late_night_target = LATE_NIGHT_TARGETS.get(store_id, DEFAULT_SLOW_TIME_TARGET)
-        leftover = total_daily_improvement - afternoon_target - late_night_target
+        if use_absolute:
+            # For absolute targets, calculate leftover from total daily tables
+            target_daily_tables = target_turnover * seating_capacity
+            afternoon_absolute = get_absolute_time_segment_target(store_id, 'afternoon', target_date) or 0
+            late_night_absolute = get_absolute_time_segment_target(store_id, 'late_night', target_date) or 0
+            leftover = target_daily_tables - afternoon_absolute - late_night_absolute
+        else:
+            # For improvement-based, calculate leftover from improvement
+            prev_daily_tables = prev_turnover * seating_capacity
+            target_daily_tables = target_turnover * seating_capacity
+            total_daily_improvement = target_daily_tables - prev_daily_tables
+
+            afternoon_target = AFTERNOON_SLOW_TARGETS.get(store_id, DEFAULT_SLOW_TIME_TARGET)
+            late_night_target = LATE_NIGHT_TARGETS.get(store_id, DEFAULT_SLOW_TIME_TARGET)
+            leftover = total_daily_improvement - afternoon_target - late_night_target
 
         if leftover <= 0:
             return 0
@@ -676,3 +822,201 @@ class WeeklyYoYComparisonWorksheetGenerator:
             return leftover * morning_turnover / total_busy_turnover
         else:
             return leftover * evening_turnover / total_busy_turnover
+
+    def generate_detail_worksheet(self, workbook: Workbook, target_date: str) -> Worksheet:
+        """
+        Generate detailed daily data worksheet for verification.
+
+        Shows daily turnover rate and tables for both current and previous year.
+        """
+        ws = workbook.create_sheet("每日详细数据")
+
+        # Parse dates
+        target_dt = datetime.strptime(target_date, '%Y-%m-%d')
+        start_dt = target_dt.replace(day=1)
+        num_days = target_dt.day
+        prev_year = target_dt.year - 1
+
+        # Get daily data from database
+        daily_data = self._get_daily_detail_data(start_dt, target_dt)
+
+        if not daily_data:
+            ws.cell(row=1, column=1, value="无数据")
+            return ws
+
+        # Generate headers
+        current_row = 1
+
+        # Title
+        title_cell = ws.cell(row=current_row, column=1, value=f"每日详细数据 ({start_dt.strftime('%Y-%m-%d')} 至 {target_dt.strftime('%Y-%m-%d')})")
+        title_cell.font = Font(bold=True, size=14)
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=8)
+        current_row += 2
+
+        # Column headers
+        headers = ["门店", "日期", f"{prev_year}翻台率", f"{target_dt.year}翻台率", "翻台率差距",
+                   f"{prev_year}桌数", f"{target_dt.year}桌数", "桌数差距"]
+
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=current_row, column=col, value=header)
+            cell.font = self.header_font
+            cell.fill = self.header_fill
+            cell.alignment = self.center_alignment
+            cell.border = self.thin_border
+
+        current_row += 1
+
+        # Store name mapping
+        store_names = {
+            1: '加拿大一店', 2: '加拿大二店', 3: '加拿大三店', 4: '加拿大四店',
+            5: '加拿大五店', 6: '加拿大六店', 7: '加拿大七店', 8: '加拿大八店'
+        }
+
+        # Write data rows
+        current_store = None
+        store_start_row = current_row
+
+        for row_data in daily_data:
+            store_id = row_data['store_id']
+            store_name = store_names.get(store_id, f'店{store_id}')
+
+            # Add separator between stores
+            if current_store is not None and store_id != current_store:
+                # Merge store name cells for previous store
+                if current_row - 1 > store_start_row:
+                    ws.merge_cells(start_row=store_start_row, start_column=1,
+                                   end_row=current_row - 1, end_column=1)
+
+                # Add separator row
+                for col in range(1, 9):
+                    cell = ws.cell(row=current_row, column=col, value="")
+                    cell.fill = PatternFill(start_color="333333", end_color="333333", fill_type="solid")
+                ws.row_dimensions[current_row].height = 4
+                current_row += 1
+                store_start_row = current_row
+
+            current_store = store_id
+
+            # Store name (will be merged later)
+            ws.cell(row=current_row, column=1, value=store_name).border = self.thin_border
+
+            # Date
+            date_str = f"{row_data['month']}月{row_data['day']}日"
+            ws.cell(row=current_row, column=2, value=date_str).border = self.thin_border
+
+            # Previous year turnover
+            prev_turnover = row_data.get('prev_turnover', 0) or 0
+            cell = ws.cell(row=current_row, column=3, value=prev_turnover)
+            cell.number_format = '0.00'
+            cell.border = self.thin_border
+
+            # Current year turnover
+            curr_turnover = row_data.get('curr_turnover', 0) or 0
+            cell = ws.cell(row=current_row, column=4, value=curr_turnover)
+            cell.number_format = '0.00'
+            cell.border = self.thin_border
+
+            # Turnover gap
+            turnover_gap = curr_turnover - prev_turnover
+            cell = ws.cell(row=current_row, column=5, value=turnover_gap)
+            cell.number_format = '+0.00;-0.00;0.00'
+            cell.border = self.thin_border
+            cell.fill = self.green_fill if turnover_gap >= 0 else self.red_fill
+
+            # Previous year tables
+            prev_tables = row_data.get('prev_tables', 0) or 0
+            cell = ws.cell(row=current_row, column=6, value=prev_tables)
+            cell.number_format = '0'
+            cell.border = self.thin_border
+
+            # Current year tables
+            curr_tables = row_data.get('curr_tables', 0) or 0
+            cell = ws.cell(row=current_row, column=7, value=curr_tables)
+            cell.number_format = '0'
+            cell.border = self.thin_border
+
+            # Tables gap
+            tables_gap = curr_tables - prev_tables
+            cell = ws.cell(row=current_row, column=8, value=tables_gap)
+            cell.number_format = '+0;-0;0'
+            cell.border = self.thin_border
+            cell.fill = self.green_fill if tables_gap >= 0 else self.red_fill
+
+            current_row += 1
+
+        # Merge last store's name cells
+        if current_row - 1 > store_start_row:
+            ws.merge_cells(start_row=store_start_row, start_column=1,
+                           end_row=current_row - 1, end_column=1)
+
+        # Apply column widths
+        widths = {'A': 12, 'B': 10, 'C': 12, 'D': 12, 'E': 12, 'F': 10, 'G': 10, 'H': 10}
+        for col, width in widths.items():
+            ws.column_dimensions[col].width = width
+
+        # Freeze panes
+        ws.freeze_panes = "C4"
+
+        return ws
+
+    def _get_daily_detail_data(self, start_dt: datetime, end_dt: datetime) -> list:
+        """Get daily detail data for both current and previous year."""
+        prev_year = end_dt.year - 1
+        curr_year = end_dt.year
+        month = end_dt.month
+        max_day = end_dt.day
+
+        sql = """
+        WITH current_year AS (
+            SELECT store_id, EXTRACT(DAY FROM date) as day,
+                   turnover_rate, tables_served_validated
+            FROM daily_report
+            WHERE EXTRACT(YEAR FROM date) = %s
+              AND EXTRACT(MONTH FROM date) = %s
+              AND EXTRACT(DAY FROM date) <= %s
+        ),
+        prev_year AS (
+            SELECT store_id, EXTRACT(DAY FROM date) as day,
+                   turnover_rate, tables_served_validated
+            FROM daily_report
+            WHERE EXTRACT(YEAR FROM date) = %s
+              AND EXTRACT(MONTH FROM date) = %s
+              AND EXTRACT(DAY FROM date) <= %s
+        )
+        SELECT
+            COALESCE(cy.store_id, py.store_id) as store_id,
+            COALESCE(cy.day, py.day) as day,
+            py.turnover_rate as prev_turnover,
+            cy.turnover_rate as curr_turnover,
+            py.tables_served_validated as prev_tables,
+            cy.tables_served_validated as curr_tables
+        FROM current_year cy
+        FULL OUTER JOIN prev_year py
+            ON cy.store_id = py.store_id AND cy.day = py.day
+        WHERE COALESCE(cy.store_id, py.store_id) BETWEEN 1 AND 8
+        ORDER BY COALESCE(cy.store_id, py.store_id), COALESCE(cy.day, py.day)
+        """
+
+        try:
+            results = self.data_provider.db_manager.fetch_all(sql, (
+                curr_year, month, max_day,
+                prev_year, month, max_day
+            ))
+
+            # Add month to results
+            return [
+                {
+                    'store_id': r['store_id'],
+                    'day': int(r['day']),
+                    'month': month,
+                    'prev_turnover': r['prev_turnover'],
+                    'curr_turnover': r['curr_turnover'],
+                    'prev_tables': r['prev_tables'],
+                    'curr_tables': r['curr_tables']
+                }
+                for r in results
+            ]
+
+        except Exception as e:
+            self.logger.error(f"Error getting daily detail data: {e}")
+            return []

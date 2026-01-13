@@ -368,26 +368,36 @@ Each store has 7 rows with all challenges grouped together:
 | | 22:00-07:59 低峰 | 51.67 | 54.67 | 48.33 | -6.33 | 日均桌数 |
 | | 08:00-13:59 高峰 | 62 | 63.24 | 66.33 | +3.10 | 日均桌数 |
 | | 17:00-21:59 高峰 | 115.67 | 117.97 | 124 | +6.03 | 日均桌数 |
-| | 外卖收入 | $2,921 | $3,196 | $3,164 | -$31 | 日均 +$200 USD |
+| | 外卖收入 | $38,503 | $38,581 | $36,164 | -$2,417 | 月目标 9.95万 (MTD) |
 | --- | (Separator) | --- | --- | --- | --- | --- |
 | 加拿大二店 (Orange) | ... | ... | ... | ... | ... | ... |
 | ... | | | | | | |
 | **加拿大合计** (Red) | 翻台率 (加权平均) | 5.22 | 5.40 | 3.97 | -1.44 | 不含8店 |
 
 **Challenge Types:**
-- **翻台率挑战**: Previous year MTD turnover, target (+0.18), current MTD turnover, gap
+- **翻台率挑战**: Fixed monthly targets or improvement-based (configurable per month)
 - **桌数挑战**: Tables derived from turnover rate × seating capacity × days
-- **时段挑战**: Time segment daily improvement targets (slow/busy periods)
-- **外卖挑战**: Takeout revenue daily target = last year daily avg + $200 USD (converted to CAD)
+- **时段挑战**: Absolute daily targets for slow periods (afternoon, late night)
+- **外卖挑战**: Fixed monthly targets in 万加币 (10k CAD), prorated to MTD
+
+**MTD Normalization Formula:**
+
+For fair year-over-year comparisons, previous year data is normalized to the current MTD period:
+```
+prev_year_normalized = prev_year_month_total / prev_year_month_days * current_days
+target_mtd = monthly_target / days_in_month * current_days
+```
+This ensures targets and comparisons are prorated correctly regardless of how many days into the month.
 
 **Key Features:**
 
 - **🏪 Store-Centric Layout**: All challenges grouped by store with merged store name column
 - **🎨 Store Colors**: 8 unique colors per store (Blue, Orange, Gray, Gold, Light Blue, Green, Brown, Purple)
-- **📊 Canada Summary**: Aggregated totals at end (翻台率/桌数 exclude Store 8)
-- **🥡 Takeout Challenge**: Daily revenue targets with USD to CAD conversion
+- **📊 Canada Summary**: Aggregated totals at end with all stores included
+- **🥡 Takeout/Profit Data**: Actual data from database with normalized YoY comparison
 - **🎯 Challenge Targets**: Configurable via `configs/challenge_targets/q1_2026_targets.py`
 - **🎨 Visual Indicators**: Green (target met) / Red (target not met) color coding
+- **📅 Scalable**: Add new monthly targets without code changes
 
 **Takeout Data Extraction:**
 
@@ -402,20 +412,22 @@ python3 scripts/automation-menu.py
 **Configuration (configs/challenge_targets/):**
 
 ```python
-# Turnover improvement target
-DEFAULT_TURNOVER_IMPROVEMENT = 0.18  # +0.18 over last year
+# Central config keyed by (year, month) - add new months easily
+MONTHLY_TARGETS = {
+    (2026, 1): {  # January 2026
+        'target_type': 'absolute',  # Fixed targets vs improvement-based
+        'turnover': {1: 4.47, 2: 3.88, 3: 5.45, ...},
+        'afternoon_tables': {1: 37.6, 2: 22.0, ...},  # Daily absolute
+        'late_night_tables': {1: 42.2, 2: 15.1, ...}, # Daily absolute
+        'profit': {1: 6.77, 2: 3.82, ...},            # 万加币 (10k CAD)
+        'takeout': {1: 9.95, 2: 5.64, ...},           # 万加币 (10k CAD)
+    },
+}
 
-# Takeout challenge: $200 USD daily improvement
-TAKEOUT_DAILY_IMPROVEMENT_USD = 200
-TAKEOUT_EXCHANGE_RATES = {2025: 0.6952, 2026: 0.728597}  # 1 CAD = X USD
-
-# Time segment targets (daily table improvement)
-AFTERNOON_SLOW_TARGETS = {1: 3, 2: 2, 3: 3, 4: 4, 5: 3, 6: 3, 7: 4, 8: 40}
-LATE_NIGHT_TARGETS = {1: 3, 2: 2, 3: 3, 4: 4, 5: 3, 6: 3, 7: 4, 8: 44}
-
-# Store-specific configurations
-STORE_6_TURNOVER_TARGET = 3.65  # Fixed due to road construction
-STORE_8_TURNOVER_TARGET = 4.0   # New store, excluded from regional
+# Helper functions automatically use monthly config when available
+get_store_turnover_target(store_id, prev_turnover, target_date)
+get_profit_target(store_id, target_date)  # Returns 万加币
+get_takeout_target(store_id, target_date) # Returns 万加币
 ```
 
 **Output:** `output/weekly_yoy_report_YYYY-MM-DD.xlsx`
