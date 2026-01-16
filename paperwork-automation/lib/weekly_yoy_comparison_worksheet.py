@@ -344,19 +344,29 @@ class WeeklyYoYComparisonWorksheetGenerator:
             hardcoded_targets = segment_config['targets']
             if is_slow and hardcoded_targets:
                 daily_target = hardcoded_targets.get(store_id, DEFAULT_SLOW_TIME_TARGET)
+                # For slow times without absolute targets, use improvement-based
+                target_daily = prev_daily_tables + daily_target
+                notes = f"日均桌数 (目标+{daily_target:.1f})"
             else:
+                # Busy times (morning/evening)
                 daily_target = self._calculate_busy_time_target(
                     store_id, store, time_segment_data, segment_key, num_days, target_date_str
                 )
+                if use_absolute:
+                    # For absolute targets, daily_target IS the absolute target (leftover from total)
+                    target_daily = daily_target
+                    notes = f"日均桌数 (剩余分配)"
+                else:
+                    # For improvement-based, add to previous year
+                    target_daily = prev_daily_tables + daily_target
+                    notes = f"日均桌数 (目标+{daily_target:.1f})"
 
-            # Target is improvement over last year
-            target_daily = prev_daily_tables + daily_target
             gap = current_daily_tables - target_daily
 
             self._write_data_row(ws, current_row, segment_label,
                                  prev_daily_tables, target_daily, current_daily_tables, gap,
                                  "时段", number_format='0.00',
-                                 notes=f"日均桌数 (目标+{daily_target:.1f})")
+                                 notes=notes)
             current_row += 1
 
         # === Row 7: 外卖挑战 ===
@@ -601,10 +611,16 @@ class WeeklyYoYComparisonWorksheetGenerator:
                     daily_target_improvement = segment_config['targets'].get(store_id, DEFAULT_SLOW_TIME_TARGET)
                     target_total += prev_daily + daily_target_improvement
                 else:
-                    daily_target_improvement = self._calculate_busy_time_target(
+                    # Busy times (morning/evening)
+                    daily_target = self._calculate_busy_time_target(
                         store_id, store, time_segment_data, segment_key, num_days, target_date_str
                     )
-                    target_total += prev_daily + daily_target_improvement
+                    if use_absolute:
+                        # For absolute targets, daily_target IS the absolute target
+                        target_total += daily_target
+                    else:
+                        # For improvement-based, add to previous year
+                        target_total += prev_daily + daily_target
 
             gap = current_total - target_total
 
