@@ -324,7 +324,9 @@ class WeeklyYoYComparisonWorksheetGenerator:
             is_slow = segment_config['type'] == 'slow'
 
             segment_data = store_ts_data.get(segment_label, {})
-            prev_daily_tables = segment_data.get('prev_total_tables', 0) / num_days if num_days > 0 else 0
+            # Use full month daily average for "去年数据" column (not MTD)
+            prev_month_days = segment_data.get('prev_month_days', 0)
+            prev_daily_tables = segment_data.get('prev_month_total_tables', 0) / prev_month_days if prev_month_days > 0 else 0
             current_daily_tables = segment_data.get('current_total_tables', 0) / num_days if num_days > 0 else 0
 
             # For January 2026, use absolute targets for slow times
@@ -349,17 +351,12 @@ class WeeklyYoYComparisonWorksheetGenerator:
                 notes = f"日均桌数 (目标+{daily_target:.1f})"
             else:
                 # Busy times (morning/evening)
-                daily_target = self._calculate_busy_time_target(
+                # _calculate_busy_time_target now returns the improvement to add (not absolute target)
+                daily_improvement = self._calculate_busy_time_target(
                     store_id, store, time_segment_data, segment_key, num_days, target_date_str
                 )
-                if use_absolute:
-                    # For absolute targets, daily_target IS the absolute target (leftover from total)
-                    target_daily = daily_target
-                    notes = f"日均桌数 (剩余分配)"
-                else:
-                    # For improvement-based, add to previous year
-                    target_daily = prev_daily_tables + daily_target
-                    notes = f"日均桌数 (目标+{daily_target:.1f})"
+                target_daily = prev_daily_tables + daily_improvement
+                notes = f"日均桌数 (目标+{daily_improvement:.2f})"
 
             gap = current_daily_tables - target_daily
 
@@ -593,7 +590,9 @@ class WeeklyYoYComparisonWorksheetGenerator:
                 store_ts_data = time_segment_data.get(store_id, {}).get('time_segments', {}) if time_segment_data else {}
                 segment_data = store_ts_data.get(segment_label, {})
 
-                prev_daily = segment_data.get('prev_total_tables', 0) / num_days if num_days > 0 else 0
+                # Use full month daily average for "去年数据" column (not MTD)
+                prev_month_days = segment_data.get('prev_month_days', 0)
+                prev_daily = segment_data.get('prev_month_total_tables', 0) / prev_month_days if prev_month_days > 0 else 0
                 current_daily = segment_data.get('current_total_tables', 0) / num_days if num_days > 0 else 0
 
                 prev_total += prev_daily
@@ -612,15 +611,11 @@ class WeeklyYoYComparisonWorksheetGenerator:
                     target_total += prev_daily + daily_target_improvement
                 else:
                     # Busy times (morning/evening)
-                    daily_target = self._calculate_busy_time_target(
+                    # _calculate_busy_time_target now returns the improvement to add (not absolute target)
+                    daily_improvement = self._calculate_busy_time_target(
                         store_id, store, time_segment_data, segment_key, num_days, target_date_str
                     )
-                    if use_absolute:
-                        # For absolute targets, daily_target IS the absolute target
-                        target_total += daily_target
-                    else:
-                        # For improvement-based, add to previous year
-                        target_total += prev_daily + daily_target
+                    target_total += prev_daily + daily_improvement
 
             gap = current_total - target_total
 
@@ -782,16 +777,21 @@ class WeeklyYoYComparisonWorksheetGenerator:
                                      time_segment_data: Dict, segment_key: str,
                                      num_days: int, target_date: str = None) -> float:
         """
-        Calculate busy time target from leftover after slow times.
+        Calculate busy time improvement target from leftover after slow times.
 
         For January 2026 with absolute targets:
         - Total daily tables = target_turnover × seating_capacity
-        - Leftover = total_daily_tables - afternoon_absolute - late_night_absolute
-        - Busy time target = leftover × (this_segment_turnover / total_busy_turnover)
+        - Busy time total = total_daily_tables - afternoon_absolute - late_night_absolute
+        - Prev busy sum = prev_morning_daily_avg + prev_evening_daily_avg (from database)
+        - Improvement = busy_time_total - prev_busy_sum
+        - Return improvement / 2 (split equally between morning and evening)
 
         For other periods (improvement-based):
         - Leftover = total_daily_improvement - afternoon_improvement - late_night_improvement
-        - Busy time target = leftover × (this_segment_turnover / total_busy_turnover)
+        - Return leftover × (this_segment_turnover / total_busy_turnover)
+
+        Returns:
+            The improvement value to ADD to prev_daily_tables (not the absolute target)
         """
         seating_capacity = STORE_SEATING_CAPACITY.get(store_id, 50)
 
@@ -801,12 +801,34 @@ class WeeklyYoYComparisonWorksheetGenerator:
         # Check if using absolute targets (January 2026)
         use_absolute = is_using_absolute_targets(target_date) if target_date else False
 
+        # Get previous year busy time data from database
+        store_ts_data = time_segment_data.get(store_id, {}).get('time_segments', {}) if time_segment_data else {}
+        morning_label = TIME_SEGMENT_LABELS['morning']
+        evening_label = TIME_SEGMENT_LABELS['evening']
+
+        morning_data = store_ts_data.get(morning_label, {})
+        evening_data = store_ts_data.get(evening_label, {})
+
+        # Get previous year FULL MONTH daily averages (not MTD)
+        # This is used for the improvement calculation per boss's formula
+        morning_month_days = morning_data.get('prev_month_days', 0)
+        evening_month_days = evening_data.get('prev_month_days', 0)
+        prev_morning_daily = morning_data.get('prev_month_total_tables', 0) / morning_month_days if morning_month_days > 0 else 0
+        prev_evening_daily = evening_data.get('prev_month_total_tables', 0) / evening_month_days if evening_month_days > 0 else 0
+
         if use_absolute:
-            # For absolute targets, calculate leftover from total daily tables
+            # For absolute targets:
+            # 1. Calculate total daily tables from turnover target
             target_daily_tables = target_turnover * seating_capacity
+            # 2. Subtract slow time absolute targets to get busy time total
             afternoon_absolute = get_absolute_time_segment_target(store_id, 'afternoon', target_date) or 0
             late_night_absolute = get_absolute_time_segment_target(store_id, 'late_night', target_date) or 0
-            leftover = target_daily_tables - afternoon_absolute - late_night_absolute
+            busy_time_total = target_daily_tables - afternoon_absolute - late_night_absolute
+            # 3. Calculate improvement needed: busy_total - prev_busy_sum
+            prev_busy_sum = prev_morning_daily + prev_evening_daily
+            improvement = busy_time_total - prev_busy_sum
+            # 4. Split equally between morning and evening
+            return improvement / 2
         else:
             # For improvement-based, calculate leftover from improvement
             prev_daily_tables = prev_turnover * seating_capacity
@@ -817,27 +839,21 @@ class WeeklyYoYComparisonWorksheetGenerator:
             late_night_target = LATE_NIGHT_TARGETS.get(store_id, DEFAULT_SLOW_TIME_TARGET)
             leftover = total_daily_improvement - afternoon_target - late_night_target
 
-        if leftover <= 0:
-            return 0
+            if leftover <= 0:
+                return 0
 
-        store_ts_data = time_segment_data.get(store_id, {}).get('time_segments', {}) if time_segment_data else {}
-        morning_label = TIME_SEGMENT_LABELS['morning']
-        evening_label = TIME_SEGMENT_LABELS['evening']
+            # Split proportionally based on turnover
+            morning_turnover = morning_data.get('prev_avg_turnover', 0)
+            evening_turnover = evening_data.get('prev_avg_turnover', 0)
+            total_busy_turnover = morning_turnover + evening_turnover
 
-        morning_data = store_ts_data.get(morning_label, {})
-        evening_data = store_ts_data.get(evening_label, {})
+            if total_busy_turnover <= 0:
+                return leftover / 2
 
-        morning_turnover = morning_data.get('prev_avg_turnover', 0)
-        evening_turnover = evening_data.get('prev_avg_turnover', 0)
-        total_busy_turnover = morning_turnover + evening_turnover
-
-        if total_busy_turnover <= 0:
-            return leftover / 2
-
-        if segment_key == 'morning':
-            return leftover * morning_turnover / total_busy_turnover
-        else:
-            return leftover * evening_turnover / total_busy_turnover
+            if segment_key == 'morning':
+                return leftover * morning_turnover / total_busy_turnover
+            else:
+                return leftover * evening_turnover / total_busy_turnover
 
     def generate_detail_worksheet(self, workbook: Workbook, target_date: str) -> Worksheet:
         """

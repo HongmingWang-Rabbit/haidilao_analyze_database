@@ -517,7 +517,7 @@ INSERT INTO store (id, name, district_id, country, manager, opened_at, seats_tot
 (5, '加拿大五店', 1, '加拿大', '蒋冰遇', '2022-10-03', 55, TRUE),
 (6, '加拿大六店', 1, '加拿大', '蒋冰遇', '2024-01-09', 56, TRUE),
 (7, '加拿大七店', 1, '加拿大', '蒋冰遇', '2024-05-01', 57, TRUE),
-(8, '加拿大八店', 1, '加拿大', '蒋冰遇', '2025-10-15', 56, TRUE)
+(8, '加拿大八店', 1, '加拿大', '蒋冰遇', '2025-10-15', 54, TRUE)
 ON CONFLICT (id) DO UPDATE SET
     name = EXCLUDED.name,
     district_id = EXCLUDED.district_id,

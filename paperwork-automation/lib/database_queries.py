@@ -1407,7 +1407,10 @@ class ReportDataProvider:
             target_date: Target date in YYYY-MM-DD format
 
         Returns:
-            Dict with store_id as key, containing time segment data
+            Dict with store_id as key, containing time segment data including:
+            - current_* fields: Current year MTD data
+            - prev_* fields: Previous year MTD data (same day range)
+            - prev_month_* fields: Previous year FULL month data (for daily average calculation)
         """
         from datetime import datetime
 
@@ -1419,6 +1422,7 @@ class ReportDataProvider:
         prev_year = current_year - 1
 
         # Query to get MTD time segment data for current and previous year
+        # Also get full month data for previous year (for daily average calculation)
         sql = """
         WITH current_mtd AS (
             SELECT
@@ -1445,6 +1449,18 @@ class ReportDataProvider:
                 AND EXTRACT(MONTH FROM date) = %s
                 AND EXTRACT(DAY FROM date) <= %s
             GROUP BY store_id, time_segment_id
+        ),
+        prev_year_full_month AS (
+            SELECT
+                store_id,
+                time_segment_id,
+                AVG(turnover_rate) as avg_turnover_rate,
+                SUM(tables_served_validated) as total_tables,
+                COUNT(*) as days_count
+            FROM store_time_report
+            WHERE EXTRACT(YEAR FROM date) = %s
+                AND EXTRACT(MONTH FROM date) = %s
+            GROUP BY store_id, time_segment_id
         )
         SELECT
             s.id as store_id,
@@ -1456,11 +1472,15 @@ class ReportDataProvider:
             COALESCE(cm.days_count, 0) as current_days,
             COALESCE(pm.avg_turnover_rate, 0) as prev_avg_turnover,
             COALESCE(pm.total_tables, 0) as prev_total_tables,
-            COALESCE(pm.days_count, 0) as prev_days
+            COALESCE(pm.days_count, 0) as prev_days,
+            COALESCE(pfm.avg_turnover_rate, 0) as prev_month_avg_turnover,
+            COALESCE(pfm.total_tables, 0) as prev_month_total_tables,
+            COALESCE(pfm.days_count, 0) as prev_month_days
         FROM store s
         CROSS JOIN time_segment ts
         LEFT JOIN current_mtd cm ON s.id = cm.store_id AND ts.id = cm.time_segment_id
         LEFT JOIN prev_year_mtd pm ON s.id = pm.store_id AND ts.id = pm.time_segment_id
+        LEFT JOIN prev_year_full_month pfm ON s.id = pfm.store_id AND ts.id = pfm.time_segment_id
         WHERE s.id BETWEEN 1 AND 8
         ORDER BY s.id, ts.id
         """
@@ -1468,7 +1488,8 @@ class ReportDataProvider:
         try:
             results = self.db_manager.fetch_all(sql, (
                 current_year, current_month, target_day,  # current_mtd
-                prev_year, current_month, target_day       # prev_year_mtd
+                prev_year, current_month, target_day,     # prev_year_mtd
+                prev_year, current_month                  # prev_year_full_month
             ))
 
             # Organize by store_id
@@ -1489,7 +1510,11 @@ class ReportDataProvider:
                     'current_days': int(row['current_days'] or 0),
                     'prev_avg_turnover': float(row['prev_avg_turnover'] or 0),
                     'prev_total_tables': int(row['prev_total_tables'] or 0),
-                    'prev_days': int(row['prev_days'] or 0)
+                    'prev_days': int(row['prev_days'] or 0),
+                    # Full month data for previous year (for daily average calculation)
+                    'prev_month_avg_turnover': float(row['prev_month_avg_turnover'] or 0),
+                    'prev_month_total_tables': int(row['prev_month_total_tables'] or 0),
+                    'prev_month_days': int(row['prev_month_days'] or 0)
                 }
 
             return store_data
