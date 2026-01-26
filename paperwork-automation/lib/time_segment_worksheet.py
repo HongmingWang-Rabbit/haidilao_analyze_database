@@ -8,9 +8,36 @@ from datetime import datetime as dt
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side, Color
 from openpyxl.utils import get_column_letter
 
+# Import challenge targets configuration
+from configs.challenge_targets import (
+    get_store_turnover_target,
+    get_absolute_time_segment_target,
+    is_using_absolute_targets,
+    TIME_SEGMENT_LABELS,
+    AFTERNOON_SLOW_TARGETS,
+    LATE_NIGHT_TARGETS,
+    DEFAULT_SLOW_TIME_TARGET,
+)
+from configs.store_config import STORE_SEATING_CAPACITY
+
 
 class TimeSegmentWorksheetGenerator:
     """Generate time segment report worksheet (分时段-上报) from provided data"""
+
+    # Time segment label to key mapping (matches challenge_targets config)
+    TIME_SEGMENT_KEY_MAP = {
+        '08:00-13:59': 'morning',
+        '14:00-16:59': 'afternoon',
+        '17:00-21:59': 'evening',
+        '22:00-(次)07:59': 'late_night',
+    }
+
+    # Hardcoded busy time targets for store 8 (absolute daily table counts)
+    # Same as weekly_yoy_comparison_worksheet.py
+    STORE_8_BUSY_TIME_TARGETS = {
+        'morning': 48,   # Lunch busy time target
+        'evening': 110,  # Dinner busy time target
+    }
 
     def __init__(self, store_names, target_date, data_provider=None):
         self.store_names = store_names
@@ -23,6 +50,158 @@ class TimeSegmentWorksheetGenerator:
             '17:00-21:59',
             '22:00-(次)07:59'
         ]
+
+    def calculate_time_segment_target(self, store_id: int, time_segment: str,
+                                       prev_turnover, store_data: dict = None) -> float:
+        """
+        Calculate target for a time segment using same logic as weekly_yoy_comparison_worksheet.py.
+
+        Args:
+            store_id: Store ID (1-8)
+            time_segment: Time segment label (e.g., '08:00-13:59')
+            prev_turnover: Previous year turnover rate for this segment
+            store_data: Dict of time segment data for this store (keyed by segment labels)
+
+        Returns:
+            Target turnover rate for the time segment
+        """
+        # Convert to float to handle Decimal types from database
+        prev_turnover = float(prev_turnover) if prev_turnover else 0.0
+
+        segment_key = self.TIME_SEGMENT_KEY_MAP.get(time_segment)
+        if not segment_key:
+            return prev_turnover  # Fallback
+
+        seating_capacity = float(STORE_SEATING_CAPACITY.get(store_id, 50))
+        is_slow = segment_key in ('afternoon', 'late_night')
+
+        # For slow times, use absolute table count targets
+        if is_slow:
+            if segment_key == 'afternoon':
+                absolute_tables = float(AFTERNOON_SLOW_TARGETS.get(store_id, 0))
+            else:
+                absolute_tables = float(LATE_NIGHT_TARGETS.get(store_id, 0))
+            if absolute_tables > 0 and seating_capacity > 0:
+                return absolute_tables / seating_capacity
+            return prev_turnover
+
+        # For busy times (morning/evening)
+        # Store 8 has hardcoded absolute targets
+        if store_id == 8 and segment_key in self.STORE_8_BUSY_TIME_TARGETS:
+            target_tables = float(self.STORE_8_BUSY_TIME_TARGETS[segment_key])
+            return target_tables / seating_capacity if seating_capacity > 0 else prev_turnover
+
+        # For other stores' busy times, get full month daily averages from data provider
+        # This matches the logic in weekly_yoy_comparison_worksheet
+        if self.data_provider:
+            try:
+                # Get time segment MTD data which has full month daily averages
+                mtd_data = self.data_provider.get_time_segment_mtd_data(self.target_date)
+                if mtd_data and store_id in mtd_data:
+                    store_ts_data = mtd_data[store_id].get('time_segments', {})
+
+                    # Get previous year full month daily averages for busy times
+                    morning_label = TIME_SEGMENT_LABELS.get('morning', '08:00-13:59')
+                    evening_label = TIME_SEGMENT_LABELS.get('evening', '17:00-21:59')
+
+                    morning_data = store_ts_data.get(morning_label, {})
+                    evening_data = store_ts_data.get(evening_label, {})
+
+                    # Calculate daily averages from full month data
+                    morning_days = morning_data.get('prev_month_days', 0)
+                    evening_days = evening_data.get('prev_month_days', 0)
+                    prev_morning_tables = float(morning_data.get('prev_month_total_tables', 0)) / morning_days if morning_days > 0 else 0
+                    prev_evening_tables = float(evening_data.get('prev_month_total_tables', 0)) / evening_days if evening_days > 0 else 0
+
+                    # Calculate total previous year turnover from all segments
+                    prev_total_turnover = 0.0
+                    for seg_label, seg_data in store_ts_data.items():
+                        seg_days = seg_data.get('prev_month_days', 0)
+                        if seg_days > 0:
+                            seg_tables = float(seg_data.get('prev_month_total_tables', 0)) / seg_days
+                            prev_total_turnover += seg_tables / seating_capacity
+
+                    # Get target total turnover for the store
+                    target_total_turnover = float(get_store_turnover_target(store_id, prev_total_turnover, self.target_date))
+
+                    # Get slow time absolute targets
+                    afternoon_tables = float(AFTERNOON_SLOW_TARGETS.get(store_id, 0))
+                    late_night_tables = float(LATE_NIGHT_TARGETS.get(store_id, 0))
+
+                    # Calculate busy time target allocation
+                    target_total_tables = target_total_turnover * seating_capacity
+                    busy_time_target_tables = target_total_tables - afternoon_tables - late_night_tables
+
+                    # Previous year busy time tables (from full month daily averages)
+                    prev_busy_tables = prev_morning_tables + prev_evening_tables
+
+                    # Calculate improvement needed for busy times
+                    improvement_tables = busy_time_target_tables - prev_busy_tables
+
+                    # Split improvement equally between morning and evening
+                    each_improvement = improvement_tables / 2
+
+                    # Calculate this segment's target based on which segment we're calculating
+                    if segment_key == 'morning':
+                        target_tables = prev_morning_tables + each_improvement
+                    else:  # evening
+                        target_tables = prev_evening_tables + each_improvement
+
+                    return target_tables / seating_capacity if seating_capacity > 0 else prev_turnover
+
+            except Exception as e:
+                pass  # Fall through to fallback
+
+        # Fallback: use store_data if available
+        if store_data:
+            # Calculate previous year total turnover by summing all time segments
+            prev_total_turnover = 0.0
+            for seg_label in self.time_segments:
+                seg_data = store_data.get(seg_label, {})
+                if isinstance(seg_data, dict):
+                    seg_turnover = float(seg_data.get('prev_full_month_avg_turnover',
+                                         seg_data.get('turnover_prev', 0)) or 0)
+                    prev_total_turnover += seg_turnover
+
+            # Get target total turnover for the store
+            target_total_turnover = float(get_store_turnover_target(store_id, prev_total_turnover, self.target_date))
+
+            # Get slow time absolute targets
+            afternoon_tables = float(AFTERNOON_SLOW_TARGETS.get(store_id, 0))
+            late_night_tables = float(LATE_NIGHT_TARGETS.get(store_id, 0))
+
+            # Calculate total target tables and busy time allocation
+            target_total_tables = target_total_turnover * seating_capacity
+            busy_time_target_tables = target_total_tables - afternoon_tables - late_night_tables
+
+            # Get previous year busy time turnovers from store_data
+            morning_label = TIME_SEGMENT_LABELS.get('morning', '08:00-13:59')
+            evening_label = TIME_SEGMENT_LABELS.get('evening', '17:00-21:59')
+
+            prev_morning = 0.0
+            prev_evening = 0.0
+            if morning_label in store_data and isinstance(store_data[morning_label], dict):
+                prev_morning = float(store_data[morning_label].get('prev_full_month_avg_turnover',
+                                     store_data[morning_label].get('turnover_prev', 0)) or 0)
+            if evening_label in store_data and isinstance(store_data[evening_label], dict):
+                prev_evening = float(store_data[evening_label].get('prev_full_month_avg_turnover',
+                                     store_data[evening_label].get('turnover_prev', 0)) or 0)
+
+            # Previous year busy time tables
+            prev_busy_tables = (prev_morning + prev_evening) * seating_capacity
+
+            # Calculate improvement needed for busy times
+            improvement_tables = busy_time_target_tables - prev_busy_tables
+
+            # Split improvement equally between morning and evening
+            each_improvement = improvement_tables / 2
+
+            # Calculate this segment's target
+            target_tables = prev_turnover * seating_capacity + each_improvement
+            return target_tables / seating_capacity if seating_capacity > 0 else prev_turnover
+
+        # Default fallback: use previous year turnover
+        return prev_turnover
 
     def get_time_segment_data_for_date(self, target_date):
         """Get time segment data for the specific target date from database"""
@@ -231,7 +410,10 @@ class TimeSegmentWorksheetGenerator:
                 # Previous year MTD average instead of single day
                 prev_year_mtd_avg_turnover = segment_data.get(
                     'prev_full_month_avg_turnover', segment_data['turnover_prev'])
-                target_turnover = segment_data['target']
+                # Calculate target using same logic as weekly_yoy_comparison_worksheet
+                target_turnover = self.calculate_time_segment_target(
+                    store_id, time_segment, prev_year_mtd_avg_turnover, store_data
+                )
 
                 target_diff_mtd = float(mtd_turnover) - float(target_turnover)
                 prev_diff_mtd = float(mtd_turnover) - \
@@ -307,27 +489,32 @@ class TimeSegmentWorksheetGenerator:
             # Add store total row - Sum the actual displayed values for accuracy
             store_total_row_start = current_row - len(self.time_segments)
 
+            # Helper to safely get float value from cell
+            def get_cell_float(row, col):
+                val = ws.cell(row=row, column=col).value
+                return float(val) if val is not None else 0.0
+
             # Calculate sums from the actual displayed values in the worksheet
-            col3_sum = sum(ws.cell(row=store_total_row_start + i,
-                           column=3).value or 0 for i in range(len(self.time_segments)))
-            col4_sum = sum(ws.cell(row=store_total_row_start + i,
-                           column=4).value or 0 for i in range(len(self.time_segments)))
-            col5_sum = sum(ws.cell(row=store_total_row_start + i,
-                           column=5).value or 0 for i in range(len(self.time_segments)))
-            col8_sum = sum(ws.cell(row=store_total_row_start + i,
-                           column=8).value or 0 for i in range(len(self.time_segments)))
-            col9_sum = sum(ws.cell(row=store_total_row_start + i,
-                           column=9).value or 0 for i in range(len(self.time_segments)))
-            col10_sum = sum(ws.cell(row=store_total_row_start + i,
-                            column=10).value or 0 for i in range(len(self.time_segments)))
-            col11_sum = sum(ws.cell(row=store_total_row_start + i,
-                            column=11).value or 0 for i in range(len(self.time_segments)))
-            col12_sum = sum(ws.cell(row=store_total_row_start + i,
-                            column=12).value or 0 for i in range(len(self.time_segments)))
-            col13_sum = sum(ws.cell(row=store_total_row_start + i,
-                            column=13).value or 0 for i in range(len(self.time_segments)))
-            col14_sum = sum(ws.cell(row=store_total_row_start + i,
-                            column=14).value or 0 for i in range(len(self.time_segments)))
+            col3_sum = sum(get_cell_float(store_total_row_start + i, 3)
+                           for i in range(len(self.time_segments)))
+            col4_sum = sum(get_cell_float(store_total_row_start + i, 4)
+                           for i in range(len(self.time_segments)))
+            col5_sum = sum(get_cell_float(store_total_row_start + i, 5)
+                           for i in range(len(self.time_segments)))
+            col8_sum = sum(get_cell_float(store_total_row_start + i, 8)
+                           for i in range(len(self.time_segments)))
+            col9_sum = sum(get_cell_float(store_total_row_start + i, 9)
+                           for i in range(len(self.time_segments)))
+            col10_sum = sum(get_cell_float(store_total_row_start + i, 10)
+                            for i in range(len(self.time_segments)))
+            col11_sum = sum(get_cell_float(store_total_row_start + i, 11)
+                            for i in range(len(self.time_segments)))
+            col12_sum = sum(get_cell_float(store_total_row_start + i, 12)
+                            for i in range(len(self.time_segments)))
+            col13_sum = sum(get_cell_float(store_total_row_start + i, 13)
+                            for i in range(len(self.time_segments)))
+            col14_sum = sum(get_cell_float(store_total_row_start + i, 14)
+                            for i in range(len(self.time_segments)))
 
             # Calculate differences based on the summed values
             col6_diff = col3_sum - col5_sum  # current - target

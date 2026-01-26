@@ -1309,7 +1309,7 @@ FIRST DATA CANADA\(J\)''', re.IGNORECASE | re.MULTILINE),
         transaction_type='credit'
     ), {
         "品名": TransactionType.INSURANCE_FEE.value,
-        "付款详情": "平台费退款",
+        "付款详情": "确认下是平台费退款还是工资退款",
         "单据号": False,
         "附件": "Jacky会发在群里",
         "是否登记线下付款表": False,

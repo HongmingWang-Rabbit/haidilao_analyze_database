@@ -50,6 +50,12 @@ from configs.challenge_targets import (
 class WeeklyYoYComparisonWorksheetGenerator:
     """Generator for MTD year-over-year comparison worksheet."""
 
+    # Hardcoded busy time targets for store 8 (absolute daily table counts)
+    STORE_8_BUSY_TIME_TARGETS = {
+        'morning': 48,   # Lunch busy time target
+        'evening': 110,  # Dinner busy time target
+    }
+
     # Excel styling constants
     HEADER_COLOR = "DC2626"
     GREEN_COLOR = "E6FFE6"
@@ -351,12 +357,17 @@ class WeeklyYoYComparisonWorksheetGenerator:
                 notes = f"日均桌数 (目标+{daily_target:.1f})"
             else:
                 # Busy times (morning/evening)
-                # _calculate_busy_time_target now returns the improvement to add (not absolute target)
-                daily_improvement = self._calculate_busy_time_target(
-                    store_id, store, time_segment_data, segment_key, num_days, target_date_str
-                )
-                target_daily = prev_daily_tables + daily_improvement
-                notes = f"日均桌数 (目标+{daily_improvement:.2f})"
+                # Store 8 has hardcoded absolute targets for busy times
+                if store_id == 8 and segment_key in self.STORE_8_BUSY_TIME_TARGETS:
+                    target_daily = self.STORE_8_BUSY_TIME_TARGETS[segment_key]
+                    notes = f"日均桌数 (固定目标)"
+                else:
+                    # _calculate_busy_time_target now returns the improvement to add (not absolute target)
+                    daily_improvement = self._calculate_busy_time_target(
+                        store_id, store, time_segment_data, segment_key, num_days, target_date_str
+                    )
+                    target_daily = prev_daily_tables + daily_improvement
+                    notes = f"日均桌数 (目标+{daily_improvement:.2f})"
 
             gap = current_daily_tables - target_daily
 
@@ -611,11 +622,15 @@ class WeeklyYoYComparisonWorksheetGenerator:
                     target_total += prev_daily + daily_target_improvement
                 else:
                     # Busy times (morning/evening)
-                    # _calculate_busy_time_target now returns the improvement to add (not absolute target)
-                    daily_improvement = self._calculate_busy_time_target(
-                        store_id, store, time_segment_data, segment_key, num_days, target_date_str
-                    )
-                    target_total += prev_daily + daily_improvement
+                    # Store 8 has hardcoded absolute targets for busy times
+                    if store_id == 8 and segment_key in self.STORE_8_BUSY_TIME_TARGETS:
+                        target_total += self.STORE_8_BUSY_TIME_TARGETS[segment_key]
+                    else:
+                        # _calculate_busy_time_target now returns the improvement to add (not absolute target)
+                        daily_improvement = self._calculate_busy_time_target(
+                            store_id, store, time_segment_data, segment_key, num_days, target_date_str
+                        )
+                        target_total += prev_daily + daily_improvement
 
             gap = current_total - target_total
 
